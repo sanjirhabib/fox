@@ -1,0 +1,8 @@
+#include "fox.h"
+#include "foxcmd.h"
+int main(int argc,char** argv,char** env){
+	gc_start()
+	_globals.cache.reflect=reflect()
+	_globals.args=ptrs_vec((void**)argv,argc)
+	return _globals.args.run_cmdline()
+}

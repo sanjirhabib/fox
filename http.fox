@@ -1,0 +1,26 @@
+#include <sqlite3.h>
+#include <fox.h>
+#include <foxcmd.h>
+#include <http.h>
+#include <sql.h>
+void* px(void* str,int newline=1){
+	void* ret=str
+	str=str.to_str()
+	if !str.str_len() && !newline => return ret
+	_globals.out.=str
+	return ret
+}
+void xexit(int val=0){
+	http_out()
+	gc_end()
+	exit(val)
+}
+void* fox_error(char* msg,int dump=0){
+	".end
+	$msg
+	System Stack Dump
+	$(stack_str().str_replace("\n","<br/>"))
+	Eval Stack Dump
+	.end".http_error("500 Internal Server Error")
+	return NULL
+}

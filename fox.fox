@@ -1,0 +1,4483 @@
+#line 2 "fox.c"
+/*
+	TODO
+		suppurt for: return 1 and 2 or 3
+	Bug
+	Fixed
+   */
+/* zero=next,id,map_key,map_del,vec_del,set,set_map,add_id,map_index,change_key,del_index
+NOTE:
+	Haven't used LLVM. That would force the whole application to be JITed.
+TODO:
+	eval case:
+	eval << >>
+	support and or
+CONSIDER:
+	sym(char*);
+BUG:
+	new_blob() in fox_read_file() crashes in php
+Optimize:
+Generational GC
+	create 3 memory pages gen1,gen2,gen3
+   */
+
+//#define NDEBUG
+#include "fox.h"
+#include "foxcmd.h"
+
+#define MAXMEM 10*1024*1024
+#define MIN_CHAIN 1
+#ifdef PHP_MOD
+#undef assert
+#define assert(x) if(!(x)){ fox_error("Assert failed!",1); }
+#endif
+
+
+int chdir(const char* path);
+void* invoke(map* v,char* name);
+map* reflect();
+int max_mem();
+int curr_mem();
+char* version();
+map* args_map();
+map* args(int argc, char** argv);
+void* px(void* str,int newline=1);
+void xexit(int val=0);
+void* fox_error(char* msg,int dump=0);
+void* call_php(map* params,char* func);
+
+int make(map* files=source_files(),char* outdir="c"){
+	req=0
+	files.each v1 => if v1.file_time()>".version.txt".file_time() => req=1; break
+	return req ? files.compile(outdir) : 0
+}
+int foxc(char* file){
+	optimize="-g -O0"
+	in=file..".fox"
+	in.fox_c(file..".c")
+	in.fox_h(file..".h")
+	ret="gcc $(optimize) $(file).c -o $(file) -std=gnu99 -Wno-logical-op-parentheses -lm -lfox 2>&1"
+		.px()
+		.exec()
+	return ret
+}
+int compile(map* files=source_files(),char* outdir="c",char* outfile=:fox,char* options="",int release=0,int exe=0){
+	out_c=build(files,outdir)
+	if outfile===:fox
+		"mv fox .fox".px()
+		if :fox.is_file() && "mv fox .fox".exec()
+			"mv fox failed".fox_error()
+	output=''
+	infiles=out_c.map_join(" ")
+	optimize="-g -O0"
+	if release => optimize="-O3"
+	ret="gcc $(optimize) $(infiles) $('callfunc.c'.file_rename(outdir)) extern.c -o $(outfile) -rdynamic -std=gnu99 -Wno-logical-op-parentheses -lfox -lm -I $outdir/ $(options) 2>&1"
+		.px()
+		.exec()
+	if ret && outfile===:fox
+		if ".fox".is_file() => "mv .fox fox".exec()
+	if ret => xexit(-1)
+	return 0
+}
+char* file_dir(char* file){
+	len=file.str_len()
+	i=0
+	for i=len-1;i>=0;i--
+		if file[i]=='/' => break
+	if i==-1 => return NULL
+	return file.sub_str(0,i+1)
+}
+char* file_rename(char* file,char* dir=NULL,char* delext=NULL,char* addext=NULL,char* prefix=NULL,char* postfix=NULL){
+	olddir=file.file_dir()
+	ret=file
+	if olddir => ret=ret.sub_str(olddir.str_len())
+	if delext && ret.str_end(delext) => ret=ret.sub_str(0,-delext.str_len())
+	if prefix => ret=xstr(prefix,ret)
+	if postfix => ret.=postfix
+	if addext => ret.=addext
+	if dir => olddir=dir
+	return xstr(olddir.sane_dir(),ret)
+}
+char* sane_dir(char* dir) => return dir ? dir.rtrim("/").."/" : NULL
+map* build(map* files=source_files(),char* outdir="c"){
+	ret=[]
+	files.each v2
+		outfile=''
+		if v2.str_end(".fox") => outfile=v2.file_rename(outdir,".fox",".c",NULL)
+		else if v2.str_end(".c.in") => outfile=v2.file_rename(outdir,".in",NULL,NULL)
+		ret[]=outfile
+		v2.write_c(outfile)
+	"fox.h".file_rename(outdir).write_foxh()
+	"callfunc.c".file_rename(outdir).write_callfunc()
+	mem_usage().px()
+	return ret
+}
+char* mem_usage(){
+	runtime=run_time()
+	totaltime=total_time()
+	gctime=gc_time()
+	codetime=runtime-totaltime-gctime
+	return "Memory:%s-%s [%d%% garbage], Pages: %d/%d, GC runs=%d-%d, Time=%d[gc]+%d[code]=%d ms [%d%% gc] GC Max: %d msec".mstr(
+		_gcdata.max_mem.int_kb(),
+		max_mem().int_kb(),
+		(_gcdata.max_mem-_gcdata.max_used)*100/_gcdata.max_mem,
+		_gcdata.total_pages,
+		_gcdata.page_no,
+		_gcdata.gcruns,
+		_gcdata.gcwaste,
+		gctime,
+		codetime,
+		runtime,
+		gctime*100/(codetime+gctime),
+		_gc_max/1000
+	)
+}
+char* int_kb(size_t i,char* unit=:B){
+	size_t ks=1
+	if i<10*ks*1024=> return i.int_human()
+	if i<10*ks*1024*1024 => return (i/(1024)).int_human(:K..unit)
+	if i<10*ks*1024*1024*1024 => return (i/(1024*1024)).int_human(:M..unit)
+	return (i/(1024*1024*1024)).int_human("G"..unit)
+}
+char* int_human(int i,char* unit='',char* zero=""){
+	if !i => return zero
+	ret=i.int_str()
+	addat=3
+	while addat<ret.str_len()
+		ret=ret.sub_str(0,-addat)..","..ret.sub_str(-addat)
+		addat+=4
+	if ret && unit => ret.=unit
+	return ret
+}
+extern char **environ;
+map* env_vars(){
+	ret={}
+	for char **env=environ;*env;++env
+		mp=str_split(*env,"=",2)
+		ret[mp[0]]=mp[1]
+	return ret
+}
+char* substr(char* src,int from,int len) => return len ? src.sub_str(from,len) : NULL
+char* mstr(char* format, ...){
+	ret=''
+	va_list args
+	args.va_start(format)
+	ret=format.va_str(args)
+	args.va_end()
+	return ret
+}
+char* str_add(char* str1,char* str2) => return str1.str_dup()..str2
+char* cat_char(char* str, char c){
+	if !str => return c.char_str()
+	len=str.str_len() //lima
+	str=str.fox_realloc(len+2,String)	
+	str[len]=c;
+	assert(!str[len+1])
+	return str
+}
+char* va_str(char* format,va_list args){
+	if !format => return NULL
+	va_list copy
+	copy.va_copy(args)
+	int len=NULL.vsnprintf(0,format,args)
+	char* ret=fox_alloc(len+1,String)
+	ret.vsnprintf(len+1,format,copy)
+	copy.va_end()
+	return ret
+}
+void* verbose(char* msg,...){
+	if !_globals.verbose => return msg
+	if is_web() => return NULL
+	va_list args
+	args.va_start(msg)
+	char* ret=msg.va_str(args)
+	ret.puts()
+	args.va_end()
+	stdout.fflush()
+	return ret
+}
+void* dx(void* data="**",char* name=NULL,int panic=0){
+	if name
+		"$name=".px(0)
+	data.to_str(:NULL,1).px()
+	if panic==1 => xexit(0)
+	else if panic==2 => fox_stack_dump()
+	return data
+}
+int neq(char* str,char* str1) => return str!==str1
+int eq(char* str,char* str1) => return !str||!str1||!str.is_str() ? 0 : str.strcmp(str1)==0
+char* cwd(){
+	char* ret=getcwd(NULL,0)
+	ret2=ret.str_dup()
+	ret.free()
+	return ret2
+}
+char* write_file(char* data,char* filename,int readonly=0){
+	if !filename => return data
+	if filename==="-" => return data.px()
+	"-> $filename".px()
+	if readonly && filename.is_file() => filename.chmod(0666)
+	FILE* fp=filename.fopen(:w)
+	if !fp => "writting to file $filename failed".fox_error()
+	data.print(fp)
+	fp.fclose()
+	if readonly => filename.chmod(0444)
+	return data
+}
+char* fox_read_file(char* filename,int error_on_fail=1){
+	assert(filename)
+	FILE* fp=filename.fopen(:r)
+	size_t size=0
+	size_t read=0
+	if !fp => return error_on_fail ? "Can't read file $filename".fox_error(1) : NULL
+	fp.fseek(0,SEEK_END)
+	size=fp.ftell()
+	char* ret=size.new_blob()
+//	char* ret=(size+1).fox_alloc(String)
+	fp.fseek(0,SEEK_SET)
+	read=ret.fread(1,size,fp)
+	fp.fclose()
+	if read!=size => return NULL
+	assert(!ret[ret.str_len()])
+	assert(ret.str_len()==size)
+	return ret
+}
+char* read_stdin(int size=0,char* terminator=NULL){
+	char* ret=NULL
+	char buff[1024+1]={0}
+	block=1024
+	if size && size<block
+		block=size
+	done=0
+	while((done=buff.fread(1,block,stdin)))
+		buff[done]='\0'
+		ret.=buff
+		if size
+			size-=done
+			if size<=0 => break
+			block=min(size,1024)
+	
+	return ret
+}
+char* str_unquote(char* str){
+	if !str||!*str => return NULL
+	if str==="\"\"" || str==="''" => return ""
+	if *str=='\'' || *str=='"' => str=str.sub_str(1,-1)
+	if !str.str_chr('\\') => return str
+	char* temp=str.str_dup()
+	char* ret=temp
+	while *str
+		other=0
+		if *str=='\\'
+			str++
+			if !*str => break
+			switch *str
+				case 'n': *temp='\n'; break
+				case 'r': *temp='\r'; break
+				case 't': *temp='\t'; break
+				case '0': *temp='\0'; break
+				default: other=1; break
+			other=!other
+		if !other => *temp=*str
+		temp++
+		str++
+	*temp=0
+	return ret
+}
+char* str_escape(char* head){
+	if !head => return ""
+	len=head.str_len()
+	assert(len<4000)
+	extra=0
+	char c
+	char* str=head
+	char* quotable="\\\""
+	char* quoteto="\\\""
+	while((c=*str++)) if quotable.strchr(c) => extra++
+	assert(extra<=len)
+	char* ret=fox_alloc(head.str_len()+extra+1,String)
+	str=head
+	i=0
+	char* fox_at
+	while((c=*str++))
+		if !(fox_at=quotable.strchr(c)) => ret[i++]=c; continue
+		ret[i++]='\\'
+		ret[i++]=quoteto[fox_at-quotable]
+		assert(i<len+extra+2)
+	
+	assert(!ret[i])
+	return ret
+}
+char* str_end(char* str,char* end){
+	if str.str_len()<end.str_len() => return NULL
+	return strcmp(str+str.str_len()-end.str_len(),end)==0 ? str : NULL
+}
+int str_start(char* str,char* start) => return str && start && str.is_str() && str.strncmp(start,start.strlen())==0
+char* str_chr(char* str,char c) => return !str||!c||!str.is_str() ? NULL : str.strchr(c)
+char* ltrim(char* str,char* chars=" \t\n\r"){
+	return str+str.lchars(chars)
+}
+char* rtrim(char* str,char* chars=" \t\n\r"){
+	r=str.rchars(chars)
+	if !r => return str
+	return str.substr(0,str.str_len()-r)
+}
+char* str_trim(char* str,char* chars=" \t\n\r"){
+	l=str.lchars(chars)
+	r=str.rchars(chars)
+	if !l && !r => return str
+	return str.substr(l,str.str_len()-l-r)
+}
+int line_isempty(char* line){
+	while(*line && *line!='\n' && *line!='\r'){ if(*line!=' ' && *line!='\t') return 0; line++; }
+	return 1
+}
+int line_len(char* line){
+	ret=0
+	while(*line && *line!='\n' && *line!='\r'){ ret++; line++; }
+	if *line=='\r' => ret++; line++
+	if *line=='\n' => ret++
+	return ret
+}
+int lchars(char* str,char* chars){
+	if !str||!chars => return 0
+	ret=0
+	while str[ret]
+		if chars.strchr(str[ret]) => ret++
+		else break
+	
+	return ret
+}
+int rchars(char* str,char* chars){
+	if !str||!chars => return 0
+	ret=0
+	len=str.str_len()
+	while ret<len
+		if chars.strchr(str[len-ret-1]) => ret++
+		else break
+	
+	return ret
+}
+int has_str(char* str,char* substr){
+	if !str||!substr => return 0
+	ret=0
+	while *str
+		if str.str_start(substr) => ret++
+		str++
+	return ret
+}
+char* str_replace(char* str,void* find,void* replace=NULL){
+	if !str || !find => return str
+	assert(str.is_str())
+	if find.is_str()
+		if !str.str_has(find) => return str
+		assert(replace.is_str())
+		find={(find) : replace}
+	assert(find.is_map())
+	dels=0
+	adds=0
+	find.each v,k,i2
+		assert(k.is_str())
+		if v.is_i() => find[i2]=(v=v.is_int().int_str())
+		assert(v.is_str())
+		i=str.has_str(k)
+		if !i => continue
+		dels+=i*k.str_len()
+		adds+=i*v.str_len()
+	if !dels => return str
+	char* ret=fox_alloc(str.str_len()+adds-dels,String)
+	temp=str
+	temp2=ret
+	for ;*temp;temp++,temp2++
+		found=0
+		find.each v3, k3, i3
+			if temp.str_start(k3)
+				temp2.strcat(v3)
+				temp2+=v3.strlen()-1
+				temp+=k3.strlen()-1
+				found=1
+				break
+		if !found => *temp2=*temp
+	return ret
+}
+char* outx(char* str){
+	str.px()
+	xexit(0)
+	return NULL
+}
+char* flush_out() => char* ret=_globals.out; _globals[:out]=NULL; return ret
+map* xadd(map* mp, void* ...){
+	type=mp.ptr_type()
+	va_list args
+	args.va_start(mp)
+	while 1
+		if type==Map
+			char* n=args.va_arg(char*)
+			if n==End => break
+			void* v=args.va_arg(void*)
+			mp[n]=v
+		else
+			void* v=args.va_arg(void*)
+			if v==End => break
+			mp[]=v
+	args.va_end()
+	return mp
+}
+int is_numeric(char* str){
+	if !str => return 0
+	for ;*str;str++ => if *str<'0' || *str>'9' => return 0
+	return 1
+}
+
+map* to_map(void* val) => return val.is_map() ? val : val.to_str().str_map()
+map* del_index(map* mp,int idx){
+	if !mp => return mp
+	assert(idx>=0 && idx<mp->len)
+	char* id=mp.map_key(idx)
+	if !id
+		assert(0)
+		return mp
+	int next=mp->pairs[idx].nextid
+	mp->pairs[idx].nextid=-1
+	i=id.key_hash() & (mp.map_size()-1)
+	if mp->pairs[i].hkey==idx+1 => mp->pairs[i].hkey=next > 0 ? next : 0 //0=empty for hkey. -1=end for nextid
+	else
+		i=mp->pairs[i].hkey
+		nextid=0
+		while((nextid=mp->pairs[i-1].nextid)!=idx+1 && nextid>0) i=nextid
+		if nextid==idx+1
+			if i==next => "inf loop with i($i)=next-1($next-1)".fox_error()
+			mp->pairs[i-1].nextid=next
+		else assert(0)
+	return mp
+}
+map* map_del_key(map* mp,char* key) => return mp.map_del(mp.map_has_key(key)-1)
+map* map_del(map* mp,int idx,int len=1){
+	if !mp||idx<0 => return mp
+	if len<=0 => len+=(mp->len-idx)
+	if len<=0 => return mp
+	if mp.ptr_type()==Vector => return mp.vec_del(idx,len)
+	// don't memset(0) as there is hash indexing info here too.
+	while len--
+		mp.del_index(idx+len)
+		mp->pairs[idx+len].val=&skip
+		mp->pairs[idx+len].nextid=0
+		mp->pairs[idx+len].id=(char*)&skip
+	return mp
+}
+map* xjson_map(char* in,int type=Map) => return xjson_map_recurse(&in,type)
+map* xjson_map_recurse(char** line,int type=Map){
+	if !line||!*line||!**line => return type==Vector ? [] : {}
+	char* str=*line
+	term='}'
+	map* ret=NULL
+	if *str=='['
+		type=Vector
+		term=']'
+		ret=[]
+		str++
+	else if *str=='{'
+		ret={}
+		str++
+	else
+		ret=type==Vector ? [] : {}
+		term='\0'
+	last=''
+	sep=" \t\n\r"
+	temp=str
+	temp=temp.skip_word(":=,")
+	if ":=".strchr(*temp)
+		temp=temp.skip_word(",")
+			if *temp==',' => sep="\t\n\r,"
+	else if *temp==',' => sep="\t\n\r,"
+	if term => sep.=term.char_str()
+	while *str && *str!=term
+		name=NULL
+		value=NULL
+		if str==last => str.px()
+		assert(str!=last)
+		last=str
+		str=str.skip_over(" \t\n\r,]}")
+		if *str=='{'||*str=='['
+			value=xjson_map_recurse(&str,type)
+		else if *str==':' || *str=='='
+			str=(str+1).skip_over(" \t\n\r")
+			value=read_value(&str,sep)
+		else if type==Vector
+			value=read_upto(&str,sep)
+		else
+			name=read_upto(&str," \t\n\r,=:]}")
+			str=str.skip_over(" \n\r\t")
+			if ":=".str_chr(*str)
+				str=(str+1).skip_over(" \n\r\t")
+				value=read_value(&str,sep)
+			else
+				if type!=Keys
+					value=name//.str_title()
+		ret.map_add_pair(name,value,type)
+	if *str==term => str++
+//	ret.map_add_pair(name,value,type)
+//	if type!=Vector && ret.type && ret.name => ret=xmap(ret.name,ret)
+	*line=str
+	return ret
+}
+int str_level(char* line){
+	if !line||!line.is_str() => return 0
+	ret=0
+	while(*line=='\t'||*line==' '){ ret++; line++; }
+	return ret
+}
+int block_level(char* str){
+	ret=0
+	if !str => return 0
+	while *str
+		if *str=='\n'||*str=='\r' => ret=0
+		else if *str=='\t'||*str==' ' => ret++
+		else return ret
+		str++
+		
+	return ret
+}
+void* marked_str(char* str,char* name=NULL){
+	if !str => return NULL
+	str=str.str_trim(" \t")
+	if str==="\"\"" => return ""
+	if !str.str_len() => return NULL
+	if str===:NULL
+		return NULL
+
+	if str[0]=='{'
+		if str[str.str_len()-1]=='}' => str[str.str_len()-1]='\0'
+		map* mp=xjson_map(str+1,Map)
+		return mp
+	
+	if str.is_numeric() => return str.stoi().int_var()
+	if str[0]=='['
+		if str[str.str_len()-1]==']' => str[str.str_len()-1]='\0'
+		map* mp=xjson_map(str+1,Vector)
+		return mp
+	
+	if str[0]=='\\' => return str.sub_str(1)
+	if str[0]==':'
+		str++
+		char* thealpha=read_alpha(&str)
+		return xmap(:type,thealpha,:name,name).map_merge(xjson_map(str+1,Index))
+	return str
+}
+map* map_add_pair(map* mp,void* name,void* value,int type){
+	if !name && !value => return mp	
+
+	if name===:null => name=NULL
+	else if name.is_numeric() => name=(name.to_int()+1).int_var()
+	else name=name.str_unquote()
+
+	if name && value && *(char*)value==':'
+		if !mp.map_len()
+			return mp.xadd(:type,value.sub_str(1),:name,name)
+		else
+			char* str=value
+			str++
+			char* thealpha=read_alpha(&str)
+			value=xmap(:type,thealpha,:name,name).map_merge(xjson_map(str+1,Index))
+
+	if value===:null => value=NULL
+	else if value.is_numeric() => value=value.to_int().int_var()
+	else value=value.str_unquote()
+
+	if type==Vector => return mp[]=value
+	return mp[name]=value
+}
+map* add_name_val(map* mp,char* str,char** name,char** val,int type){
+	char* name1=*name
+	char* val1=*val
+	if !name1 && !val1 => return mp
+	*name=NULL
+	*val=NULL
+	void* v=NULL
+	if type==Vector
+		char* s=name1.substr(0,str-name1).str_trim()
+		return mp[]=s.marked_str()
+	
+	if(val1)
+		name1=name1.str_trim(" \t")
+		name1=name1.str_replace("\\=","=")
+		if !name1.str_len() => name1=NULL
+		v=val1.substr(0,str-val1).marked_str(name1)
+	else if name1 => v=name1.substr(0,str-name1).marked_str(); name1=NULL
+	if type==Index && !name1.str_len() => name1=v.to_str()
+	else if type==Keys && !name1
+		name1=v.to_str()
+		v=NULL
+	mp.map_add(name1,v)
+	return mp
+}
+char* read_as_block(char** from,int level,char* terminator="-"){
+	char* str=*from
+	char* ret=NULL
+	while *str
+		if str.str_start("//") => str+=str.line_len(); continue
+		tabs=str.str_level()
+		len=str.line_len()
+		if tabs>=level||str.line_isempty()
+			ret.=len-level>0 ? str.substr(level,len-level) : "\n"
+		else break
+		str+=len
+	if str.substr(str.str_level(),str.line_len()-str.str_level()).str_trim()===terminator
+		len2=str.line_len()
+		str+=len2
+	*from=str
+	if ret.str_len() && ret[ret.str_len()-1]=='\n' => ret=ret.sub_str(0,-1)
+	return ret
+}
+map* block_map(char** from,int inlevel,int maptype){
+	if !from => return NULL
+	map* ret=NULL
+	if maptype==Vector => ret=[]
+	else ret={}
+	char* str=*from
+	if !str.str_len() => return NULL
+	level=0
+	iscomment=0
+	char* blk=NULL
+	char* name=NULL
+	char* val=NULL
+	for ;*str;str++
+		if *str=='\n'||*str=='\r'
+			ret.add_name_val(str,name,val,maptype)
+			level=0
+			iscomment=0
+			blk=NULL
+			continue
+		if !name && !val
+			if iscomment => continue
+			if !blk => blk=str
+			if *str=='/' && str[1]=='/' => str++; iscomment=1; continue
+			if *str=='\t' => level++; continue
+			if level<inlevel
+				*from=blk
+				return ret
+			if level>inlevel
+				char* s=ret[ret->len-1].is_str()
+				if s==="|" => read_as_block(&blk,inlevel+1).set_map(ret,ret->len-1)
+				else if s && s.str_start("---") => read_as_block(&blk,inlevel+1,s).set_map(ret,ret->len-1)
+				else if ret[ret->len-1].ptr_type()==Vector => block_map(&blk,inlevel+1,Vector).set_map(ret,ret->len-1)
+				else if ret[ret->len-1].ptr_type()==Map => block_map(&blk,inlevel+1,Map).set_map(ret,ret->len-1)
+				else if maptype==Vector
+					continue
+				else
+					if (s.str_len() && ret.map_key(ret->len-1).is_int()) => ret.change_key(ret->len-1,s)
+					block_map(&blk,inlevel+1,maptype).set_map(ret,ret->len-1)
+				str=blk-1
+				level=0
+				iscomment=0
+				blk=NULL
+				name=NULL
+				val=NULL
+				continue
+			
+			if maptype!=Vector && *str=='=' => val=str+1; continue
+			name=str
+		
+		if !val
+			if *str=='\\' => str++; continue
+			if maptype!=Vector && *str=='='
+				name=name.substr(0,str-name)
+				val=str+1
+				continue
+			continue
+		continue
+	ret.add_name_val(str,name,val,maptype)
+	*from=str
+	return ret
+}
+map* xkeys(char* str) => return str.xjson_map(Keys)
+map* xindex(char* str) => return str.xjson_map(Index)
+map* xarray(char* str) => return str.str_map(Vector)
+map* str_vec(void* str){
+	if str.is_map() => return str
+	return str ? str.str_map(Vector) : NULL
+}
+void cache_blast(char* type){
+	_globals.cache[type]={}
+}
+void* cache(void* key,char* type,void* out=NULL){
+	if key.is_str() => key=str_hash((unsigned char*)key).int_var()
+	else if !key => key=int_var(0)
+	if !out
+		return _globals.cache[type][key]
+	if !_globals.cache[type].map_has_key(key) => _globals.cache[type][key]=NULL; return out
+	_globals.cache[type][key]=out
+	return out
+}
+map* str_map(char* str,int type=Map){
+	if str.is_map() => return str.is_map()
+	if !str.str_len() => return str.xjson_map(type)
+	ret=str.cache(:str_map)
+	if ret => return ret
+	if (!str.strchr('\n') && !str.strchr('\r')) => ret=str.xjson_map(type)
+	else ret=str.block_map(str.block_level(),type)
+	return str.cache(:str_map,ret)
+}
+void rewrite_ptr(mempage* pg,void** ptr){
+	if *ptr<(void*)pg->page||*ptr>(void*)pg->types => return
+	off=ptr_block(*ptr,pg)
+	if !(pg->types[off] & (1<<6))
+		*ptr=**(void***)ptr
+		return
+	len=1
+	while(len<=off && (pg->types[off-len] & (1<<6))) len++
+	assert(len<=off)
+	char* head=pg->page+(off-len)*pg->block_size
+	*ptr=*(char**)head+((char*)*ptr-head)
+}
+void rewrite_ptrs(mempage* old){
+	pg.each_mem(mem_i){
+		if pg==old => continue
+		for i=0;i<pg->blocks;i++
+			if !pg->types[i] || pg->types[i] & (1<<6) => continue
+			char type=pg->types[i] & (31)
+			if type<Map => continue
+			len1=1
+			while(pg->types[i+len1] & (1<<6)) len1++
+			size1=len1*pg->block_size
+			void* data=pg->page+i*pg->block_size
+			void* ptr=NULL
+			if type==Map||type==Vector => old.rewrite_ptr((void**)&(((map*)data)->vars))
+			else if type==Cell
+				void** vars=(void**)data
+				size1/=sizeof(void*)
+				for(i=0;i<size1;i++) old.rewrite_ptr((void**)&(vars[i]))
+			else if type==Cell2
+				cons* pairs=(cons*)data
+				size1/=cons.sizeof()
+				for i=0;i<size1;i++
+					old.rewrite_ptr((void**)&(pairs[i].val))
+					old.rewrite_ptr((void**)&(pairs[i].id))
+			i+=len1-1
+	}	
+	void** sp=NULL
+	root_ptrs().each v,,i => old.rewrite_ptr(v)
+	memset(old->types,0,old->blocks)
+
+	old->free=old->blocks
+	memset(old->types,0,old->blocks)
+}
+int copy_page(mempage* from,mempage* to){
+	if _gc => "\nCopying mempage %d=>%d".printf(from->no,to->no)
+	for i1=0;i1<from->blocks;i1++
+		char type1=from->types[i1]
+		type1 &= (31)
+		if !type1 => continue
+		len=1
+		while(from->types[i1+len] & (1<<6)) len++
+		size=len*from->block_size
+		void* ptr=from->page+i1*from->block_size
+		void* ret=to.page_alloc(size,type1)
+		ret.assert()
+		ret.memcpy(ptr,size)
+		*(void**)ptr=ret
+		assert(ret.ptr_type()==type1 && ret.mem_size()>=size)
+		i1+=len-1
+	
+	from.rewrite_ptrs()
+	"End copy mempage".printf()
+	return 0
+}
+int page_map(mempage* pg){
+	if pg->blocks==1
+		"[---- %d KB / %d KB ----]\n".printf(pg->free * pg->block_size / 1024,pg->block_size/1024)
+		return 0
+	
+	"[".printf()
+	int skip=pg->blocks/80
+	int cont=0
+	for int i=0;i<pg->blocks;i++
+		char type=pg->types[i]
+		if skip && i%skip => continue
+		if type & (1<<6)
+			"=".printf()
+			continue
+		type &=(31)
+		if !type => ".".printf()
+		else if type==String => :s.printf()
+		else if type==Map => :m.printf()
+		else if type==Vector => :v.printf()
+		else if type==Cell => :v.printf()
+		else if type==Cell2 => :m.printf()
+		else if type==Tail => :t.printf()
+		else "?".printf()
+	"]:%d %d*%d=%d KB/%d%%\n".printf(pg->no, pg->blocks,pg->block_size,pg->block_size * pg->blocks / 1024,(pg->blocks-pg->free)*100/pg->blocks)
+	return 0
+}
+int dump_chain(mempage* pg,int line){
+	"________________ line=%d, page=%d, free=%d/%d\n".printf(line,pg->no,pg->free,pg->blocks)
+	for int i=0; i<pg->chains.len; i++
+		"%d => %p\n".printf(*(int*)(pg->chains.vars[i]),pg->chains.vars[i])
+	"----------------\n".printf()
+	assert(0)
+//	"Chain fox_error".fox_error()
+	return 0
+}
+int check_chains(mempage* pg,int line=__LINE__){
+	for int i=1; i<pg->chains.len; i++
+		if *(int*)(pg->chains.vars[i])<MIN_CHAIN
+			pg.dump_chain(line)
+		if !(*(int*)(pg->chains.vars[i])<=*(int*)(pg->chains.vars[i-1]))
+			pg.dump_chain(line)
+		if *(int*)(pg->chains.vars[i])==*(int*)(pg->chains.vars[i-1])
+			if !(pg->chains.vars[i]>pg->chains.vars[i-1])
+				pg.dump_chain(line)
+//	"sort ok on %d points\n".printf(pg->chains.len)
+	return 0
+}
+int total_kb() => return _gcdata.max_mem/1024
+int page_maps(char* title=""){
+	"%s\n".printf(title)
+	pg.each_mem(mem_i) pg.page_map()
+	return 0
+}
+map* vec_del(map* mp,int from,int len=1){
+	if !mp.map_len() => return NULL
+	assert(mp.is_vec())
+	if from<0 => from+=mp->len
+	if len<=0 => len+=mp->len
+	assert(from>=0 && len>0)
+	assert(from<mp->len)
+	//assert(from+len<=mp->len);// fix it by, len=mp->len-from
+	if from+len>mp->len => len=mp->len-from
+	int rest=mp->len-(from+len)
+	if rest => for(int i=0;i<len;i++) mp[i+from]=&skip
+	else mp->len-=len
+	return mp
+}
+map* vec_shift(map* mp,int idx,int len,int offset){
+	if !mp => return mp
+	if mp->len<idx+len => len=mp->len-idx
+	if !len => return mp
+	int ofrom=offset<0 ? offset+idx : idx+len
+	int olen=offset.abs()
+	assert(ofrom>=0 && ofrom<mp->len)
+	map* old=mp.vec_sub(ofrom,olen)
+	memmove(mp->vars+ofrom,mp->vars+idx,olen*sizeof(void*))
+	int ointo=offset<0 ? ofrom+len : idx
+	memcpy(mp->vars+ointo,old->vars,old->len*sizeof(void*))
+	return mp
+}
+map* vec_sub(map* mp,int from,int len=0){
+	if from<0 => from=0
+	if !mp => return NULL
+	if mp.ptr_type()!=Vector => return mp
+	if from>mp->len => from=mp->len; len=0
+	else if from+len>mp->len => len=mp->len-from
+	if !len => len=mp->len-from
+	if len<=0 => return NULL
+	map* ret=[]
+	ret.vec_realloc(len);	
+	memcpy(ret->vars,mp->vars+from,sizeof(void*)*len)
+	ret->len=len
+	return ret
+}
+map* vec_slice(map* mp,int from,int len=0){
+	map* ret=mp.vec_sub(from,len)
+	mp.vec_del(from,len)
+	return ret
+}
+map* map_splice(map* mp,int from,int del,map* ad){
+	ret={}
+	mp.each v,k,idx
+		if idx==from
+			ad.each v2,k2,idx2
+				if k2.is_str()
+					if !mp[k2] => ret[k2]=v2
+				else ret[]=v2
+		if idx>=from && idx<from+del => continue
+		if k.is_str()
+			if !mp[k] => ret[k]=v
+		else ret[]=v
+	return ret
+}
+void* vec_pop(map* mp){
+	if !mp||!mp->len => return NULL
+	void* ret=mp[mp->len-1]
+	mp.vec_del(mp->len-1)
+	return ret
+}
+map* vec_splice(map* mp,int from,int del,map* add){
+	if !mp => return mp
+	assert(mp.ptr_type()==Vector)
+	if from < 0 => from+=mp->len
+	assert(del>=0)
+	assert(from>=0 && from<=mp->len)
+
+	int inc=add ? add->len : 0
+	int len=mp->len
+
+	if from>len => from=len; del=0
+	else if from+del>len => del=len-from
+
+	int offset=inc-del
+	if offset>0 => mp.vec_realloc(offset)
+
+	int moved=len-(from+del)
+	if offset && moved => memmove(mp->vars+from+inc,mp->vars+from+del,sizeof(void*)*moved)
+	if add => memcpy(mp->vars+from,add->vars,add->len*sizeof(void*))
+	mp->len+=offset
+	if offset<0 => memset(mp->vars+mp->len,0,sizeof(void*)*offset*-1)
+	return mp
+}
+char* str_has(char* str,char* sub){
+	if !str||!sub||!str.is_str() => return NULL
+	return str.strstr(sub)
+}
+void gotoxy(int x,int y){
+	_printed=1
+	"%c[%d;%df".printf(0x1B,y,x)
+}
+int floor_pow2(int i){
+	if !i => return 0
+	int ret=1
+	while(i>>=1) ret<<=1
+	return ret
+}
+map* vec_dup(map* mp){
+	if !mp||!mp->len => return []
+	map* ret=[]
+	ret.vec_realloc(mp->len)
+	memcpy(ret->vars,mp->vars,mp->len*sizeof(void*))
+	ret->len=mp->len
+	return ret
+}
+map* map_dup(map* mp){
+	if !mp => return NULL
+	ret={}
+	if !mp.map_len() => return ret
+	assert(mp.ptr_type()==Map)
+	ret->pairs=fox_alloc(mp.map_size()*cons.sizeof(),Cell2)
+	memcpy(ret->pairs,mp->pairs,mp.map_size()*cons.sizeof())
+	ret->len=mp->len
+	return ret
+}
+map* map_merge(map* mp1,map* mp2){
+	if !mp1 => mp1={}
+	mp2.each v ,k,idx=> mp1.map_add(k.is_int() ? NULL : k,v)
+	return mp1
+}
+map* vec_merge(map* mp1,map* mp2){
+	if !mp2 => return mp1
+	if !mp1 => return mp2.vec_dup()
+	mp1.vec_realloc(mp2->len)
+	memcpy(((char*)mp1->vars)+mp1->len*sizeof(void*),mp2->vars,mp2->len*sizeof(void*))
+	mp1->len+=mp2->len
+	return mp1
+}
+int utest(char* found,char* expect,char* in="",char* title=""){
+	if expect==found => return 0
+	expect=expect.to_str()
+	found=found.to_str()
+	if !expect.str_len() && !found.str_len() => return 0
+	if expect===found => return 0
+	"
+	TEST: $title
+	[IN]_______________________
+	$in
+	[CORRECT]__________________
+	$expect
+	[WRONG]
+	$found
+	[DIFF]_____________________
+	$(in.str_quote())
+	$(expect.str_quote())
+	$(found.str_quote())
+	_______________________________________________[ERROR]
+	".px()
+	return -1
+}
+map* map_compact(map* mp){
+	if !mp || mp.ptr_type()!=Map => return mp
+	off=0
+	i=0
+	for i=0;i+off<mp->len;i++
+		while(i+off<mp->len && mp->pairs[i+off].id==(char*)&skip) off++
+		if i+off>=mp->len => break
+		if off => mp->pairs[i]=mp->pairs[i+off]
+	mp->len-=off
+	if off => mp.map_reindex()
+	return mp
+}
+map* vec_reverse(map* mp){
+	if !mp => return mp
+	int len=mp->len
+	for i=0; i<len/2; i++
+		void* temp=mp->vars[len-i-1]
+		mp->vars[len-i-1]=mp->vars[i]
+		mp->vars[i]=temp
+	return mp
+}
+map* vec_compact(map* mp){
+	if !mp || mp.ptr_type()!=Vector => return mp
+	off=0
+	i=0
+	for i=0;i+off<mp->len;i++
+		while(i+off<mp->len && mp->vars[i+off]==&skip) off++
+		if i+off>=mp->len => break
+		if off => mp->vars[i]=mp->vars[i+off]
+	
+	while(i<mp->len) mp->vars[i++]=NULL
+	mp->len-=off
+	return mp
+}
+map* change_key(map* mp,int idx,char* id){
+	if !mp => return mp
+	assert(idx>=0 && idx<=mp->len)
+	assert(mp.ptr_type()==Map)
+	if mp.key_eq(idx,id) => return mp
+	mp.del_index(idx)
+	mp.map_del(mp.map_has_key(id)-1)
+	mp->pairs[idx].id=id
+	mp.map_index(idx)
+	return mp
+}
+char* old_decl_type(map* mp,int idx){
+	int from=mp.stm_start(idx,"{};,().>:=><!&-+/?")
+	for int i=from;i<idx;i+=2
+		if mp[i].is_word("int long double char void struct map static extern unsigned register mempage size_t time_t const")
+			return mp.vec_sub(from,idx-from-1).toks_c()
+	return NULL
+}
+map* add_id(map* mp,int idx){
+	if !mp[idx].is_map() => mp[idx]={}
+	return mp[idx]
+}
+map* add_key(map* mp,char* k,int type=Map){
+	if !mp[k].is_map() => mp[k]=type==Vector ? [] : {}
+	return mp[k]
+}
+char* str_upper(char* s){
+	char* ret=s
+	for(;*s;++s) *s=toupper(*s)
+	return ret
+}
+char* str_lower(char* s){
+	char* ret=s
+	for(;*s;++s) *s=tolower(*s)
+	return ret
+}
+map* str_split(char* str,char* by,int limit=0){
+	if !str => return NULL
+	map* ret=[]
+	char* head=str
+	char* end=NULL
+	int found=0
+	while (end=head.str_has(by))
+		ret[]=head.substr(0,end-head)
+		head=end+by.str_len()
+		if limit && ++found==limit-1 => break
+	
+	ret[]=head.str_dup(); //head.str_dup()
+	return ret
+}
+char* toks_str(map* mp){
+	ret=''
+	mp.each val => ret.=val.is_map() ? val.toks_str() : val
+	return ret
+}
+char* map_join(map* mp,char* joiner=""){
+	if !mp.is_map() => return mp.to_str()
+	char* ret=NULL
+	mp.each v,,idx
+		if idx => ret.=joiner
+		if v.is_map() => ret.=v.map_join(joiner)
+		else ret.=v.to_str()
+	
+	return ret
+}
+char fox_at(char* str,int idx){
+	if !str || !str.is_str() => return '\0'
+	if(idx<0) idx+=str.str_len()
+	return idx<str_len(str) ? str[idx] : '\0'
+}
+char* indent_str(int i){
+	char* ret=fox_alloc(i+2,String)
+	ret.memset('\t',i+1)
+	ret[0]='\n'
+	return ret
+}
+int str_chars(char* str,char* chars){
+	if !str || !chars || !str.is_str() => return 0
+	int len1=str.strlen()
+	int len2=chars.strlen()
+	for i=0;i<len1;i++
+		for j=0;j<len2;j++
+			if str[i]==chars[j] => return 1
+	return 0
+}
+char* map_str(map* mp) => return mp.map_str_indent(0)
+char* map_str_indent(map* mp,int indent){
+	char* ret=NULL
+	if !mp => return ret
+	int type=mp.ptr_type()
+	char* istr="\t".str_times(indent)
+	mp.each v,k,i
+		ret.=istr
+		if v.is_map()
+			if v.ptr_type()!=Vector && v.type
+				ret=ret.xcat(k,"=:",v.type)
+				v.each v2,k2,i2
+					if k2===:type || k2===:name && v.type
+						continue
+					else if v2.is_map()
+						ret=ret.xcat(" ",k2,"=",v2.json())
+					else if !v2 || k2===v2 || v2.is_int()==1
+						ret=ret.xcat(" ",k2)
+					else if v2.is_code()
+						ret=ret.xcat(" ",k2,"=",v2)
+					else if v2.is_i()
+						if v2.is_int()
+							ret=ret.xcat(" ",k2,"=#",v2.is_int())
+					else
+						ret=ret.xcat(" ",k2,"=",v2.str_quote())
+				ret.="\n"
+			else
+				int eq=0
+				if type==Vector||k.is_int() => ret.="="; eq=1
+				else ret.=k
+				if v.ptr_type()==Vector
+					if !eq => ret.="="
+					ret.="[]"
+				
+				char* bl=v.map_str_indent(indent+1)
+				if bl => ret.="\n"..bl
+		else if type==Vector||k.is_int()
+			ret.=v.to_str().."\n"
+		else if v.is_i() => ret=ret.xcat(k,"=#",v.is_int(),"\n")
+		else if v.is_str()
+			if v.strchr('\n')
+				ret=ret.xcat(k,"=|\n")
+				v.str_split("\n").each v2,k2,i2
+					ret=ret.xcat("\t".str_times(indent+1),v2,"\n")
+			else
+				marker="\\"
+				if is_alpha(v.fox_at(0)) => marker=NULL
+				ret=ret.xcat(k,"=",marker,v,"\n")
+	
+	return ret
+}
+map* dir_files(char* path){
+	if !path => return NULL
+	DIR *d=opendir(path)
+	if !d => return NULL
+	map* ret=[]
+	struct dirent *dir
+	char* padd=""
+	if path!=="."
+		padd=path
+		if padd.fox_at(-1)!='/' => padd.="/"
+	
+	while (dir=d.readdir())
+		char* name=dir->d_name
+		if name.is_word(". ..") => continue
+		ret[]="%s%s".mstr(padd,name)
+		
+	d.closedir()
+	return ret
+}
+char* end_word(char* str,char* words){
+	if !str||!words => return NULL
+	char* word=words.str_dup()
+	int total=word.terminate_words()
+	for int i=0;i<total;i++
+		char* ret=str.str_end(word)
+		if ret => return ret
+		word+=word.str_len()+1
+	
+	return NULL
+}
+char* has_word(char* str,char* words){
+	if !str||!words => return NULL
+	char* word=words.str_dup()
+	int total=word.terminate_words()
+	for int i=0;i<total;i++
+		char* ret=str.strstr(word)
+		if ret => return ret
+		word+=word.str_len()+1
+	
+	return NULL
+}
+int is_word(char* word,char* list){
+	assert(list)
+	assert(list.is_str())
+	if !word.is_str() => return 0
+	char* ret=list
+	while (ret=ret.str_has(word))
+		if ret && (ret==list||ret[-1]==' ') && (ret[word.strlen()]==' '||!ret[word.strlen()]) => return ret-list+1
+		ret+=word.strlen()
+	return 0
+}
+int terminate_words(char* in){//Takes a string and adds NULL between eash words. Returns total number of words terminated with NULL
+	if !in => return 0
+	char* s=in
+	int ret=1
+	for(;*s;s++) if *s==' ' => ret++; *s='\0'
+	return ret
+}
+map* map_vec(map* mp){
+	if mp.ptr_type()==Vector => return mp
+	map* ret=[]
+	mp.each v,,i => ret[]=v
+	return ret
+}
+map* toks_keywords(map* mp,char* keywords){
+	if !mp => return mp
+	map* ret={}
+	map* curr=[]
+	curr_key=''
+	mp.each ,,i
+		if mp[i].is_word(keywords)
+			if curr->len
+				ret[curr_key]=curr.toks_align()
+				curr=[]
+			curr_key=mp[i]
+			continue
+		curr[]=mp[i]
+	if curr->len => ret[curr_key]=curr.toks_align()
+	return ret
+}
+map* map_split(map* mp,char* str,int limit=0){
+	if !mp => return mp
+	if limit==1 => return mp.map_vec()
+	map* ret=[]
+	map* curr=[]
+	mp.each ,,i
+		if mp[i]===str
+			if curr->len
+				ret[]=curr
+				curr=[]
+			if limit==1 => break
+			limit--
+			continue
+		curr[]=mp[i]
+	if curr->len => ret[]=curr
+	return ret
+}
+size_t file_time(char* file){
+	struct stat statbuf
+	if stat(file,&statbuf)==-1
+		perror(file)
+		return 0
+	
+	return statbuf.st_mtime
+}
+int is_num(char c) => return (c>='0' && c<='9') || c=='.' || c=='-' || c=='+'
+int is_alphanum(char c,char* others=NULL){
+	if (c>='a' && c<='z') || (c>='A' && c<='Z') || (c>='0' && c<='9') || c=='_' => return 1
+	if others && others.strchr(c) => return 1
+	return 0
+}
+int is_alpha(char c,char* others=NULL){
+	if c>='a' && c<='z' || c>='A' && c<='Z' || c=='_' => return 1
+	if others && others.strchr(c) => return 1
+	return 0
+}
+int is_oper(char c) => return "~!@#$%^&*-=+|<>?/\\}]).".strchr(c) ? 1 : 0
+int str_is_oper(char* str){
+	if !str_len(str) => return 0
+	while(*str++) if !"~!@#$%^&*-=+|:<>?/\\{[(}]),.".strchr(str[-1]) => return 0
+	return 1
+}
+int str_is_num(char* str){
+	if !str_len(str) => return 0
+	while(*str++) if !is_num(str[-1]) => return 0
+	return 1
+}
+int is_code(char* str){
+	if !str_len(str) => return 0
+	if !is_alpha(*str) => return 0
+	while(*++str) if !is_alphanum(*str) => return 0
+	return 1
+}
+char* read_num(char** in){
+	char* str=*in
+	str++
+	while(*str && *str>='0' && *str<='9') str++
+	char* from=*in
+	*in=str-1
+	return from.substr(0,str-from)
+}
+char* skip_over(char* in,char* chars=" \t\n\r"){
+	while(*in && chars.strchr(*in)) in++
+	return in
+}
+char* skip_word(char* in,char* seperators=" \t\r\n,"){
+	if !in || !*in => return in
+	term='\0'
+	counter=0
+	opener='\0'
+	if "[({".strchr(*in) => opener=*in;
+	if "\"'`".strchr(*in) => term=*in; in++
+	else if *in=='[' => term=']'; in++
+	else if *in=='(' => term=')'; in++
+	else if *in=='{' => term='}'; in++
+	while *in
+		if opener
+			if "\"'`".strchr(*in) => in=in.skip_word(seperators); continue
+			else if *in==opener => counter++
+		if *in==term
+			if !counter => in++; break
+			counter--
+		else if !term && seperators.strchr(*in) => break
+		else if *in=='\\' && in[1] => in++
+		in++
+	return in
+}
+void* read_value(char** str, char* sep){
+	if **str=='{'||**str=='[' => return xjson_map_recurse(str)
+	from=*str
+	*str=from.skip_word(sep)
+	ret=from.substr(0,*str-from)
+	return ret ? ret : :null
+}
+char* read_upto(char** in,char* terminators){
+	str=*in
+	isquote=0
+	if *str=='"' => terminators="\""; str++
+	else if *str=='\'' => terminators="'"; str++
+	while(*str && !terminators.strchr(*str))
+		if *str=='\\' && str[1] => str++
+		str++
+	if (*terminators=='\'' || *terminators=='"') && *str==*terminators => str++
+	from=*in
+	*in=str
+	return from.substr(0,str-from)
+}
+char* read_alpha(char** in){
+	str=*in
+	str++
+	while(*str && is_alphanum(*str)) str++
+	from=*in
+	*in=str-1
+	return from.substr(0,str-from)
+}
+char* fox_read_symbol(char** in){
+	str=*in
+	str++
+	while *str
+		if *str=='\\'
+			str+=2
+			continue
+		if !is_alphanum(*str) => break
+		str++
+	from=*in
+	*in=str-1
+	return from.substr(0,str-from)
+}
+char* fox_read_oper(char** in,char term){
+	str=*in
+	from=*in
+	while(*str && is_oper(*str) && *str!=term) str++
+	ret=from.substr(0,str-from)
+	less=0
+	while ret.strlen() && !ret.is_word("~ ! @ # $ % ^ & * - = + | < > ? / \\ } ] ) . != >= <= += -= /= *= || && << >> => ++ -- ** *** **** |= &= >>= <<= ^^ ... -> == === !== .= ..")
+		ret[ret.strlen()-1]='\0'
+		less++
+	*in=str-1-less
+	return ret
+}
+char* read_upto_word(char** in,char* upto){
+	str=*in
+	while(*str && !str.str_start(upto)) str++
+	from=*in
+	if *str
+		*in=str+upto.strlen()-1
+		return from.substr(0,str-from+upto.strlen())
+	else
+		*in=str-1
+		return from.substr(0,str-from)
+}
+char* read_theline(char** in){
+	if !in||!*in||!**in => return NULL
+	str=*in
+	while(*str && !"\n\r".strchr(*str)) str++
+	if *str=='\r' && str[1]=='\n' => str++
+	from=*in
+	*in=str-1
+	return from.substr(0,str-from)
+}
+char* read_newline(char** in){
+	str=*in
+	while(*str && "\n\r".strchr(*str)) str++
+	from=*in
+	*in=str-1
+	return from.substr(0,str-from)
+}
+char* read_space(char** in){
+	str=*in
+	while(*str && " \t".strchr(*str)) str++
+	from=*in
+	*in=str-1
+	return from.substr(0,str-from)
+}
+char* read_heredoc(char** in){
+	str=*in
+	len=str.line_len()
+	hd=str.substr(0,len).str_trim()
+	from=*in
+	lno=0
+	str+=len
+	tabs=str.str_level()
+	str+=tabs
+	while *str && !str.str_start(hd)
+		len=str.line_len()
+		tabs=(str+len).str_level()
+		str+=len+tabs
+	if *str => str+=hd.str_len()-1
+	*in=str
+	return from.substr(0,str-from+1)
+}
+char* read_multistr(char** in){
+	str=*in
+	end=*str
+	hd=''
+	from=*in
+	lno=0
+	word_start=''
+	str++
+	while *str
+		if *str=='\\' => if(!hd) str++
+		else if *str==end => if(!hd) break
+		else if *str=='\n'||*str=='\r'
+			if !lno && word_start
+				hd=word_start.substr(0,str-word_start)
+			lno++
+			word_start=NULL
+		else if *str!=' ' && *str!='\t'
+			if !word_start
+				word_start=str
+				if hd && lno && str.str_start(hd) && str[hd.str_len()]==end
+					str+=hd.str_len()
+					break
+		str++
+	*in=str
+	return from.substr(0,str-from+1)
+}
+char* read_quote(char** in){
+	str=*in
+	end=*str
+	str++
+	while *str
+		if *str=='\\' => str++
+		else if *str==end => break
+		str++
+	
+	from=*in
+	*in=str
+	return from.substr(0,str-from+1)
+}
+map* tokenizer(char** line,char* comment){
+	str=*line
+	mp=[]
+	if !*str => return mp
+	term=*str
+	if term=='(' => term=')'
+	else if term=='[' => term=']'
+	else if term=='{' => term='}'
+	else term=0
+	if term => str++
+	while *str && *str!=term
+		if "\"'`".strchr(*str) => mp[]=read_quote(&str)
+		else if str.str_start("--") => read_theline(&str)
+		else if str.str_start("#") => mp[]=read_theline(&str)
+		else if str.str_start("/*") => read_upto_word(&str,"*/")
+		else if *str==':' => mp[]=fox_read_symbol(&str)
+		else if is_oper(*str) => mp[]=fox_read_oper(&str,term)
+		else if *str>='0' && *str<='9' => mp[]=read_num(&str)
+		else if is_alpha(*str) => mp[]=read_alpha(&str)
+		else if "([{".strchr(*str)
+			char temp[2]={0}
+			temp[0]=*str
+			signs="([{)]}"
+			int hit=signs-signs.strchr(*str)
+			mp[]=temp
+			mp[]=tokenizer(&str,comment)
+			temp[0]=signs[hit+3]
+			mp[]=temp
+		
+		else if " \t".strchr(*str) => read_space(&str)
+		else if "\n\r".strchr(*str) => read_newline(&str)
+		else if ".,;".strchr(*str) => mp[]=str.substr(0,1)
+		str++
+		
+	*line=str
+	return mp
+}
+char* xlog(char* str){
+	FILE* fp=fopen("/tmp/log.txt","a+")
+	fprintf(fp,"%s\n",str)
+	fclose(fp)
+	return str
+}
+char closing_paren(char c) => switch(c) => case '{': return '}'; case '[': return ']'; case '(': return ')'; default: return '\0'
+char char_at(char* str,int i=0){
+	if !str || !str.is_str() => return '\0'
+	if !i => return *str
+	if i>0 && i<str.str_len() => return str[i]
+	return '\0'
+}
+char* char_str(char c){
+	char ret[2]={0}
+	ret[0]=c
+	ret[1]='\0'
+	char* str=ret.str_dup()
+	assert(str.str_len()==1)
+	return str
+}
+int map_has_word(map* mp,char* str){
+	mp.each v,,idx => if v===str => return idx+1
+	return 0
+}
+int is_keyword(char* str) => return str.is_word("abstract and as break callable case catch class clone const continue declare default do echo else elseif enddeclare endfor endforeach endif endswitch endwhile extends final for foreach def function global goto if implements include include_once instanceof insteadof interface namespace new or private protected public require require_once return static switch throw trait try use while xor yield false true null")
+char* toks_c(map* mp){
+	char* ret=NULL
+	if !mp => return ret
+	mp.each ,,i
+		if mp[i].is_map()
+			ret.=mp[i].toks_c()
+			continue
+		char* str=mp[i].is_str()
+		assert(str || !mp[i].is_str())
+		if !str => continue
+		ret.=mp[i]
+	return ret
+}
+map* add_ctok(void* data,map* mp,int iscode){
+	if !data => return mp
+	data.assert()
+	assert(mp.ptr_type()==Vector)
+	int incode=!(mp->len%2)
+	if incode && iscode
+		mp[]=NULL
+		mp[]=data
+	else if incode && !iscode => mp[]=data
+	else if !incode && !iscode
+		if mp->len
+			char* old=mp[mp->len-1].is_str()
+			mp->vars[mp->len-1]=old..data
+		else mp[]=data
+	else if !incode && iscode => mp[]=data
+	return mp
+}
+map* c_tokenizer(char** line,char term){
+	if !line||!*line||!**line => return NULL
+	char* head=*line
+	int headlen=head.str_len()
+	char* expected_end=head+head.str_len()
+	char* str=*line
+	map* mp=[]
+	char* space=NULL
+	int code=0
+	char* last=NULL
+	while *str && *str!=term
+		assert(last!=str)
+		assert(head.str_len()==headlen)
+		last=str
+		if str.str_start("//") => read_theline(&str).add_ctok(mp,0)
+		else if str.str_start("/*") => read_upto_word(&str,"*/").add_ctok(mp,0)
+		else if str.str_start("#") => read_theline(&str).add_ctok(mp,0)
+		else if " \t".strchr(*str) => read_space(&str).add_ctok(mp,0)
+		else if "\n\r".strchr(*str) => read_newline(&str).add_ctok(mp,0)
+		else if "\"'".strchr(*str) => read_multistr(&str).add_ctok(mp,1)
+		else if str.str_start("---") => read_heredoc(&str).add_ctok(mp,1)
+		else if "\"'`".strchr(*str) => read_quote(&str).add_ctok(mp,1)
+		else if *str==':' => fox_read_symbol(&str).add_ctok(mp,1)
+		else if is_oper(*str) => fox_read_oper(&str,term).add_ctok(mp,1)
+		else if *str>='0' && *str<='9' => read_num(&str).add_ctok(mp,1)
+		else if is_alpha(*str) => read_alpha(&str).add_ctok(mp,1)
+		else if "([{".strchr(*str)
+			char c=*str
+			str++
+			c.char_str().add_ctok(mp,1)
+			c_tokenizer(&str,c.closing_paren()).add_ctok(mp,1)
+			if *str => c.closing_paren().char_str().add_ctok(mp,1)
+		else if ','==*str => str.substr(0,1).add_ctok(mp,1)
+		else if ';'==*str => str.substr(0,1).add_ctok(mp,1)
+		if *str => str++
+	assert(term || str==expected_end)
+	*line=str
+	return mp
+}
+int func_dot(map* mp,int idx){
+	idx++
+	if mp[idx]!=="(" => return idx
+	if !mp[idx-2].is_str().is_code() => return idx
+	if mp[idx-4]==="." => return idx
+	if mp[idx-2].is_str().is_keyword() => return idx
+	map* params=mp[idx+2].is_map()
+	if !params->len => return idx
+	if params[1].ptr_type()!=String && !params[1].is_str().is_code() => return idx
+	int len=2
+	while 1
+		char* s=params[len+1].is_str()
+		if s.is_word("( [ {") => len+=6
+		else if s.is_word(". ->") || s.is_code() => len+=2
+		else break
+	
+	if params->len>len && params[len+1]!=="," => return idx
+	map* out=params.vec_slice(1,len-1)
+	params.vec_del(0,1)
+	if params->len>len => params.vec_del(len,2)
+	vec_compact(params)
+	out.xadd(NULL,".",NULL)
+	mp.vec_splice(idx-1-1,0,out)
+	mp.vec_compact()
+	return idx-3
+}
+map* heredoc_parts(char* str){
+	if !str.is_str() => return NULL
+	if !((*str=='\'' && str.strchr('\n'))||(*str=='"' && str[1]!='"' && str.strchr('\n'))||str.str_start("---")) => return NULL
+	lines=str.str_split("\n",0)
+	indent=0
+	end=str+str.str_len()-1
+	while(end>str){ if("\t\n\r".strchr(*end)) break; end--; }
+	while(end>str){ if(*end!='\t') break; end--; indent++; }
+	tabs="\t".str_times(indent).null_str()
+	parts=["\"\""]
+	lines.each v,,i
+		if i==0 => continue
+		if i==lines->len-1 => continue
+		int cut=v.str_level()
+		if cut>indent => cut=indent;	
+		char* nl="\\n"
+		if i==lines->len-2 => nl=""
+		parts[]="\n"..tabs
+		parts[]="\"%s%s\"".mstr(v.sub_str(cut,0).str_escape(),nl)
+	parts.xadd("\n"..tabs,"\"\"")
+	return parts
+}
+map* heredoc_vars(map* mp){
+	for int idx=2; idx<mp.map_len(); idx+=2
+		char* str=mp[idx].is_str()
+		if !str => continue
+		if *str=='"' && str.str_hasvar()
+			subs=str.str_xstr().x_map().colon_str().dot_key().vec_sub(1)
+			mp.vec_splice(idx,1,subs)
+			idx+=subs.map_len()-1
+	return mp
+}
+map* heredoc_str(map* mp){
+	for int idx=1; idx<mp.map_len(); idx+=2
+		if mp[idx].is_map() => mp[idx].heredoc_str()
+		parts=mp[idx].heredoc_parts()
+		if !parts => continue
+		mp.vec_splice(idx,1,parts)
+	return mp
+}
+map* dot_each(map* mp){
+	int temp=0
+	for int idx=1; idx<=mp->len; idx+=2
+		if mp[idx].is_map() => mp[idx].dot_each()
+		if idx<2 || !mp[idx-2].is_str().is_word("each each_mem")
+			continue
+		map* params=mp[idx+2].is_map().toks_split(",")
+		map* newp=mp[idx+2].is_map().toks_split(",")
+		if params[0].map_len()>=4
+			temp++
+			temp_name=:map_..temp.int_str()
+			map* pre=xcat("map* ",temp_name.."=",params[0].toks_c(),"; ").x_map().vec_del(0).vec_compact()
+			newp[0]=temp_name.x_map()
+			mp[idx+2]=newp.toks_join(",")
+			mp.vec_splice(idx-2,0,pre)
+			assert(mp[pre.map_len()-3+idx]===" ")
+		if mp[idx-2]===:each
+			next1=:next1
+			start="-1"
+			upto=''
+			step="++"
+			if params[3][1]
+				incs=params[3].toks_keywords("= to step")
+				next1=incs[0].toks_c()
+				if incs["="]
+					start=incs["="].toks_c().str_trim()
+					if start.is_numeric() => start=(start.to_int()-1).to_str()
+					else start.="-1"
+					if incs.to
+						upto=" $next1<="..incs.to.toks_c().str_trim().." &&"
+					if incs.step
+						step=incs.step.toks_c().str_trim()
+						if step.is_numeric() && step.to_int()==1 => step="++"
+						else if step[0]=='-'
+							step="-="..(step+1)
+						else step="+="..step
+
+			mpname=params[0].toks_c()
+			expr="int $next1=next($mpname,$start);$upto has_id($mpname,$next1); $next1$step"
+			mp[idx-2]=:for
+			mp[idx+2]=expr.x_map()
+			expr=''
+			if params[1][1]
+				if params[1].map_len()<=2 => expr.=" void* "
+				else expr.=" "
+				expr.=params[1].toks_c().."=map_id($mpname,$next1);"
+			if params[2][1]
+				expr.=" char* "..params[2].toks_c().."=map_key($mpname, $next1);"
+			mp[idx+8].vec_splice(0,0,expr.x_map())
+	return mp
+}
+map* map_implode(map* mp,char* joiner){
+	map* ret=[]
+	mp.each v,,i
+		if i>0 => ret[]=joiner
+		ret.vec_merge(v)
+	return ret
+}
+int tok_indent(char* str){
+	if !str => return 0
+	if !str.strchr('\n') => return 0
+	int ret=1
+	for int i=str.str_len()-1;i>=0;i--
+		if "\t ".strchr(str[i]) => ret++
+		else if "\n\r".strchr(str[i]) => break
+		else ret=1
+	
+	return ret
+}
+int has_chars(char* line){
+	if !line => return 0
+	for ;*line;line++ => if !"\n\r \t".strchr(*line) => return 1
+	return 0;	
+}
+int requires_semicolon(map* mp,int idx){
+	idx++
+	if idx<2 => return 0
+	if !mp[idx-1].str_chr('\n') => return 0
+	char* pre=mp[idx-2].is_str()
+	if !pre => return 0
+	char* post=mp[idx].is_str()
+	if pre==="}" && post.is_word(:else) => return 0
+	if post===")" => return 0
+	char* forbidden=";+=-/?:.&,|!%"
+	if (forbidden.strchr(pre.fox_at(-1))||post && forbidden.strchr(post[0])) && !pre.is_word("++ --") => return 0
+	return 1
+}
+map* add_semicolon(map* mp,int recurse=1){
+	if(!mp) return mp
+	for(int idx=1;idx<mp->len;idx+=2)
+		if recurse && mp[idx]==="{" && (mp[idx-2]===")" || mp[idx-2].is_keyword())
+			mp[idx+2].add_semicolon()
+			idx+=4
+			continue
+		if(mp.requires_semicolon(idx-1)) mp.vec_splice(idx-1,0,xvec(NULL,";"))//.vec_sub(idx-6,12).px()
+	if(!mp[mp->len-mp->len%2-1].is_word(";"))
+		mp.vec_splice(mp->len-mp->len%2,0,xvec(NULL,";"))
+	return mp
+}
+char* hello() => return :Hi
+int tok_endl(map* mp,int from){
+	for ;from<=mp->len;from+=2 => if(mp[from-1].is_str().str_chr('\n')) break
+	return from
+}
+map* force_curly(map* mp){
+	if !mp.is_map() => return mp
+	for int idx=1; idx<mp->len; idx+=2
+		if mp[idx].is_map() => mp[idx].force_curly()
+		char* w=mp[idx].is_str()
+		if !w => continue
+		if !w.is_word("if while for each do else each_mem")
+			continue
+		if w.is_word(:else) && mp[idx+2]===:if => continue
+		int curly_at=9
+		if w.is_word("else do") => curly_at=3
+		if w===:while && idx>8 && mp[idx-8]===:do => continue
+		if mp[idx+curly_at-1]==="{" => continue
+		oldidx=idx
+		idx+=curly_at
+		from=idx
+		if mp->len<from
+			if !(mp->len%2) => mp[]=" "
+			mp.xadd("{",NULL,NULL,NULL,"}",NULL,";")
+			continue
+		upto=idx
+		while upto<mp->len
+			if upto>mp->len
+				upto-=2
+				break
+			if mp[upto].tok_indent() => break
+			if(mp[upto-1]===";") => break
+			upto+=2
+		subs=[NULL]
+		subs.vec_merge(mp.vec_sub(from-1,upto-from+1))
+		if subs[subs.map_len()-subs.map_len()%2-1]!==";"
+			if !(subs.map_len()%2) => subs.xadd(NULL)
+			subs.xadd(";")
+		mp.vec_splice(from-1,upto-from+1,["{",NULL,subs,NULL,"}"])
+		idx=oldidx
+	return mp
+}
+map* add_curly(map* mp,int recursive=1){
+	for(int idx=1;idx<=mp->len;idx+=2)
+		if(mp[idx]==="=>")
+			int from=idx
+			int upto=mp.tok_endl(idx+2)
+			mp.vec_splice(from-1,upto-from,xvec(NULL,"{",NULL,mp.vec_sub(from+1,upto-from-2)," ","}")).vec_compact()
+		if !recursive => continue
+		if(mp[idx]==="{")
+			mp[idx+2].add_curly()
+			idx+=4
+			continue
+		char* w=mp[idx].is_str()
+		if !w => continue
+		if !w.is_word("if while switch for each do else each_mem") => continue
+		if w.is_word(:else) && mp[idx+2]===:if && !mp[idx+1].block_level() => continue
+		int from=0
+		int upto=0
+		if(mp[idx+1].is_str().str_chr(' ') && !w.is_word("else do"))
+			from=idx+2
+			upto=mp->len-mp->len%2
+			for(int i=from;i<=mp->len;i+=2)
+				if(mp[i-1].tok_indent() || mp[i]==="=>")
+					upto=i-1
+					break
+			mp[idx+1]=NULL
+			map* sub=xvec( NULL,"(", NULL,mp.vec_sub(from-1,upto-from+1), NULL,")")
+			if w.is_word(:while) && mp[idx-2]==="}" && mp[idx-8]===:do
+				sub.xadd(NULL,";")
+			mp.vec_splice(from-1,upto-from+1,sub).vec_compact()
+
+		if idx>=8 && w.is_word(:while) && mp[idx-2]==="}" && mp[idx-8]===:do => continue
+
+		//if:1 (:3 x:5 ):7 {:9
+		int curly_at=9
+		if(w.is_word("else do")) curly_at=3
+		if(!mp[idx+curly_at-2].tok_indent() && mp[idx+curly_at-1]==="{") continue
+		if(!mp[idx+curly_at-2].tok_indent()) // "else i=3;"
+			continue
+		int curr_indent=0
+		for int i=idx;i>0;i-=2
+			int ind=mp[i-1].tok_indent()
+			if(!ind) continue
+			curr_indent=ind
+			break
+		if(!curr_indent && mp[0].str_level()) curr_indent=mp[0].str_level()+1
+		if(!curr_indent) curr_indent=1
+		from=idx+curly_at-1
+		upto=mp->len-mp->len%2
+		for(int i=from;i<=mp->len;i+=2)
+			int ind=mp[i-1].tok_indent()
+			if(ind && ind<=curr_indent)
+				upto=i-1
+				break
+		if(curr_indent) curr_indent--
+		char* space=" "
+		char* blankline=mp[upto]
+		char* tail=NULL
+		if(blankline)
+			map* lns=blankline.str_split("\n",3)
+			if(((lns->len==3||(lns->len==2 && mp->len==upto+1)) && !lns[1].has_chars()) || w.is_word(:do) || (w.is_word(:if) && mp[upto+1]===:else))
+				if(lns->len==3) tail="\n"..lns[2]
+				else tail=lns[2]
+				space=lns[0].."\n".."\t".str_times(curr_indent)
+				mp[upto]=tail
+		mp.vec_splice(from-1,upto-from+1,xvec(NULL,"{",NULL,mp.vec_sub(from-1,upto-from+1),space,"}")).vec_compact()
+	return mp
+}
+map* dot_key(map* mp){
+	return mp
+	for(int idx=1;idx<=mp.map_len();idx+=2)
+		if mp[idx].is_map() => mp[idx].dot_key(); continue
+		char* str=mp[idx].is_str()
+		if !str => continue
+		if idx>=2 && *str=='"' && mp[idx-2]==="."
+			mp.vec_splice(idx,1,xvec(:map_val,NULL,"(",NULL,xvec(NULL,str),NULL,")"))
+	return mp
+}
+int str_hasvar(char* in){
+	if !in => return 0
+	for int i=0; i<in.strlen(); i++
+		if in[i]!='$' => continue
+		if in[i+1].is_alpha("($") => return 1
+	return 0
+}
+char* str_mstr(char* in){
+	char* ret=fox_alloc(in.str_len()+1,String)
+	rethead=ret
+	char* type=NULL
+	str=in
+	params=[]
+	char* expr=NULL
+	for ;*str;str++
+		if *str=='%'	
+			if str[1]=='%'
+				str++
+			else
+				type=str+1
+		else if type && *str=='{'
+			if type==str
+				*ret++='s'
+			expr=str+1
+			type=NULL
+			continue
+		else if type && !"cdieEfgGosuxXpnhlL* +-#0123456789.".strchr(*str)
+			type=NULL
+		else if expr && *str=='}'
+			params[]=expr.sub_str(0,str-expr)
+			expr=NULL
+			continue
+		if !expr
+			*ret++=*str
+	if !params->len => return in
+	args=params.map_join(", ")
+	return "mstr($(rethead), $(args), End)"
+}
+map* xstr_parts(char* in){
+	ret=[]
+	char* tok=fox_alloc(in.str_len()+1,String)
+	tokhead=tok
+	incode=0
+	str=in
+	if "\"'".strchr(*str) => str=str.substr(1,-1)//.str_unquote()
+	while 1
+		if incode
+			if incode>1 && *str=='('
+				incode++
+			else if *str==')'
+				incode--
+				if incode==1 => incode=0; if *str => str++
+			else if incode==1 && !is_alphanum(*str)
+				incode=0
+			if !incode || !*str
+				*tok='\0'
+				if tokhead.str_len() => ret[]=tokhead.str_dup()
+				tok=tokhead
+		if !incode
+			if *str=='$'
+				if str[1]=='$'
+					str++
+				else if str[1].is_alpha()
+					incode=1
+					str++
+				else if str[1]=='('
+					incode=2
+					str+=2
+					if *str=='(' => incode++
+			if incode || !*str
+				*tok='\0'
+				if tokhead.str_len() => ret[]=tokhead.str_quote()
+				tok=tokhead
+		if !*str => break
+		*tok++=*str++
+	return ret
+}
+char* str_xstr(char* in){
+	parts=in.heredoc_parts()
+	if parts
+		nparts=[]
+		parts.each val,,idx
+			if idx%2 => continue
+			if !val.str_hasvar()
+				nparts[]=idx ? parts[idx-1]..val : val
+			else
+				xparts=val.str_unquote().xstr_parts()
+				if idx => xparts[0]=parts[idx-1]..xparts[0]
+				nparts.vec_merge(xparts)
+		ret="xstr(%s)".mstr(nparts.map_join(", "))
+		return ret
+			
+	ret=in.str_unquote().xstr_parts()
+	return ret.map_len()==1 ? ret[0] : "xstr(%s)".mstr(ret.map_join(", "))
+}
+map* str_dollars(map* mp){
+	if !mp => return mp
+	assert(mp.is_map())
+	for int idx=1; idx<mp.map_len(); idx+=2
+		if mp[idx].is_map()
+			mp[idx].str_dollars()
+			continue
+		char* str=mp[idx].is_str()
+		if !str => continue
+		if *str=='"' && str.str_hasvar()
+			subs=str.str_xstr().x_map().colon_str().dot_key().vec_sub(1)
+			mp.vec_splice(idx,1,subs)
+			idx+=subs.map_len()-1
+//		else if *str=='"' && str.strchr('%')
+//			subst=str.str_mstr()
+//			if *subst!='"' && *subst!='='
+//				map* subs=subst.x_map().colon_str().dot_key().vec_sub(1)
+//				mp.vec_splice(idx,1,subs)
+//				idx+=subs.map_len()-1
+	return mp
+}
+map* single_quotes(map* mp){
+	for(int idx=1;idx<=mp.map_len();idx+=2)
+		if mp[idx].is_map() => mp[idx].single_quotes(); continue
+		char* str=mp[idx].is_str()
+		if !str => continue
+		if str==="''"
+			mp[idx]=:NULL
+		else if *str=='\'' && (str.str_len()>4 || (str[1]!='\\' && str.str_len()>3))
+			*str='"'
+			str[str.str_len()-1]='"'
+	return mp
+}
+map* colon_str(map* mp){
+	for(int idx=1;idx<=mp.map_len();idx+=2)
+		if mp[idx].is_map() => mp[idx].colon_str(); continue
+		str=mp[idx].is_str()
+		if !str => continue
+		if str.str_len()>1 && *str==':'
+			str=str.sub_str(1).str_unquote().str_quote()
+			mp[idx]=str
+		if idx>=2 && *str=='"' && mp[idx-2]==="."
+			mp.vec_splice(idx,1,xvec(:map_val,NULL,"(",NULL,xvec(NULL,str),NULL,")"))
+	return mp
+}
+map* dot_func(map* mp){
+	for int i9=0;i9<mp.map_len();i9+=2
+		if mp[i9+1].is_map()
+			mp[i9+1].dot_func()
+			continue
+		idx=i9+1
+		if idx<=2 => continue
+		if mp[idx]!=="." => continue
+		if !mp[idx+2].is_str().is_code() => continue
+		if mp[idx+4]!=="(" => continue
+		int from=idx-2
+		while from>0
+			s=mp[from].is_str()
+			if !s => break
+			s2=mp[from+2].is_str()
+			if(s.is_word(") } ]") && s2.is_word(". -> [ ( {")) from-=6
+			else if(s.is_word(". ->") || *s=='"' || *s=='\'' || s.str_start("---")) from-=2
+			else if((s.is_code()||s.is_numeric()) && s2.is_word(". -> ( { [")) from-=2
+			else break
+		if mp[from+2]===:return => from+=2
+		if idx-from<=2 => continue
+		prespace=mp[idx-1].is_str()
+		mp.vec_del(idx-1,2).vec_compact()
+		from+=2
+		idx-=2
+		map* sub=mp.vec_slice(from,idx-from+2)
+		sub.each ,,idx2
+			if(sub[idx2].is_str().fox_at(0)==')' && sub[idx2+2].is_str().fox_at(0)=='(') sub.vec_shift(idx2+2,6,-idx2-2)
+			//if(sub[idx].is_str().fox_at(0)==')' && sub[idx+2].is_str().fox_at(0)=='(') sub.vec_shift(idx+2,6,-idx-2)
+			idx2++
+		map* params=mp[idx+6].is_map()
+		params.assert()
+		if !params => params=mp->vars[idx+6]=[]
+		if params->len => sub.xadd(",")
+		else sub.vec_del(sub->len-1,1).vec_compact()
+		map* sub1=[]
+		sub1[]=prespace
+		sub1.vec_merge(sub)
+		params.vec_splice(1-1,0,sub1)
+		params.vec_compact()
+		params.dot_func()
+		mp.vec_compact()
+		i9-=4
+	return mp
+}
+
+map* map_tox(map* mp){
+	if !mp => return mp
+	for int idx=1+next(mp,-1);idx;idx=1+next(mp,idx-1)
+		if idx%2-1
+			map* mp1=mp[idx-1].is_map()
+			if(mp1) mp1.map_tox()
+			continue
+		idx=mp.func_dot(idx-1)
+	return mp
+}
+int stm_end(map* mp,int idx,char* words="} ;",int including=1){
+	idx++
+	assert(idx<mp->len)
+	int from=idx
+	while idx<mp->len
+		if mp[idx].is_word(words)
+			if including
+				while mp[idx].is_word(words) => idx+=2
+			break
+		idx+=2
+	if idx>from => idx-=2
+	return idx
+}
+int stm_start(map* mp,int idx,char* terms="};,).>:"){
+	idx-=2
+	while idx>0
+		if terms.str_chr(mp[idx].fox_at(0)) => break
+		idx-=2
+	return idx+2
+}
+map* syn_func(map* syn,int with_body=0){
+	len=syn.map_len()
+	map* body=NULL
+	params_at=5
+	if syn[len-3]==="}"
+		body=syn[len-5]
+		params_at=11
+	params={}
+	mp1=syn[len-params_at].toks_split(",")
+	mp1.each v,,i2
+		param_name=v.syn_var_name()
+		param_type=v.syn_var_type()
+		void* param_default= v.is_assign() ? param_default=v.vec_sub(v.syn_assign_val()).toks_c() : NULL
+		if param_name!=="..." && !param_type
+			"$(syn[len-params_at-4])() parameter $param_name type not set".fox_error()
+		assert(param_name==="..." || param_type)
+		assert(param_name)
+		params[param_name]={type: param_type, default: param_default}
+	char* name=syn[len-params_at-4]
+	type=syn.vec_sub(1,len-params_at-6)
+	decltype=type.toks_c()
+	type.each v3,,i3
+		if v3.is_word(:inline) => type.vec_del(i3,2)
+	ret={name: name, type: type.toks_c(), decltype: decltype, params: params}
+	if with_body => ret.body=body
+	return ret
+}
+map* syn_funcs(map* mp,int with_body=0){
+	ret={}
+	for int i=1; i<mp.map_len(); i+=2
+		if mp[i].is_func_decl()
+			fn=mp[i].syn_func(with_body)
+			if fn.name===:main => continue
+			ret[fn.name]=fn
+//			"\nfunc: %s".dx(fn.name)
+	return ret
+}
+map* file_vec(char* in) => return in.fox_read_file().str_vec()
+map* file_map(char* in) => return in.fox_read_file().str_map()
+map* map_keys(map* mp){
+	map* ret=[]
+	mp.each ,k => ret[]=k
+	return ret
+}
+char* drop_right(char* str,char* w){
+	if w && w.is_str() && w.str_end(w) => return str.sub_str(-w.str_len())	
+	return str
+}
+char* drop_left(char* str,char* w){
+	if str && str.is_str() && str.str_start(w) => return str.sub_str(w.str_len())	
+	return str
+}
+map* read_struct(map* toks){
+	cols={}
+	toks.toks_split(";").each v,,i
+		if v.map_len()<2 => break
+		hascurly=v.next_tok(0,"{")
+		if hascurly
+			name=v[hascurly+6]
+			if name => cols[name]=v[hascurly+2].read_struct()
+			else cols.map_merge(v[hascurly+2].read_struct())
+		else
+			cols[v.syn_var_name()]=v.syn_var_type()
+	return cols		
+}
+map* c_structs(char* in){
+	ret={}
+	syn=in
+		.x_map()
+		.add_curly()
+		.add_semicolon()
+		.toks_syn(0)
+	for int i=1; i<syn->len; i+=2
+		if !syn[i][1].is_word("typedef struct union class") => continue
+		toks=syn[i]
+		hascurly=toks.next_tok(0,"{")	
+		if !hascurly
+			ret[toks.syn_var_name()]=toks.vec_sub(2).syn_var_type()
+			continue
+		istypedef=0
+		from=1
+		if toks[1]===:typedef	=> from+=2; istypedef=1
+		name=toks.vec_sub(from,hascurly-1-from).toks_c()
+		ret[name]=toks[hascurly+2].read_struct()
+		if istypedef
+			ret[toks[hascurly+6]]=ret[name]
+	return ret
+}
+map* x_funcs(char* in,int with_body=0){
+	return in.x_map()
+		.add_curly(0)
+		.add_semicolon(0)
+		.toks_syn(0)
+		.syn_funcs(with_body)
+}
+map* x_toks(char* in,int is_script=0){
+	if !in => return NULL
+	return in.x_map()
+		.colon_str()
+		.dot_key()
+		.str_dollars()
+		.add_curly()
+		.force_curly()
+		.add_semicolon()
+		.dot_func()
+		.dot_each()
+		.toks_syn()
+		.heredoc_str()
+		.string_operators()
+		.inline_vectors()
+		.auto_types(:c, is_script)
+		.single_quotes()
+}
+map* func_params(map* func) => return func.func_param().toks_split(",")
+map* func_param(map* func) => return func[func.next_tok(0,"(")+2]
+map* func_add_param(map* func,map* add){
+	param=func.func_param()
+	assert(param.is_vec())
+	if param.map_len()
+		if !(param.map_len()%2) => param.xadd(NULL)
+		param.xadd(",")
+	param.vec_merge(add)
+	return func
+}
+map* func_rename(map* func,char* name) => return func[1]=name
+char* func_name(map* func) => return func[1]
+map* map_assign(map* exp1,map* exp2){
+	map* hasreturn=NULL
+	if exp1.map_id(1)===:return => hasreturn=exp1.vec_sub(0,2); exp1.vec_del(0,2).vec_compact()
+	params=exp1.func_params()
+	funcname=exp1.func_name()===:map_val ? :add : :set
+	if params[1][1]===:NULL
+		params.vec_del(1,1).vec_compact()
+		funcname=:vec_add
+	exp1.syn_set_param(0,params.toks_join(","))
+	exp1.func_add_param(exp2).func_rename(funcname)
+	mp1=exp1.func_param()
+	isvec=funcname===:vec_add ? 1 : 0
+	while mp1.syn_is_call(0)
+		if mp1.func_name()===:map_val => mp1.func_rename(:add_key)
+		else if mp1.func_name()===:map_id => mp1.func_rename(:add_id)
+		else break
+		if isvec
+			mp1.func_add_param([NULL,:Vector])
+			isvec=0
+		mp1=mp1.func_param()
+	if hasreturn => exp1.vec_splice(0,0,hasreturn)
+	return exp1
+}
+map* call_count(map* toks,map* counter,char* infunc){
+	if !toks => return counter
+	for i=0; i<toks->len; i+=2
+		char* name=toks.syn_is_call(i)
+		if name!==infunc
+			counter[name]=counter[name].is_int()+1
+		if toks[i+1].is_map()
+			toks[i+1].call_count(counter,infunc)
+	return counter
+}
+map* file_deadcode(char* file){
+	funcs=file.fox_read_file().x_funcs(1)
+	ret={}
+	funcs.each v,k,i
+		v.body.call_count(ret,k)
+	funcs.each v2,k2,i2
+		if !ret[k2] => k2.px()
+	return ret
+}
+map* auto_types(map* toks,char* context=:c,int is_script=0,map* env={},map* fns={},map* func=NULL,int idx=0){
+	temp=0
+	if !toks => return toks
+	if context===:c
+		env={:_globals : "map*"}
+		for i=0; i<toks->len; i+=2
+			void* tok=toks[i+1]
+			if tok.is_func_decl()
+				fn=tok.syn_func(1)
+				fns[fn.name]=fn
+				tok.syn_remove_default()
+		fns.each fn,name,i
+			fenv=env.map_dup()	
+			fn.params.each op,param,i2
+				fenv[param]=op.type
+			fn.body.add_return().auto_types(:body,is_script,fenv,fns,fn)
+			if is_script
+				if fn.body => _globals.cache.userfuncs[fn.name]=fn.body
+				_globals.cache.reflect.funcs[fn.name]=fn.map_del_key(:body)
+		return toks.auto_types(:body,is_script,env,fns)
+	else if context===:body
+		for int j=0; j<toks->len; j+=2
+			void* tok=toks[j+1]
+			if tok.is_func_decl()
+				continue
+			else if tok.syn_is_macro(0)
+				expanded=tok.vec_dup().syn_expand_macro(0).toks_syn()
+				map* last=expanded[expanded.map_len()-1]
+				expanded.vec_del(-2).vec_compact().auto_types(:body,is_script,env,fns,func)
+				last.vec_merge(tok.vec_sub(8)).auto_types(:syn,is_script,env,fns,func)
+				if is_script
+					toks.vec_splice(j+1,1,expanded)
+					//???? how does it work ????
+					//					toks[j+1]=last
+			else tok.auto_types(:syn,is_script,env,fns,func)
+		return toks
+	else if context===:syn
+		if toks.is_var_decl()
+			char* type=toks.syn_var_type()
+			char* name=toks.syn_var_name()
+			env[name]=type
+			toks.auto_types(:expr,is_script,env,fns,func,toks.syn_assign_val())
+		else if toks.is_flow()
+			char* type=toks.syn_flow_name()
+			if type===:for
+				env=env.map_dup()
+				toks.syn_flow_condition()[1].auto_types(:syn,is_script,env,fns)
+			int i=0
+			map* body=NULL
+			while (body=toks.syn_flow_condition(i++))
+				body.auto_types(:expr,is_script,env.map_dup(),fns,func)
+			i=0
+			while (body=toks.syn_flow_body(i++))
+				body.auto_types(:body,is_script,env.map_dup(),fns,func)
+		else if toks.is_assign()
+			toks.auto_types(:expr,is_script,env,fns,func)
+			if toks.syn_is_call(toks.map_id(1)===:return ? 2 : 0).is_word("map_val map_id")
+				toks.auto_types(:expr,is_script,env,fns,func)
+				from=toks.syn_assign_val()
+				upto=toks.next_tok(toks.syn_assign_val(),"; =")
+				len=0
+				if upto => len=upto-from-1
+				val=toks.vec_slice(from,len)
+				toks.vec_compact().vec_del(toks.next_tok(0,"=")-1,2).vec_compact()
+				toks.map_assign(val).auto_types(:expr,is_script,env,fns,func)
+				return toks
+			char* name=toks.syn_var_name()
+			char* type=toks.syn_var_type()
+			if *name!='_' && !env[name] && !type.str_len()
+				type=toks.expr_type(toks.syn_assign_val(),0,env,fns)
+				if type
+					toks.vec_splice(1,0,"$type ".x_map().vec_del(0).vec_compact())
+//					"$type $name".px()
+					env[name]=type
+				else
+					"$(func.name)(): unknown var $name".px()
+			toks.auto_types(:expr,is_script,env,fns,func,toks.syn_assign_val())
+		else
+			toks.auto_types(:expr,is_script,env,fns,func)
+		return toks
+	else if context===:expr
+		int head=idx
+		for int i=idx; i<toks->len; i+=2
+			if toks[i+1].is_map()
+				toks[i+1].auto_types(:expr,is_script,env,fns,func)
+			else if toks.syn_is_call(i)
+				char* name=toks.syn_is_call(i)
+				if name===:args_map
+					subs="xmap("
+					func.params.each ,k2,i2
+						subs=subs.xcat(":",k2,",",k2,",")
+					mp4="$subs End)".x_map().colon_str().vec_del(0).vec_compact()
+					toks.vec_splice(i+1,7,mp4)
+				else
+					map* params=toks.syn_func_param(i)
+					map* fn=fns[name]
+					if !fn => fn=funcs()[name]
+					if fn => params=params.param_c(env,fns,fn)
+					toks.syn_set_param(i,params)
+			else if toks[i+1]==="[" && toks.head_type(i-2,i,env,fns).is_word("map* void*") && toks.is_typecast(head).neq("void*") && 1
+				name=toks[i+3]
+				if !name.map_len() => name=[NULL,:NULL]
+				head=toks.expr_head(i-2)
+				mid=toks.vec_sub(head+1,i-head-1).vec_splice(0,0,[NULL]).xadd(NULL,",").vec_merge(name)
+				callfunc=name.expr_type(0,0,env,fns)===:int ? :map_id : :map_val
+				toks.vec_splice(head+1,i+5-head,[callfunc,NULL,"(",NULL,mid,NULL,")"])
+				i=head
+			else if toks[i+1]==="." && toks[i+3].is_name() && toks.expr_head(i-2)<i
+				head=toks.expr_head(i-2)
+				if head==i => "Can't find header for $(toks.json()) @ $i".fox_error()
+				if toks.syn_is_call(i+2).is_word("each")
+					mid=toks.vec_sub(head+1,i-head-1).vec_splice(0,0,[NULL])
+					params=toks.syn_func_param(i+2).toks_split(",")
+					if mid.syn_is_call(0)
+						temp++
+						varname=:map_..temp.int_str()
+//						name=params[0][1]
+//						varname="$(name)_mp"
+						toks.syn_set_param(i+2,params.vec_splice(0,0,[[NULL,varname]]).toks_join(","))
+						toks.vec_splice(head+1,i-head+2,"map* $varname=".x_map().vec_splice(0,1,NULL).vec_merge(mid).vec_merge([NULL,";"," "]))
+					else
+						params=params.vec_splice(0,0,[mid]).toks_join(",")
+						toks.syn_set_param(i+2,params)
+						toks.vec_del(head+1,i-head+2)
+						toks.vec_compact()
+					i=head
+				else if toks.syn_is_call(i+2)
+					mid=toks.vec_sub(head+1,i-head-1).vec_splice(0,0,[NULL])
+					toks.vec_del(head+1,i-head+2)
+					params=toks.syn_func_param(i+2).toks_split(",").vec_splice(0,0,[mid])
+ 					params=params.toks_join(",")
+					toks.syn_set_param(i+2,params)
+					toks.vec_compact()
+					i=head-2
+				else if toks.expr_type(head,i,env,fns).is_word("map* void*") && toks.is_typecast(head).neq("void*")
+					name=toks[i+3]
+					mid=toks.vec_sub(head+1,i-head-1).xadd(NULL,",",NULL,name.str_unquote().str_quote()).vec_splice(0,0,[NULL])
+					toks.vec_splice(head+1,i+3-head,[:map_val,NULL,"(",NULL,mid,NULL,")"])
+					i=head
+		return toks					
+	return toks
+}
+char* is_typecast(map* toks,int idx=0){
+	if toks[idx+1]==="(" && toks[idx+3].is_var_decl() => return toks[idx+3].toks_c().str_trim()
+	return NULL
+}
+char* is_name(char* in){
+	if !in.is_code() => return 0
+	if in.is_word(:return) => return 0
+	return in
+}
+char* head_type(map* toks, int idx, int upto, map* env,map* fs){
+	head=toks.expr_head(idx)
+	return toks.expr_type(head, upto, env, fs)
+}
+int expr_tail(map* toks,int idx=0,char* expr="."){
+	idx++
+	presid="= += -= /= *= %= ^= .= ? : && || == === !== != >= <= > < .. + - / * ++ -- ! -> ."
+	expr_presid=expr.is_word(presid)
+	while idx<toks.map_len()
+		char* v=toks[idx]
+		if v.is_name() && (toks[idx+2]===")"||toks[idx+2]==="]")
+			idx+=8
+		else if v==="("||v==="["
+			idx+=6
+		else if "\"'`".strchr(v[0])
+			idx+=2
+		else if v.is_name() || v.is_numeric()
+			idx+=2
+		else if expr_presid < v.is_word(presid)
+			idx+=2
+		else break
+	return idx-1
+}
+int expr_head(map* toks,int idx=0,char* expr="."){
+	idx++
+	presid="= += -= /= *= %= ^= .= ? : && || == === !== != >= <= > < .. + - / * ++ -- ! -> ."
+	expr_presid=expr.is_word(presid)
+	while idx>0
+		char* v=toks[idx]
+		if (v===")"||v==="]") && toks[idx-6].is_name()
+			idx-=8
+		else if v===")"||v==="]"
+			idx-=6
+		else if "\"'`".strchr(v[0])
+			idx-=2
+		else if v.is_name() || v.is_numeric()
+			idx-=2
+		else if expr_presid < v.is_word(presid)
+			idx-=2
+		else break
+	return idx+1
+}
+map* add_return(map* toks){
+	return toks
+}
+map* wrap_call(map* tok,char* func){
+	return [NULL,func,NULL,"(",NULL,tok,NULL,")"]
+}
+map* type_convert(map* tok,char* outtype,map* env,map* fs,map* fn){
+	if !outtype => return tok
+	char* intype=tok.expr_type(0,0,env,fs)	
+	if !intype => return tok
+	if intype===outtype => return tok
+	if intype===:int
+		if outtype==="void*" => return tok.wrap_call(:int_var)
+		else if outtype==="char*" => return tok.wrap_call(:int_str)
+//	else if intype==="map*"
+//		if outtype==="char*" => return tok.wrap_call(:json)
+	else if intype==="char*"
+		if outtype===:int => return tok.wrap_call(:stoi)
+		else if outtype==="char**"
+//			"converting $intype -> $outtype ($(tok.toks_c())) func: $(fn.func_cdecl())".px()
+			return tok.vec_splice(1,0,xvec("&",NULL))
+	else if intype==="char**"
+		if outtype==="char*" => return tok.vec_splice(1,0,xvec("*",NULL))
+	return tok
+}
+map* param_c(map* params,map* env,map* fs,map* fn){
+//	assert(params)
+	assert(fn)
+	if !params => return NULL
+	map* xparam=params.toks_split(",")
+	map* cparam=[]
+	map* sig=fn.params
+	sig.each p,name,i
+		if name==="..."
+			for int idx=i; idx<xparam->len; idx++
+				if xparam[idx][1]===:End => break
+				cparam[]=xparam[idx].type_convert(p.type,env,fs,fn)
+			if cparam[cparam.map_len()-1][1].neq(:End)
+				char* endmark=cparam.map_len() ? " End" : :End
+				cparam[]=endmark.x_map()
+			break
+		else if xparam[i].map_len()<2
+			if !p.default => break
+			cparam[]=p.default.x_toks()[1].vec_del(-2,0).vec_compact() //x_map().colon_str().dot_key().str_dollars()
+		else cparam[]=xparam[i].type_convert(p.type,env,fs,fn)
+	ret=cparam.toks_join(",")
+	return ret
+}
+char* file_ast(char* in){
+	toks=in.fox_read_file().x_toks()
+	toks.toks_c().write_file("good.txt")
+	ret=toks.block_ast().dx()
+	ret.ast_c().write_file("bad.txt")
+	return ret
+}
+char* ast_c(map* ast){
+	if !ast => return NULL
+	if ast.is_str() => return (char*)ast
+	if ast.is_vec()
+		char* ret=NULL
+		ast.each v,,i
+			ret.=v.ast_c()
+//		if ret.str_len() && ast[0].tag==="," => ret=ret.sub_str(0,ret.str_len()-ast[0].tag.str_len())
+		return ret
+	if ast.tag.is_word("TNumber TString TName TChar")
+		return xstr(ast.left.ast_c(), ast.space, ast.right, ast.tail_space)
+	else if ast.tag===:TCall
+		return xstr(ast.left, ast.space, "(", ast.left_space, ast.right.ast_c(), ast.right_space, ")", ast.tail_space)
+	else if ast.tag.is_word("( [ {")
+		return xstr(ast.left.ast_c(), ast.space[0], ast.tag, ast.space[1], ast.right.ast_c(), ast.space[2], ast.tag.fox_at(0).closing_paren().char_str(), ast.tail_space)
+	else if ast.tag===:if
+		ret=xstr(ast.space[0], :if, ast.space[1], "(", ast.space[2], ast.left[0].ast_c(), ast.space[3], ")", ast.space[4], "{", ast.space[5], ast.right[0].ast_c(), ast.space[6], "}")
+		ast.left.each v,,i
+			ret.=xstr(ast.space[0], :if, ast.space[1], "(", ast.space[2], ast.left[0].ast_c(), ast.space[3], ")", ast.space[4], "{", ast.space[5], ast.right[0].ast_c(), ast.space[6], "}")
+	else if ast.tag.is_word("if while for switch")
+		return xstr(ast.space[0], ast.tag, ast.space[1], "(", ast.space[2], ast.left.ast_c(), ast.space[3], ")", ast.space[4], "{", ast.space[5], ast.right.ast_c(), ast.space[6], "}")
+	else if ast.tag===";" && (!ast.left || ast.left.tag===:TSpace)
+		return ast.left.space
+	return xstr(ast.left.ast_c(), ast.space, ast.tag, ast.right.ast_c(), ast.tail_space)
+}
+map* block_ast(map* toks,char* seperator=";"){
+	ret=[]
+	for int idx=0; idx<toks->len; idx+=2
+		if toks[idx+1].is_map()
+			ret.vec_merge(toks[idx+1].block_ast(seperator))
+			continue
+		temp=toks.toks_ast(&idx,seperator)
+		ret[]={tag: seperator, left: temp}
+		if toks[idx] => ret[ret.map_len()-1].space=toks[idx]
+	return ret
+}
+map* toks_ast(map* toks,int* idx=NULL,char* upto=";"){
+	int idx2=0
+	if !idx => idx=&idx2
+	operators="++ -- -> . ~ ! * / % + - << >> < <= > >= == === .= .. !== != & ^ @ # $ | && || ? : = += -= *= /= %= <<= >>= &= ^= |= \\ => ** *** **** ^^ ... , ] ) } ;"
+	map* ret=NULL
+	int upto_no=upto.is_word(operators)
+	while *idx < toks->len
+		char* space=toks[*idx]
+		char* v=toks[*idx+1]
+		assert(!v || v.is_str())
+		if !v
+			if space
+				if ret => ret.tail_space=space
+				else ret={tag: :TSpace, space: space}
+		else if v.is_numeric()
+			ret={tag: :TNumber, right: v, left: ret}
+		else if v===:if
+		// if:1 (:3 __:5 ):7 {:9 __:11 }:13
+		// else:15 if:17 (:19 __:21 ):23 {:25 __:27 }:29
+		// else:31 if:33 (:35 __:37 ):39 {:41 __:43 }:45
+		// else:47 {:49 __:51 }:53
+			ret={tag: :if, left: [toks[*idx+5].toks_ast()], right: [toks[*idx+11].block_ast(";")]}
+			for int i2=0; i2<14; i2+=2 => ret.space[]=toks[*idx+i2]
+			*idx+=12
+			while toks[*idx+3]===:else
+				*idx+=4
+				if toks[*idx+1]===:if
+					ret.left[]=toks[*idx+5].toks_ast()
+					ret.right[]=toks[*idx+11].block_ast(";")
+					*idx+=12
+				else
+					ret.right[]=toks[*idx+3].block_ast(";")
+					*idx+=6
+		else if v.is_word("while for switch")
+		// do:1 {:3 __:5 }:7 while:9 (:11 __:13 ):15
+		// if:1 (:3 __:5 ):7 {:9 __:11 }:13
+		// else:15 if:17 (:19 __:21 ):23 {:25 __:27 }:29
+		// else:31 if:33 (:35 __:37 ):39 {:41 __:43 }:45
+		// else:47 {:49 __:51 }:53
+			ret={tag: v, left: toks[*idx+5].toks_ast(), right: toks[*idx+11].block_ast(";")}
+			for int i2=0; i2<14; i2+=2 => ret.space[]=toks[*idx+i2]
+			*idx+=12
+		else if v.is_code()
+			ret={tag: :TName, right: v, left: ret}
+		else if v.is_word("[ ( {")
+			if v==="{"
+				ret={tag: v, left: ret, right: toks[*idx+3].block_ast(";")}
+			else if v==="("
+				ret={tag: v, left: ret, right: toks[*idx+3].toks_ast()}
+			else if v==="["
+				ret={tag: v, left: ret, right: toks[*idx+3].block_ast(NULL)}
+			for int i2=0; i2<6; i2+=2 => ret.space[]=toks[*idx+i2]
+			*idx+=4
+		else if *v=='"'
+			ret={tag: :TString, left: ret, right: v}
+		else if *v=='\''
+			ret={tag: :TChar, left: ret, right: v}
+		else if upto_no && v.is_word(operators)>=upto_no
+			return ret
+		else if v.is_word(operators)
+			*idx+=2
+			ret={tag: v, left: ret, right: toks.toks_ast(idx,v)}
+			*idx-=2
+		else "fox_error $v".fox_error()
+		if !ret.space && space => ret.space=space
+		*idx+=2
+	return ret
+}
+map* syn_expand_macro(map* syn,int idx){
+	map* macro=macros()[syn[idx+1]]
+//	"macro: $(syn[idx+1])".px()
+	params=syn.syn_func_param().toks_split(",")
+	if macro.params.map_len()!=params.map_len() => "Macro $(syn[idx]) takes $(macro.params.map_len()) parameters, $(params.map_len()) provided".fox_error()
+	subs={}
+	macro.params.each v2,,i2
+		subs[v2]=params[i2].vec_del(0).vec_compact()
+	return macro.body.vec_rdup().toks_replace(subs)
+	expanded=macro.body.vec_rdup().toks_replace(subs)
+	return syn.vec_splice(idx+1,7,expanded.vec_del(0).vec_compact())
+//	return expanded.map_len()-7
+}
+map* syn_is_macro(map* syn, int idx){
+	return macros()[syn.syn_is_call(idx)]
+}
+map* syn_set_param(map* syn,int idx=0,map* params){
+	return syn[syn.next_tok(idx,"(")+2]=params
+}
+map* syn_func_param(map* syn,int idx=0){
+	return syn[syn.next_tok(idx,"(")+2]
+}
+map* syn_func_body(map* syn){
+	if !syn.next_tok(0,"{") => return NULL
+	return syn[syn.next_tok(0,"{")+2]
+}
+map* syn_remove_default(map* syn){
+	map* params=syn.syn_func_param()
+	if(!params) return syn
+	indel=0
+	hasdel=0
+	start=0
+	params.each v,,i
+		if v==="="
+			indel=1
+			hasdel++
+			params.vec_del(i,1)
+		else if v==="..."
+			if params[i-2].neq(",")
+				params.vec_del(start+1,i-start-1)
+		else if v===","
+			start=i
+			indel=0
+		else if(indel) params.vec_del(i,1)
+	if(hasdel) params.vec_compact()
+	return syn
+}
+
+char* expr_type(map* toks,int idx=0,int upto=0,map* env={:_globals : "map*"},map* fs=NULL){
+	void* v=toks[idx+1]
+	if v.is_map() => return v.expr_type(0,upto,env,fs)
+	char* w=v.is_str()
+	if !w => return NULL
+	assert(w.is_str() && w.str_len())
+	if toks.next_tok(idx,"?",upto)
+		return toks.expr_type(toks.next_tok(idx,"?")+1,upto,env,fs)
+	else if toks.next_tok(idx,"/",upto) => return :int
+	else if toks[idx+3]==="("
+		char* name=toks[idx+1]
+		if fs[name] => return fs[name].type
+		return funcs()[name].type
+	else if w.is_word("++ --") => return toks.expr_type(idx+2,upto,env,fs)
+	else if *w=='"' => return "char*"
+	else if *w=='\'' && w[1]=='\'' => return "char*"
+	else if *w=='\'' => return :char
+	else if *w>='0' && *w<='9' || *w=='-' || *w=='+' => return :int
+	else if toks.is_typecast(idx) => return toks.is_typecast(idx)
+	else if w==="(" => return toks[idx+3].expr_type(0,upto,env,fs)
+	else if w==="*" => return toks.expr_type(idx+2,upto,env,fs).sub_str(0,-1)
+	else if w==="&" => return toks.expr_type(idx+2,upto,env,fs).str_dup().."*"
+	else if w===:NULL => return "void*"
+	else if env[w]
+		if toks.next_tok(idx,"-",upto) && toks.expr_type(toks.next_tok(idx,"-",upto)+1,upto,env,fs).is_word("char* void* map*")
+			return :int
+		char* ret=env[w]	
+		if !upto => upto=toks->len
+		map* structtype=NULL
+		for int i=idx+3; i<upto; i+=2
+			v=toks[i]
+			if v.is_word(". ->")
+				structtype=structs()[ret.str_trim("*")]
+			else if structtype && v.is_code() && !toks.syn_is_call(i) && structtype[v]
+				ret=structtype[v]
+			else if v==="[" && ret.fox_at(-1)=='*'
+				ret=ret.sub_str(0,-1)
+				i+=4
+			else if v==="-"
+				if ret===:int => return ret
+				rest=toks.expr_type(i+1,upto,env,fs)
+				if rest.fox_at(-1)=='*' => return :int
+				return ret
+			else return ret
+		return ret
+	return NULL
+}
+char* assign_to_func(map* tok){
+	return tok.syn_is_call(0)
+}
+int next_tok(map* toks,int from,char* tok,int upto=0){
+	if !toks => return 0
+	for i=from; i<toks->len; i+=2
+		if toks[i+1].is_word(tok) => return !upto || i<upto ? i+1 : 0
+	return 0
+}
+int syn_has(map* syn,char* words) => return syn.next_tok(0,words)
+char* syn_flow_name(map* syn) => return syn[1]
+int is_flow(map* syn){
+	return syn[1].is_word("if while for switch do")
+}
+map* syn_flow_condition(map* syn,int no=0){
+	name=syn.syn_flow_name()
+	// do:1 {:3 __:5 }:7 while:9 (:11 __:13 ):15
+	// if:1 (:3 __:5 ):7 {:9 __:11 }:13
+	// else:15 if:17 (:19 __:21 ):23 {:25 __:27 }:29
+	// else:31 if:33 (:35 __:37 ):39 {:41 __:43 }:45
+	// else:47 {:49 __:51 }:53
+	if name===:do && !no => return syn[13]
+	return syn[5+no*16].is_map()
+}
+map* syn_flow_body(map* syn,int no=0){
+	name=syn.syn_flow_name()
+	// if:1 (:3 __:5 ):7 {:9 __:11 }:13
+	// else:15 if:17 (:19 __:21 ):23 {:25 __:27 }:29
+	// else:31 if:33 (:35 __:37 ):39 {:41 __:43 }:45
+	// else:47 {:49 __:51 }:53
+	if name===:do && !no => return syn[5]
+	if !no => return syn[11]
+	iselse=syn[11+(no-1)*16+8].is_map()
+	return iselse ? iselse : syn[11+no*16]
+}
+char* syn_is_call(map* syn, int idx){
+	if syn[idx+1].is_code() && syn[idx+3]==="(" && syn[idx+7]===")"
+		return syn[idx+1]
+	return NULL
+}
+char* syn_var_name(map* syn){
+	idx=syn.next_tok(0,"= ; ,")
+	return idx ? syn[idx-2] : syn[syn.map_len()-syn.map_len()%2-1]
+}
+char* syn_var_type(map* syn){
+	idx=syn.next_tok(0,"= ; ,")
+	return idx ? syn.vec_sub(1,idx-4).toks_c() : syn.vec_sub(1,syn.map_len()-syn.map_len()%2-3).toks_c()
+}
+int syn_assign_val(map* syn){
+	return syn.next_tok(0,"=")+1
+}
+int is_assign(map* syn) => return syn.next_tok(0,"=")
+int is_var_decl(map* syn){
+	return syn[1].is_word("int long double char void struct map static extern unsigned register mempage size_t time_t const FILE inline")
+}
+int is_func_decl(map* syn){
+	idx=syn.next_tok(0,"(")
+	if !idx-- => return 0
+	if syn.next_tok(0,"=") => return 0
+	if !syn[1].is_word("int long double char void struct map static extern unsigned register mempage size_t time_t const FILE inline")
+		return 0
+	if syn[idx+7]===";" => return 1
+	if syn[idx+7]==="{" && syn[idx+13]===";" => return 1
+	return 0
+}
+char* fox_h(char* infile,char* outfile,int with_foxh=0) => return ((with_foxh ? foxh() : "")..infile.file_funcs().funcs_cdecl(0)).write_file(outfile)
+char* fox_c(char* infile, char* outfile) => return infile.fox_read_file().x_c().write_file(outfile)
+map* x_map(char* in) => return c_tokenizer(&in,'\0')
+char* c_x(char* in) => return in.x_map().map_tox().toks_c()
+
+char* x_c(char* in) => return in.x_toks().toks_c()
+char* func_ccall(map* fn){
+	char* ret=NULL
+	fn.params.each v,k,i
+		char* def=v.default
+		v=v.type
+		v=v.drop_left(:const\ )
+		v=v.drop_left(:unsigned\ )
+		char* pre=""
+		char* post=""
+		if v==="char*" => post=".is_str()"
+		else if v==="map*" => post=".is_map()"
+		else if v.is_word("int long size_t char time_t") || v==="long long" => post=".to_int()"
+		else if k==="..."
+			char* mtype=NULL
+			if fn.type.str_end("*") => mtype=:ptr
+			else if fn.type===:int => mtype=:int
+			else return NULL
+			return "call_variadic_%s(v,%s,\"%s\")".mstr(mtype,fn.name,fn.name)
+		else if !v.str_end("*")
+			"ignoring %s/%s/%s".verbose(fn.name,v,k)
+			return NULL
+		if def => ret.="v->len>=%d ? %sv.map_id(%d)%s : %s,".mstr(i,pre,i,post,def.x_c().sub_str(0,-1))
+		else => ret.="%sv.map_id(%d)%s,".mstr(pre,i,post)
+	return "%s(%s)".mstr(fn.name,ret.sub_str(0,-1).null_str())
+}
+char* map_ccode(void* mp){
+	if(!mp) return :NULL
+	if(mp.is_str()) return mp.str_quote()
+	if(mp.is_int()) return int_str(mp.is_int())
+	if mp.ptr_type()==Map
+		if(!mp.map_len()) return "new_map()"
+		char* ret="xmap("
+		mp.each v,k,i
+			ret.="%s,%s,".mstr(k.str_quote(),v.map_ccode())
+		return ret.."End)"
+	if mp.ptr_type()==Vector
+		if(!mp.map_len()) return "new_vec()"
+		char* ret="xvec("
+		mp.each v1,,i1
+			ret.="%s,".mstr(v1.map_ccode())
+		return ret.."End)"
+	return "Unknown type of variable $(mp.to_str()) [$(mp.ptr_name())]".fox_error()	
+}
+char* callfunc_c(map* funcs){
+	char* ret="function calls\n"
+	funcs.each v,k,i2
+		if k===:args_map => continue
+		char* str_params=v.func_ccall()
+		if(!str_params)
+			continue
+		char* post=""
+		char* isvoid="return "
+		char* isvoid2=""
+		char* ftype=v.type
+		if(ftype.is_word("int long long size_t time_t char")) post=".int_var()"
+		else if ftype===:void
+			isvoid=""
+			isvoid2=" return NULL;"
+		else if(!ftype.is_word("void* map* char*")) continue
+		char* exp="%s%s".mstr(str_params,post).x_c()
+		ret.="\t\tcase %p: %s%s%s break;\n".mstr(v.name.str_hash(),isvoid,exp,isvoid2)
+	return ret
+}
+char* file_foxh(char* infile,char* outfile=NULL){
+	return infile.file_funcs().funcs_cdecl(1).write_file(outfile)
+}
+char* func_cdecl(map* fn,int show_default=1){
+	ret2=""
+	fn.params.each param,name,i2
+		s=param.type.str_join(" ",name)
+		if name==="..." => s=name
+		if show_default => s=s.str_join("=",param.default)
+		ret2=ret2.str_join(", ",s)
+	return "%s %s(%s);".mstr(fn.decltype, fn.name, ret2)
+}
+char* funcs_cdecl(map* fns=funcs(),int show_default=1){
+	ret=""
+	fns.each v ,k,i=> ret=ret.str_join("\n",v.func_cdecl(show_default))
+	return ret
+}
+char* foxh(){
+	return ---
+	/* This is a generated file. To change it, edit function foxh() in fox.c */
+	#define _XOPEN_SOURCE
+	#ifndef _GNU_SOURCE
+	#define _GNU_SOURCE
+	#endif
+	#include <setjmp.h>
+	#include <memory.h>
+	#include <stdio.h>
+	#include <stdlib.h>
+	#include <assert.h>
+	#include <stdarg.h>
+	#include <math.h>
+	#include <time.h>
+	#include <assert.h>
+	#include <sys/time.h>
+	#ifndef __MINGW32__
+	#include <execinfo.h>
+	#include <sys/wait.h>
+	#include <sys/socket.h>
+	#include <netinet/in.h>
+	#include <arpa/inet.h>
+	#include <netdb.h>
+	#endif
+	#include <unistd.h>
+	#include <ctype.h>
+	#include <dirent.h>
+	#include <sys/types.h>
+	#include <sys/stat.h>
+
+	#include <signal.h>
+	//#include <ucontext.h>
+	enum Types {
+		Null,Skip,Int,String,Blob,Map,Vector,Index,Keys,Cell,Cell2,Tail
+	};
+	typedef struct cons {
+		short nextid;
+		int hkey;
+		char* id;
+		void* val;
+	} cons;
+	typedef struct map {
+		int len;
+		char type;
+		union {
+			struct cons* pairs;
+			void** vars;
+		};
+	} map;
+
+	#define each_mem(pg,i) int i=0; for(mempage* pg=_gcdata.pages;i<_gcdata.total_pages;i++,pg=_gcdata.pages+i)
+	#define gc_start() void* __sp=NULL;init_gc(&__sp)
+	#define max(a,b) ((a)>(b)?(a):(b))
+	#define min(a,b) ((a)<(b)?(a):(b))
+	#ifdef __MINGW32__
+	#define is_i(x) ((int)(x)>>30 & 1)
+	#else
+	#define is_i(x) ((long long)(x)>>62 & 1)
+	#define is_f(x) ((*(long long*)&(x))>>61 & 1)
+	#endif
+
+	typedef struct mempage {
+		int no;
+		int idx;
+		int block_size;
+		int blocks;
+		int free;
+		char* types;
+	//	struct mempage* next;
+		char* page;
+		map chains;
+		int abandoned;
+	//	char type;
+	} mempage;
+	struct gcdata {
+		int total_pages;
+		void** stack_head;
+		int page_no;
+		long long max_used;
+		long long curr_used;
+		long long max_mem;
+		long long curr_mem;
+		mempage* pages;
+		int gcruns;
+		int gcwaste;
+	};
+	extern struct gcdata _gcdata;
+	extern struct timeval _run_time;
+	extern struct timeval _time;
+	extern map* _globals;
+	extern int _gc;
+	extern int _nogc;
+	extern int _inalloc;
+	extern size_t _clockstart;
+
+	extern int _printed;
+	extern int _total_time;
+	extern int _gc_time;
+	extern int _gc_max;
+	extern int _is_web;
+
+	extern char* skip;
+
+	#define End (char*)(0xFF12B145)
+
+	---
+}
+char* write_foxh(char* outfile="fox.h"){
+	return (foxh()..source_funcs().funcs_cdecl(0)).write_file(outfile)
+}
+char* fox_phpc(char* infile,char* outfile=NULL){
+	map* fns=infile.file_funcs()
+	temp=infile.str_split("/")
+	temp=temp[temp.map_len()-1].str_split(".")
+	name=temp[0]
+	char* ret=".end
+	#ifdef HAVE_CONFIG_H
+	#include "config.h"
+	#endif
+	#include <php.h>
+	#include <fox.h>
+	#include "$(name).h"
+
+	void* zval_var(zval* z);
+	zval var_zval(void* v);
+	zval map_zval(map* mp);
+	map* zval_map(zval* z);
+	void* call_php(map* params,char* func);
+
+	.end";
+	reg=""
+	fns.each v,,i
+		if !v.type.is_word("void* map* int char*") => continue
+//		if v.name.is_word("invoke reflect") => continue
+		decls=""
+		format=""
+		post=""
+		pointers=""
+		call=""
+		hasdefault=0
+		skip=0
+		foxname=v.name
+//		if !foxname.str_start(:fox_) => foxname="fox_$(v.name)"
+		v.params.each ,name,i2
+			if name==="..." => skip=1; break
+			map* v2=v.params[name]
+			if !hasdefault && v2.default
+				hasdefault=1
+				format=format.xcat("|")
+			if v2.type==="char*"
+				decls=decls.xcat("\tchar* ",:in_,name,"=NULL;\n")
+				decls=decls.xcat("\tsize_t ",:in_,name,"_len=-1;\n")
+				pointers=pointers.xcat(", &in_",name,", &in_",name,:_len)
+				format=format.xcat(:s)
+				if v2.default
+					post=post.xcat("\tif(in_$(name)_len==-1) in_$(name)=$(v2.default.x_c())\n")
+					post=post.xcat("\telse in_$(name)=str_dup(in_$(name));\n")
+//				else => post=post.xcat("\tin_$(name)=str_dup(in_$(name));\n")
+			else if v2.type===:int
+				decls=decls.xcat("\tlong ",:in_,name,"=(1ll<<62);\n")
+				pointers=pointers.xcat(", &in_",name)
+				format=format.xcat(:l)
+				if v2.default => post=post.xcat("\tif(in_$(name)==(1ll<<62)) in_$(name)=$(v2.default.x_c())\n")
+			else if v2.type==="void*"
+				decls=decls.xcat("\tzval* ",:in_,name,"_zval=NULL;\n")
+				pointers=pointers.xcat(", &in_",name,:_zval)
+				format=format.xcat(:z)
+				if v2.default
+					post=post.xcat("\tvoid* ",:in_,name,"=NULL;\n")
+					post=post.xcat("\tif(!in_$(name)_zval) in_$(name)=$(v2.default.x_c())\n")
+					post=post.xcat("\telse in_",name,"=zval_var(in_$(name)_zval);\n")
+				else => post=post.xcat("\tvoid* ",:in_,name,"=zval_var(in_$(name)_zval);\n")
+			else if v2.type==="map*"
+				decls=decls.xcat("\tzval* ",:in_,name,"_zval=NULL;\n")
+				pointers=pointers.xcat(", &in_",name,:_zval)
+				format=format.xcat(:z)
+				if v2.default
+					post=post.xcat("\tvoid* ",:in_,name,"=NULL;\n")
+					post=post.xcat("\tif(!in_$(name)_zval) in_$(name)=$(v2.default.x_c())\n")
+					post=post.xcat("\telse in_",name,"=zval_var(in_$(name)_zval);\n")
+				else => post=post.xcat("\tmap* ",:in_,name,"=zval_var(in_$(name)_zval);\n")
+			else => skip=1; break
+			call=call.xcat("in_$(name),")
+
+		if skip => continue
+		reg=reg.xcat("\tPHP_FE($foxname, NULL)\n")
+		call=call.sub_str(0,-1)
+		ret.="\nPHP_FUNCTION($foxname){\n"
+		if v.params.map_len()
+			ret=ret.xcat(---
+			%s	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,"%s"%s)==FAILURE){ RETURN_NULL(); }
+			%s
+			---.mstr(decls,format,pointers,post))
+		if v.type===:void
+			ret.="\t$(v.name)($(call));\n";
+			ret.="\tRETURN_NULL();\n"
+		else
+			ret.="\t%s ret=%s(%s);\n".mstr(v.type,v.name,call);
+			if v.type===:int => ret.="\tRETURN_LONG(ret);\n"
+			else if v.type==="char*"
+				ret.="\tif(!ret) RETURN_NULL();\n"
+				ret.="\tRETVAL_STRING(ret);\n"
+			else if v.type==="map*"
+				ret.=---
+					zval zret;
+					if(!ret){
+						array_init(&zret);
+					}
+					else zret=var_zval(ret);
+					RETURN_ZVAL(&zret,0,0);
+
+				---
+			else if v.type==="void*"
+				ret.="\tzval zret=var_zval(ret);\n"
+				ret.="\tRETURN_ZVAL(&zret,0,0);\n"
+		ret.="}\n"
+
+	ret.=".end
+
+	static zend_function_entry $(name)_functions[] = {
+	$(reg)	{NULL, NULL, NULL}
+	};
+
+	.end"
+	ret.=".end
+	PHP_RINIT_FUNCTION($(name)){
+		gc_start();
+		return SUCCESS;
+	}
+	PHP_RSHUTDOWN_FUNCTION($(name)){
+		gc_end();	
+		return SUCCESS;
+	}
+
+	zend_module_entry $(name)_module_entry = {
+	#if ZEND_MODULE_API_NO >= 20010901
+		STANDARD_MODULE_HEADER,
+	#endif
+		"$(name)",
+		$(name)_functions,
+		NULL,
+		NULL,
+		PHP_RINIT($(name)),
+		PHP_RSHUTDOWN($(name)),
+		NULL,
+	#if ZEND_MODULE_API_NO >= 20010901
+		"0.70", //Version Number
+	#endif
+		STANDARD_MODULE_PROPERTIES
+	};
+
+	#ifdef COMPILE_DL_$(name.str_dup().str_upper())
+	ZEND_GET_MODULE($(name))
+	#endif
+
+	.end"
+	return ret.write_file(outfile)
+}
+char* write_phpconfig(){
+	return ---
+	PHP_ARG_ENABLE(foxphp, whether to enable FoxPHP library support,
+	[ --enable-foxphp   Enable FoxPHP library support])
+	if test "$PHP_FOXPHP" = "yes"; then
+	  PHP_SUBST(CFLAGS)
+	  AC_DEFINE(HAVE_FOXPHP, 1, [Whether you have FoxPHP Library])
+	  PHP_NEW_EXTENSION(foxphp, foxphp.c fox.c sql.c extern.c callfunc.c, $ext_shared,,-Wno-logical-op-parentheses -DPHP_MOD)
+	fi
+
+	---.write_file("config.m4")
+}
+char* write_callfunc(char* outfile){
+	map* funcs=source_funcs()
+	char* ret=---
+	/* This is a generated file. To change it, edit function write_callfunc() in fox.c */
+	#include "sqlite3.h"
+	#include "fox.h"
+	#include "foxcmd.h"
+	#include "sql.h"
+
+	char* version(){
+		return "Fox: build: %s, date: %s [%%s old]".mstr("%s".time_ago());
+	}
+	void* invoke(map* v,char* name){
+		unsigned long long idn=str_hash((unsigned char*)name)
+		switch(idn){
+	//%s
+		}
+		return "invoke(): Function $name not defined".fox_error()
+	}
+	map* reflect(){
+		return %s;
+	}
+
+	---.x_c().mstr(increase_version(),time_str(),time_str(),funcs.callfunc_c(),{funcs: funcs, macros: source_macros(), structs: source_structs()}.map_ccode())
+	ret.write_file(outfile,1)
+	return ret
+}
+map* eval_params(map* sent,char* name,map* env=NULL){
+	name.assert()
+	ret={}
+	fn=funcs()[name]
+	if !fn => "$name() not found".fox_error()
+	named=0
+	fn.params.each v,k,i
+		if k==="..."
+			for int i2=i; i2<=sent->len; i2++
+				ret[]=sent[i2]
+			break
+		else if sent.map_has_key(k)
+			named=1
+			ret[k]=sent[k]
+		else if !named && sent.map_len()>i && sent.map_key(i).is_i()
+			ret[k]=sent[i]
+		else if env.map_has_key(k)
+			named=1
+			ret[k]=env[k]
+		else if k===:env
+			ret[k]=env
+		else if v.default
+			ret[k]=v.default.eval()
+		else
+			"Parameter missing in $(fn.name)($k=?) in $(fn.func_cdecl())\nargs=$(sent.json())".fox_error()
+			assert(0)
+	return ret
+}
+char* to_c(void* val){
+	if !val => return :NULL
+	if val.is_i() => return val.is_int().int_str()
+	if val.is_str() => return val.str_quote()
+	if val.is_map() => return val.json()
+	assert(0)
+	return :fox_error
+}
+char* str_shorten(char* in,int max=40){
+	if in.str_len()>max => return in.sub_str(0,max).."..."
+	return in
+}
+char* call_c(map* params,char* name){
+	ret=[]
+	params.each v,,i
+		ret[]=v.to_c().str_shorten()
+	return "%s(%s)".mstr(name,ret.map_join(", "))
+}
+void* call_func(map* params,char* name,map* env=NULL){
+	params=params.eval_params(name,env)
+	if name.str_start(:php_) => return params.call_php(name.sub_str(5))
+	map* user=_globals.cache.userfuncs[name]
+//	_globals.add_key(:callstack,Vector)[]=name //params.call_c(name)
+//	name.verbose()
+	void* ret=NULL
+	if user
+		int halt=0
+		ret=user.fox_eval(params,&halt)
+	else
+		ret=params.invoke(name)
+//	_globals.callstack.vec_del(-1)
+	return ret
+}
+void* data_exec(void* data,map* env=NULL){
+	if !data => return NULL
+	if data.is_str() => return data	
+	if !data.is_map() => return data.to_str()
+	char* func=data[0]
+	return data.map_del(0).vec_compact().call_func(func,env)
+}
+static void* eval_toks(map* mp,map* env){
+	int idx=1
+	return mp.eval_expr(&idx,env,0)
+}
+static void* eval_expr(map* mp,int* idx,map* env,int level){
+	void* last=NULL
+	*idx=mp.eval_expr_cont(*idx,env,&last,level)
+	return last
+}
+void* eval(char* in,map* env=NULL){
+	return in.x_toks().eval_toks(env)
+}
+int eval_expr_cont(map* mp,int idx,map* env,void** last,int level){
+	if !mp => return idx
+	void* ret=*last
+	if(!level) level=100
+	for ;idx<mp->len;idx+=2
+		void* val=mp[idx];	
+		if !val => continue //abnormal
+		if val.is_map() => ret=val.eval_toks(env); continue
+		else if val.is_i() => :int.px(); ret=val; continue
+		else if val.is_numeric() => ret=val.stoi().int_var(); continue
+		else if val.fox_at(0)=='"'
+			ret=val.str_unquote()
+			while mp[idx+2].is_str().fox_at(0)=='"'
+				ret.=mp[idx+2].str_unquote()
+				idx+=2
+			continue
+		else if val==="&"
+			name=mp[idx+2]
+			if !name.is_code() => "operator& on a non variable $name".fox_error()
+			idx1=env.map_has_key(name)
+			if !idx1 => "variable $name doesn't exist".fox_error()
+			ret=&(env->pairs[idx1-1].val)
+			idx+=2
+		else if val==="(" => ret=mp[idx+2].eval_toks(env); idx+=4; continue
+		else if val===:End
+			ret=End
+			idx+=2
+		else if val.is_code()
+			if val===:NULL
+				ret=NULL
+			else if val===:_globals
+				ret=_globals
+			else if mp[idx+2]==="("
+				params=mp[idx+4].map_split(",",0)
+				params.each v,,i => params[i]=v.eval_toks(env)
+				ret=params.call_func(val,env)
+				idx+=6
+			else if env.map_has_key(:_) && env._.map_has_key(val)
+				ret=env._[val]
+			else if mp[idx+2]==="="
+				idx+=4
+				ret=mp.eval_expr(&idx,env,6)
+				env[val]=ret
+			else if mp[idx+2]==="++"
+				idx+=2
+				env[val]=env[val].is_int()+1
+			else if mp[idx+2]==="--"
+				idx+=2
+				env[val]=env[val].is_int()-1
+			else if mp[idx+2]==="+="
+				idx+=4
+				env[val]=env[val].is_int()+mp.eval_expr(&idx,env,6).is_int()
+			else if mp[idx+2]==="-="
+				idx+=4
+				env[val]=env[val].is_int()-mp.eval_expr(&idx,env,6).is_int()
+			else if mp[idx+2]==="*="
+				idx+=4
+				env[val]=env[val].is_int()*mp.eval_expr(&idx,env,6).is_int()
+			else if mp[idx+2]==="/="
+				idx+=4
+				env[val]=env[val].is_int()/mp.eval_expr(&idx,env,6).is_int()
+			else
+				ret=env[val]
+			continue
+		else if val==="." => if(ret.is_map()) ret=ret[mp[idx+=2-1]]; continue
+		else if val==="!"
+			idx+=2
+			ret=mp.eval_expr(&idx,env,0)
+			ret = (ret.is_i() ? !ret.is_int() : !ret).int_var()
+			continue
+
+		int clevel=1
+		if level<=clevel => idx-=2; break
+		if val==="/" => idx+=2; ret=(ret.is_int()/mp.eval_expr(&idx,env,clevel).is_int()).int_var(); continue
+		else if val==="*" => idx+=2; ret=(ret.is_int()*mp.eval_expr(&idx,env,clevel).is_int()).int_var(); continue
+
+		clevel++
+		if level<=clevel => idx-=2; break
+		if val==="-" => idx+=2; ret=(ret.is_int()-mp.eval_expr(&idx,env,clevel).is_int()).int_var(); continue
+		else if val==="+" => idx+=2; ret=(ret.is_int()+mp.eval_expr(&idx,env,clevel).is_int()).int_var(); continue
+
+
+		clevel++
+		if level<=clevel => idx-=2; break
+		if val.is_word("== !=")
+			idx+=2
+			void* rest=mp.eval_expr(&idx,env,clevel)
+			if ret.is_i() => ret=(ret.is_int()==rest.to_int()).int_var()
+			else if ret.is_str() => ret=(ret===rest).int_var()
+			else ret=NULL
+			if val==="!=" => ret=(!ret.is_int()).int_var()
+			continue
+		else if val.is_word("> < >= <=")
+			idx+=2
+			int val1=ret.is_int()
+			int val2=mp.eval_expr(&idx,env,clevel).is_int()
+			if val===">" => val1=val1>val2
+			else if val==="<" => val1=val1<val2
+			else if val==="<=" => val1=val1<=val2
+			else if val===">=" => val1=val1>=val2
+			ret=val1.int_var()
+			continue
+
+		clevel++
+		if level<=clevel => idx-=2; break
+		if val==="&&"
+			idx+=2
+			if ret.is_true() => ret=mp.eval_expr(&idx,env,clevel)
+			else
+				while idx<mp->len-2
+					if mp[idx].is_word("&& || ? :") => idx-=2; break
+					idx+=2
+			continue
+		
+		clevel++
+		if(level<=clevel){ idx-=2; break; }
+		if val==="||"
+			idx+=2
+			if ret.is_true() => break
+			else ret=mp.eval_expr(&idx,env,clevel)
+			continue
+
+		clevel++
+		if(level<=clevel){ idx-=2; break; }
+		if val==="?"
+			idx+=2
+			if ret.is_true()
+				ret=mp.eval_expr(&idx,env,clevel)
+				break
+			else
+				while idx<mp->len && mp[idx]!==":" => idx+=2
+				continue
+		if val===":"
+			break
+
+		clevel++
+		if(level<=clevel){ idx-=2; break; }
+		if val==="="
+			idx+=2
+			if !ret.is_str() => "eval() in name=value name should be a valid name".fox_error()
+			void* val=mp.eval_expr(&idx,env,clevel)
+			env[ret]=val
+			ret=val
+			continue
+
+	*last=ret
+	return idx
+}
+int is_true(void * val){
+	if !val => return 0
+	if val.is_i() => return val.is_int()
+	if val.is_map() => return val.map_len()
+	if val.is_str() => return val.str_len()
+	return 1
+}
+char* read_line(FILE* fp){
+	char buff[1024]
+	char* buf=buff
+	size_t max=1024
+	char* ret=NULL
+	while getline(&buf,&max,fp)>0
+		ret.=buf
+		if(buf.strchr('\n')) return ret
+	
+	return ret
+}
+char* skip_quote(char* str){
+	char end=*str
+	while *str && *str!=end
+		if *str=='\\'
+			str++
+			if(!*str||*str==end) break
+		
+		str++
+	
+	return str
+}
+char* str_toupper(char* str){
+	if(!str) return NULL
+	char* ret=str
+	for(;*str;str++) *str=toupper(*str)
+	return ret
+}
+char* str_tolower(char* str){
+	if(!str) return NULL
+	char* ret=str
+	for(;*str;str++) *str=tolower(*str)
+	return ret
+}
+char* str_title(char* str){
+	if(!str) return NULL
+	map* words=str.str_split(:_,0)
+	words.each v,,i
+		char* s=v
+		if(!s.str_len()) words.map_del(i,1)
+		else if s.is_word(:map_id)
+			s.str_toupper()
+		else s[0]=s[0].toupper()
+	return words.map_join(" ")
+}
+char hex_char(char* in){
+	char temp[3]={0}
+	if(!in[0]||!in[1]) return '\0'
+	temp[0]=in[0]
+	temp[1]=in[1]
+	return (char)temp.strtol(NULL,16)
+}
+char* rand_str(int len=8){
+	char* ret=NULL
+	while ret.str_len()<len => ret.=rand()
+	return ret.sub_str(0,len)
+}
+
+int str_char_count(char* str,char c){
+	int ret=0
+	if(!str) return ret
+	while(*str) if(*str++==c) ret++
+	return ret
+}
+char* write_c(char* infile,char* outfile=NULL){
+	source_funcs()
+	return infile.fox_read_file().x_c().write_file(outfile,1)
+}
+map* command_line(char* in,int argc,char** argv){
+	if argc==1 || (argc==2 && argv[1]==="-h") => in.px(); return NULL
+	in.str_split("\n").each v,,i
+		if v.fox_at(0)=='\t' => continue
+		map* toks=v.str_trim().str_split(" ")
+		if toks[0]===argv[1]
+			if argc!=toks->len+1
+				"Invalid number of arguments".px()
+				"Usage: fox %s".mstr(v).px()
+				return NULL
+			map* ret=xvec(argv[1].str_trim("-"))
+			for int i=2;i<argc;i++ => ret.xadd(argv[i])
+			return ret
+	"Unrecognized argument".px()
+	in.px()
+	return NULL
+}
+int is_web(){
+	return _is_web
+}
+map* param_test(char* one=:none,char* two=:missing){
+	return args_map()
+}
+map* cmdline_params(map* args,char* func){
+	map* params=funcs()[func].params
+	if !params => "$func() not found".fox_error()
+	ret={}
+	int curr=1
+	int variadic=params.map_key(params.map_len()-1)==="..." ? params.map_len() : 0
+	char* named_param=NULL
+	args.each v,k,i
+		if v==="-nogc" => _nogc=1; continue
+		if v.str_start("-") && v.str_len()>1
+			char* val=NULL
+			if named_param
+				ret[named_param]=1
+			if v.str_start("--")
+				named_param=v.sub_str(2)
+				if v.str_has("=")
+					mp1=named_param.str_split("=",2)
+					named_param=mp1[0]
+					val=mp1[1]
+				else named_param=v.sub_str(2)
+			else
+				named_param=v.sub_str(1)
+				if !params[named_param]
+					params.each v2,k2,i2
+						if ret.map_has_key(k2) => continue
+						if k2.str_start(named_param) => named_param=k2; break
+//				if v.str_len()>2
+//					val=v.sub_str(2)
+			if !params[named_param] => "Invalid parameter $(named_param) in call to...\n$(funcs()[func].func_cdecl())".fox_error()
+			if val
+				ret[named_param]=val
+				named_param=NULL
+		else if named_param
+			ret[named_param]=v
+			named_param=NULL
+		else if variadic && curr>=variadic
+			ret[]=v
+			curr++
+		else
+			if curr>params.map_len() => "Excess number of arguments. Function has only $(params.map_len())\narguments $(funcs()[func].func_cdecl())".fox_error()
+			ret[params.map_key(curr-1)]=v
+			curr++
+	if named_param
+		ret[named_param]=1
+	params.each v2,k2,i2
+		if v2.type==="map*"
+	ret=ret.eval_params(func,NULL)
+	ret.each v3,k3,i3
+		if params[k3].type==="map*"
+			ret[k3]=v3.str_map()
+	return ret
+}
+int test_add(int a,int b) => return a+b
+map* test_map(map* out) => return out
+
+int run_cmdline(map* args){
+	if args->len==1
+		version().px();
+		---
+		Usage: fox <function> [<arg1> <arg2> ...]
+			Run "fox help" for list of functions
+			Run "fox tutorial" for a tutorial
+		---.px()
+		return 0
+	
+	char* name=args[1]
+	void* ret=NULL
+	if name.str_end(".fox")
+		_globals.args=_globals.args.vec_sub(1)
+		ret=name.fox_read_file().run()
+	else if !name.is_code() && !name.str_start("--")
+		ret=name.run()
+	else
+		if name.str_start("--") => name=name.sub_str(2)
+		ret=args.vec_sub(2).cmdline_params(name).invoke(name)
+	if _printed => return 0
+	if ret.is_map() => ret.json(1).px(); return 0
+	if ret.is_str() || ret.is_int() => ret.to_str().px()
+	return 0
+}
+int utests(char* test=NULL,char* file="utests.map"){
+	mp=file.file_vec()
+	errs=0
+	for int i=0; i<mp.map_len(); i+=3
+		if test && !mp[i].str_has(test) => continue
+		"Running: %20s\r".printf(mp[i])
+		stdout.fflush()
+		errs+=mp[i+1].eval().utest(mp[i+2],mp[i+1],mp[i])
+	passed=mp.map_len()/3+errs
+	"\n$passed/$(mp.map_len()/3) tests passed.".px()
+	return errs
+}
+char* file_path(char* file){
+	int i=0
+	for i=file.str_len(); i>0; i-- => if file[i-1]=='/' => break
+	if !i => return "./"
+	return file.substr(0,i)
+}
+map* load_global(char* file){
+	ret=file.fox_read_file().str_map()
+	_globals.map_merge(ret)
+	return ret
+}
+int err_msg(char* msg,char** ptr){
+	if !ptr => return 0
+	*ptr=msg
+	return 0
+}
+char* tutorial(){
+	return '.end
+	# Fox Language
+	Fox language. Transcompiles souce into C. Line by line. Adds GC, map-vector, multi-line string
+
+	## Features
+
+	### GC Collected
+
+	### Inline map and vectors
+	```
+		data={name: Habib, age: 31}
+		data.name=:Ibrahim
+		days=[sun, mon, tue]
+		days[1].px()
+	```
+
+	### Reflection
+	```
+		funcs()
+	```
+
+	### Multiline string
+	```
+		"
+		Use double quote
+		"
+		'
+		or single quote
+		'
+		---
+		or three dashes
+		---
+		".end1
+		or a signed terminator
+		.end1"
+	```
+	### Function chaining
+	```
+		"myfile.txt".file_open().parse().print()
+	```
+
+	### Default parameters
+	```
+		int fn(char* p1="hello", p2="world")
+		fn(,"hi")
+	```
+
+	### Indented blocks
+	```
+		if a==1
+			:hello.px()
+	```
+	Use => in single line blocks
+	```
+		if a==1 || b==2 => done=1; return 1
+	```
+	
+	### Optional ending semicolon
+	```
+		a=1+1
+		a.px()
+	```	
+	### Inherited types
+	```
+		i=0
+		s=""
+		vals={a: b, c: d}
+	```
+
+	### Easily call functions from command line
+	```
+		fox sub_str hello 3 -1
+	```
+
+	### Execute code from CL
+	```
+		fox ":todo.table('todo.db').cols.px()"
+	```
+
+	### Execute a file from CL
+	```
+		fox ./tests.fox
+	```
+
+	### Compile
+	```
+		fox make
+		fox compile
+		fox version
+	```
+
+	### Bind with PHP. Every function prefixed with :fox_
+	```
+		<?=fox_hello()?>
+	```
+
+	### Embeded variables in string
+	```
+		"name=$val"
+		"name=$(val+1)"
+	```
+
+	### eval() most of any code
+	```
+		"(1+2).px()".eval()
+	```
+
+	### String operations
+	```
+		cat .. cat .. cat
+		compare === compare
+		not !== not
+		merge .= string
+	```
+
+	## Syntax
+	```
+		int i=1;
+		mp=[];
+		
+		int i=1
+		map* mp=[]
+	```
+	
+	### Function Chaining
+	```
+		px(json(str_split(str_trim("habib,ayman"),",")));
+		"habib,ayman".str_trim().str_split(",").json().px()
+		"habib,ayman"
+			.str_trim()
+			.str_split(",")
+			.json()
+			.px()
+	```
+
+	### Code Blocks
+	```
+		if(n<2){
+			n*=2;
+			return n;
+		}
+		if(n<2)
+			n*=2
+			return n
+		if n<2
+			n*=2
+			return n
+		if n<2 => n*=2; return n
+	```
+
+	### Strings
+	```
+		char* a="hello, world"
+		char* a=:hello\,\ world
+		char* a="
+			hello, world
+			"
+		char* a=---
+			hello, world
+			---
+	```
+	### Maps
+	```
+		map* mp={}
+		map* mp=[]
+	```
+
+	### Vectors
+	```
+		map* mp=[]
+	```
+	
+	### Populate Map
+	```
+		mp=xmap(:name,:Sanjir)[:age]=int_var(21)
+		mp=xmap(:name,:Sanjir,:age,int_var(21))
+		mp="
+			name=Sanjir
+			age=#21
+			".str_map()
+		mp="name=Sanjir,age=#21".str_map()
+	```
+
+	### Populate Vector
+	```
+		mp=xvec(:Habib,:Anas,:Ayman)
+		mp="
+			Habib
+			Anas
+			Ayman
+			".str_vec()
+		mp="Habib,Anas,Ayman".str_vec()
+	```
+
+	### Access by key	
+	```
+		map_val(map_val(:address,mp),:city)
+		mp[:address][:city]
+		mp.:address.:city
+		mp.address.city
+	```
+
+	### Iterate
+	```
+		for(int i=1;i<=mp->len;i++)
+			mp[i-1].px()
+		
+		mp.each ,,i
+			mp[i-1].px()
+		
+		mp.each v,,i
+			v.px()
+	```
+
+	```
+	mp.each v,,i => => v.px()
+	mp.each v,,i => v.px()
+	mp.each ,,i => mp[i-1].px()
+	mp.each ,k,i => mp[k].px()
+	mp.each v ,,i=> v.px()
+	mp.each v ,k,i=> v.px()
+	```
+	
+	```
+	input.str_split(" ").each v,,i
+		v.px()
+	```
+
+	### Functions
+	```
+		int add(int a,int b){
+			return a+b;
+		}
+		int add(int a,int b)
+			return a+b
+		int add(int a,int b) => return a+b
+	```
+
+	### Default Parameters
+	```
+		int http_out(
+			char* body,
+			int status=200,
+			char* mime="text/html",
+			char* template=_globals.default.template
+		){
+			body.px()
+		}
+	```
+
+	### Invoke Functions
+	```
+		int increase(int num,int inc_by=2) => return num * inc_by
+
+		increase(7)
+		increase(7,2)
+		xvec(7,2).call_func(:increase)
+		xvec(7).call_func(:increase)
+		xmap(NULL,:increase,:num,7,:inc_by,2).data_exec()
+		"
+			increase
+			num=7
+			inc_by=2
+			".str_map().data_exec()
+	```
+
+	### Eval
+	```
+		"1+1".eval()==2
+		"1 && 2".eval()==2
+		"7 || 4".eval()==7
+		"info.name".eval("
+			info
+				name=Habib
+			".str_map())
+
+		===:Habib
+	```
+
+
+	### Template
+	```
+		"
+			name=Habib
+			age=32
+		".render("
+			Hi #{name}! Your age is #{age}
+		")
+
+		"
+			name=Habib
+			age=32
+		".render("
+			We know the following information about you!
+			--body
+			#{_key}: #{_val}
+			--foot
+			That was all!
+		")
+	```
+
+	### String Operation	
+	```
+		str="hello world"
+		str=:hello\ world
+		str===:hello
+		str.is_word("hello helo hilo")
+	```
+
+	.end'
+}
+char* h(char* in){
+	return in.str_replace({
+	"&": "&amp;",
+	"<": "&gt;",
+	">": "&lt;",
+	"\"": "&quot;",
+	"'": "&apos;"
+	})
+}
+char* type_name(int type){
+	char* names[]={:Free,:Skip,:Int,:String,:Blob,:Map,:Vector,:Index,:Keys,:Cell,:Cell2}
+	return names[type]
+}
+char* ptr_name(void* var) => return var.ptr_type().type_name()
+int is_file(char* filename){
+	struct stat buff={0}
+	return filename.stat(&buff)==0
+}
+char* fork_exec(char* cmd,map* params){
+	pid_t pid=fork()
+	if pid==0
+		switch(params.map_len())
+			case 0: execlp(cmd,cmd,NULL); break
+			case 1: execlp(cmd,cmd,params[0],NULL); break
+			case 2: execlp(cmd,cmd,params[0],params[1],NULL); break
+			case 3: execlp(cmd,cmd,params[0],params[1],params[2],NULL); break
+			case 4: execlp(cmd,cmd,params[0],params[1],params[2],params[3],NULL); break
+			case 5: execlp(cmd,cmd,params[0],params[1],params[2],params[3],params[4],NULL); break
+			case 6: execlp(cmd,cmd,params[0],params[1],params[2],params[3],params[4],params[5],NULL); break
+			default: return "6 max params supported in fork/exec"; break
+	else if pid<0 => return "Can't exec %s".mstr(cmd)
+	else
+		int status=0
+		pid_t ws=pid.waitpid(&status,WNOHANG)
+		if ws == -1 => return "Exec fox_error while running %s".mstr(cmd)
+		else if status.WIFEXITED() => return status.WEXITSTATUS() ? "command %s failed".mstr(cmd) : NULL
+		else if status.WIFSIGNALED() => "command %s killed".mstr(cmd)
+	return NULL
+}
+map* source_files() => return ["core.fox","fox.fox","sql.fox","cmd.fox"]
+map* source_funcs(){
+	if !_globals.cache.funcs
+		map* mp={}	
+		source_files().each v,,i
+			mp3=v.file_funcs()
+			mp.map_merge(mp3)
+		_globals.cache.funcs=mp
+	return _globals.cache.funcs
+}
+map* file_funcs(char* filename) => return filename.fox_read_file().x_funcs()
+char* help() => return funcs().funcs_cdecl()
+map* funcs(){
+	return _globals.cache.funcs ? _globals.cache.funcs : _globals.cache.reflect.funcs
+}
+void* run(char* in){
+	int halt=0
+	return in.x_toks(1).fox_eval(xmap(:args,_globals.args),&halt)
+}
+void* fox_eval(map* mp,map* env,int* halt){
+	if !mp => return NULL
+	assert(mp.ptr_type()==Vector)
+	enum {HBreak=1, HReturn, HContinue};
+	void* v=mp[1]
+	void* ret=NULL
+	if v.is_map()
+		mp.each v3,k3,i3
+			ret=v3.fox_eval(env,halt)
+			if *halt => return ret
+		return ret
+	if v===:if
+		idx=5
+		while 1
+			if mp[idx].eval_toks(env).is_true()
+				return mp[idx+6].fox_eval(env,halt)
+			else if mp[idx+10]===:else
+				if mp[idx+12]===:if => idx+=16
+				else return mp[idx+14].fox_eval(env,halt)
+			else
+				return NULL
+	else if v===:while
+		while mp[5].eval_toks(env).is_true()
+			ret=mp[11].fox_eval(env,halt)
+			if *halt==HContinue => *halt=0
+			else if *halt==HBreak => *halt=0; break
+			else if *halt => break
+		return ret
+	else if v===:for
+		map* conds=mp[5]
+		for conds[1].eval_toks(env); conds[3].eval_toks(env).is_true(); conds[5].eval_toks(env)
+			ret=mp[11].fox_eval(env,halt)
+			if *halt==HContinue => *halt=0
+			else if *halt==HBreak => *halt=0; break
+			else if *halt => break
+		return ret
+	else if v===:return
+		*halt=HReturn
+		return mp.eval_toks(env)
+	else if v===:break
+		*halt=HBreak
+	else if v===:continue
+		*halt=HContinue
+	else if mp.is_func_decl()
+		return ret
+	else
+		return mp.eval_toks(env)
+	return ret
+}
+void src(map* mp,int from=0,int len=0,char* msg=NULL){
+	if !len => len=mp->len-from
+	"$(mp.vec_sub(from,len).json())".px()
+	if msg => "$msg ___________________________".px()
+}
+map* structs(){
+	return _globals.structs ? _globals.structs : _globals.cache.reflect.structs
+}
+map* macros(){
+	return _globals.macros ? _globals.macros : _globals.cache.reflect.macros
+}
+map* source_structs(){
+	if !_globals.structs => _globals.structs=write_foxh(NULL).c_structs()
+	return _globals.structs
+}
+map* source_macros(){
+	if !_globals.macros => _globals.macros=write_foxh(NULL).c_macros()
+	return _globals.macros
+}
+int fib(int i){
+	if i < 2 => return i
+	return fib(i-1)+fib(i-2)
+}
+map* toks_syn(map* toks,int recurse=1){
+	ret=[]
+	line=[]
+	for int i=0; i<toks.map_len()-1; i+=2
+		v=toks[i+1]
+		line.xadd(toks[i], v)
+		if v===";"
+			ret.xadd(NULL,line)
+			line=[]
+		if recurse && v.is_word(") else do") && toks[i+3]==="{"
+			toks[i+5]= toks[i+5].toks_syn()
+		else if v===:for => toks[i+5]= toks[i+5].toks_syn()
+	if line.map_len() => ret.xadd(NULL,line)
+	if toks.map_len()%2 => ret.xadd(NULL,[toks[toks.map_len()-1],NULL])
+	return ret
+}
+time_t str_time(char* in){
+	struct tm tm={0}
+	tm.tm_year=in.sub_str(0,4).atoi()-1900
+	tm.tm_mon=in.sub_str(5,2).atoi()-1
+	tm.tm_mday=in.sub_str(8,2).atoi()
+	tm.tm_hour=in.sub_str(11,2).atoi()
+	tm.tm_min=in.sub_str(14,2).atoi()
+	tm.tm_sec=in.sub_str(17,2).atoi()
+	return mktime(&tm)
+}
+char* time_str(time_t timer=0){
+	char buffer[20]
+	if !timer => timer=time(0)
+	strftime(buffer,20, "%Y-%m-%d %H:%M:%S",localtime(&timer))
+	return buffer.str_dup()
+}
+char* increase_version() => return (".version.txt".fox_read_file().atoi()+1).int_str().write_file(".version.txt")
+int call_variadic_int(map* mp,void* fp,char* name){
+	int(*ptr)(void* param1,...)=fp
+	if !mp => return ptr(End)
+	len=mp.map_len()
+	if mp[mp->len-1]==(void*)End => len--
+	if len==0 => return ptr(End)
+	if len==1 => return ptr(mp[0],End)
+	if len==2 => return ptr(mp[0],mp[1],End)
+	if len==3 => return ptr(mp[0],mp[1],mp[2],End)
+	if len==4 => return ptr(mp[0],mp[1],mp[2],mp[3],End)
+	if len==5 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],End)
+	if len==6 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],End)
+	if len==7 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],End)
+	if len==8 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],End)
+	if len==9 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],End)
+	if len==10 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],End)
+	if len==11 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],End)
+	if len==12 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],End)
+	if len==13 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],End)
+	if len==14 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],End)
+	if len==15 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],End)
+	if len==16 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],End)
+	if len==17 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],End)
+	if len==18 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],End)
+	if len==19 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],End)
+	if len==20 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],End)
+	if len==21 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],End)
+	if len==22 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],End)
+	if len==23 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],End)
+	if len==24 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],End)
+	if len==25 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],End)
+	if len==26 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],End)
+	if len==27 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],mp[26],End)
+	if len==28 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],mp[26],mp[27],End)
+	if len==29 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],mp[26],mp[27],mp[28],End)
+	if len==30 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],mp[26],mp[27],mp[28],mp[29],End)
+	if len==31 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],mp[26],mp[27],mp[28],mp[29],mp[30],End)
+	if len==32 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],mp[26],mp[27],mp[28],mp[29],mp[30],mp[31],End)
+	"Only 32 parameters supported in call to function $name sent=$(mp.json())".fox_error()
+	return 0
+}
+void* call_variadic_ptr(map* mp,void* fp,char* name){
+	void*(*ptr)(void* param1,...)=fp
+	if !mp => return ptr(End)
+	len=mp.map_len()
+	if mp[mp->len-1]==(void*)End => len--
+	if len==0 => return ptr(End)
+	if len==1 => return ptr(mp[0],End)
+	if len==2 => return ptr(mp[0],mp[1],End)
+	if len==3 => return ptr(mp[0],mp[1],mp[2],End)
+	if len==4 => return ptr(mp[0],mp[1],mp[2],mp[3],End)
+	if len==5 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],End)
+	if len==6 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],End)
+	if len==7 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],End)
+	if len==8 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],End)
+	if len==9 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],End)
+	if len==10 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],End)
+	if len==11 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],End)
+	if len==12 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],End)
+	if len==13 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],End)
+	if len==14 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],End)
+	if len==15 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],End)
+	if len==16 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],End)
+	if len==17 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],End)
+	if len==18 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],End)
+	if len==19 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],End)
+	if len==20 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],End)
+	if len==21 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],End)
+	if len==22 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],End)
+	if len==23 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],End)
+	if len==24 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],End)
+	if len==25 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],End)
+	if len==26 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],End)
+	if len==27 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],mp[26],End)
+	if len==28 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],mp[26],mp[27],End)
+	if len==29 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],mp[26],mp[27],mp[28],End)
+	if len==30 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],mp[26],mp[27],mp[28],mp[29],End)
+	if len==31 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],mp[26],mp[27],mp[28],mp[29],mp[30],End)
+	if len==32 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],mp[26],mp[27],mp[28],mp[29],mp[30],mp[31],End)
+	"Only 32 parameters supported in call to function $name sent=$(mp.json())".fox_error()
+	return 0
+}
+map* vec_rdup(map* mp){
+	assert(mp.is_vec())
+	ret=mp.vec_dup()
+	ret.each v,k,i
+		if v.is_vec() => ret[i]=v.vec_rdup()
+	return ret
+}
+map* toks_replace(map* in,map* replace){
+	in.each v,k,i
+		if v.is_map()
+			v.toks_replace(replace)
+		else if v.is_str() && replace[v]
+			in.vec_splice(i,1,replace[v]).vec_compact()
+			i+=replace[v].map_len()+1
+	return in
+}
+map* toks_join(map* in, char* by=""){
+	if !in => return NULL
+	ret=in[0].vec_dup()
+	assert(ret.is_vec())
+	for i=1; i<in->len; i++
+		if !(ret.map_len()%2) => ret.xadd(NULL)
+		ret.xadd(by)
+		ret.vec_merge(in[i])
+	return ret
+}
+map* toks_align(map* in){
+	last=in.map_len()
+	if !(last%2) => return in
+	if in[last-1]==NULL
+		in.vec_del(-1).vec_compact()
+	else in[]=NULL
+	return in
+}
+map* toks_split(map* in,char* by,int limit=0){
+	ret=in.map_split(by,limit)
+	for i=1;i<ret->len;i++ => ret[i-1].toks_align()
+	return ret
+}
+map* expand_macros(map* mp,map* macros){
+	if !mp => return NULL
+	assert(mp.ptr_type()==Vector)
+	old=0
+	for i=1; i<mp->len; i+=2
+		assert(i!=old)
+		old=i
+		v=mp[i]
+		if v.is_map()
+			v.expand_macros(macros)
+		else if mp[i+2]==="(" && v.is_str() && macros[v] && !v.is_word(:End)
+			map* macro=macros[mp[i]]
+			params=mp[i+4].toks_split(",")
+			if macro.params.map_len()!=params.map_len() => "Macro $(mp[i]) takes $(macro.params.map_len()) parameters, $(params.map_len()) provided".fox_error()
+			subs={}
+			macro.params.each v2,,i2
+				subs[v2]=params[i2].vec_del(0).vec_compact()
+			expanded=macro.body.vec_rdup().toks_replace(subs)
+			mp.vec_splice(i,7,expanded.vec_del(0).vec_compact())
+			i+=expanded.map_len()-7
+	return mp
+}
+map* c_macros(char* in) => return in.x_map().toks_macros()
+map* toks_macros(map* mp){
+	ret={}
+	for i=1; i<mp.map_len(); i+=2
+		if !mp[i-1].str_has("#define") => continue
+		mp[i-1].str_split("\n").each line,,i2
+			if !line.str_start("#define") => continue
+			toks=line.drop_left("#define ").x_map()
+			if toks[3]!=="(" => continue
+			params=[]
+			toks[5].map_split(",").each v,k,i3
+				params[]=v[1]
+			upto=9
+			for ;upto<toks->len; upto+=2 => if toks[upto-1].is_str().str_has("\n") => break
+			ret[toks[1]]= xmap(:name, toks[1], :params, params, :body, toks.vec_sub(8,upto-9))
+	return ret
+}
+void devel(char* file){
+	file.fox_read_file().x_map()
+		.colon_str()
+		.dot_key()
+		.str_dollars()
+		.add_curly()
+		.force_curly()
+		.add_semicolon()
+		.dot_func()
+		.dot_each()
+		.toks_c()
+		.px()
+}
+
+int is_inline_vector(map* toks,int idx){
+	if !toks[idx].is_word("[ { ") => return 0
+	char* pre=toks[idx-2].is_str()
+	if pre.is_word(") ]") => return 0
+	if pre.is_code() && !pre.is_word(:return) => return 0
+	if pre==="="
+		char* type=toks.old_decl_type(idx-4)
+		if type && !type.is_word("map* void*") => return 0
+	return toks[idx]==="[" ? Vector : Map
+}
+map* string_operators(map* toks){
+	for int i=0;i<=toks.map_len();i+=2
+		if toks[i+1].is_map()
+			toks[i+1].string_operators()
+		else if toks[i+1]==='.='
+			head=toks.expr_head(i-2,"=")
+			tail=toks.expr_tail(i+2,'.=')
+			mid=toks.vec_sub(head+1,i-head-1)
+			mid.vec_splice(0,0,[NULL]).vec_merge([NULL,","])
+			mid.vec_merge(toks.vec_sub(i+2,tail-i-2)).vec_merge([NULL,","," ",:End])
+			mid.each v2,k2,i2
+				if v2==='..'
+					mid[k2]=","
+			mid=[:xcat,NULL,"(",NULL,mid,NULL,")"]
+			toks.vec_splice(i+3,tail-i-3,mid)
+			toks[i+1]="="
+			i=head
+		else if toks[i+1]==='..'
+			head=toks.expr_head(i-2,"<")
+			tail=toks.expr_tail(i+2,"<")
+			mid=toks.vec_sub(head+1,tail-head-1).vec_splice(0,0,[NULL]).vec_merge([NULL,","," ",:End])
+			mid.each v2,k2,i2
+				if v2==='..'
+					mid[k2]=","
+			mid=[:xstr,NULL,"(",NULL,mid,NULL,")"]
+			toks.vec_splice(head+1,tail-head-1,mid)
+			i=head
+		else if toks[i+1]==='==='||toks[i+1]==='!=='
+			head=toks.expr_head(i-2,'==')
+			tail=toks.expr_tail(i+2,'==')
+			mid=toks.vec_sub(head+1,i-head-1).xadd(NULL,",").vec_merge(toks.vec_sub(i+2,tail-i-2)).vec_splice(0,0,[NULL])
+			if toks[i+1]==='!==' => mid=["!",NULL,:str_eq,NULL,"(",NULL,mid,NULL,")"]
+			else mid=[:str_eq,NULL,"(",NULL,mid,NULL,")"]
+			toks.vec_splice(head+1,tail-head-1,mid)
+			i=head
+	return toks
+}
+//int is_inline_xml(map* toks,int idx){
+//	if !toks[idx]==="<" => return 0
+//	char* pre=toks[idx-2].is_str()
+//	if pre.is_word(") ]") => return 0
+//	if pre.is_code() && !pre.is_word(:return) => return 0
+//	if pre==="="
+//		char* type=toks.old_decl_type(idx-4)
+//		if type && !type.is_word("map* void*") => return 0
+//	return 1
+//}
+//map* inline_xml(map* toks){
+//	if !toks => return toks
+//	toks.each val,,idx=1 step 2
+//		if val.is_map() => val.inline_xml(); continue
+//		if !toks.is_inline_xml(idx) => continue
+//		i=idx
+//		toks.each ,,idx2=idx step 2
+//			if 
+//		if !toks[i] => continue
+//		rep={
+//
+//}
+map* inline_vectors(map* toks){
+	if !toks.map_len() => return toks
+	for int idx=1;idx<=toks->len;idx+=2
+		if toks[idx].is_map()
+			toks[idx].inline_vectors()
+			continue
+		type=toks.is_inline_vector(idx)
+		if !type => continue
+		map* body=toks[idx+2].is_map()
+		if !body => continue
+		if type==Map && body[1]==="0" => continue
+		body.inline_vectors()
+		toks[idx]="("
+		toks[idx+4]=")"
+		funcname=:xmap
+		if type==Vector => funcname=:xvec
+		if body->len<2 => funcname= type==Vector ? :new_vec : :new_map
+		toks.vec_splice(idx,0,xvec(funcname,NULL))
+		skip=0
+		for int idx2=1;idx2<=body->len;idx2+=2
+			if body[idx2]==="?" => skip++
+			if body[idx2]===":"
+				if !skip
+					if body[idx2-2].is_code()
+						if body[idx2-2].is_word("NULL null")
+							body[idx2-2]=:NULL
+						else
+							body[idx2-2]=body[idx2-2].str_quote()
+					body[idx2]=","
+				if skip => skip--
+		if body[body->len-body->len%2-1]===";"
+			body.vec_del(body->len-body->len%2-2,2).vec_compact()
+		idx+=6
+		if toks.requires_semicolon(idx+1) => toks.vec_splice(idx+2-1,0,xvec(NULL,";"))
+	return toks
+}
+int msleep(int msecs){
+	return usleep(msecs*1000);
+}
+char* time_ago(char* stime){
+	int secs=time(0)-stime.str_time()
+	if secs < 0 => secs*=-1
+	if(secs<120) return "a minute"
+	secs/=60
+	if(secs<60) return "%d minutes".mstr(secs)
+	secs/=60;
+	if(secs<2) return "an hour"
+	if(secs<24) return "%d hours".mstr(secs)
+	secs/=24;
+	if(secs<2) return "a day"
+	if(secs<30) return "%d days".mstr(secs)
+	if(secs<60) return "a month"
+	if(secs<365) return "%d months".mstr(secs/30)
+	secs/=365;
+	if(secs<2) return "a year"
+	return "%d years".mstr(secs)
+}
+char* ptr_id(void* ptr){
+	static char temp[128];
+	mempage* pg=ptr.ptr_page()
+	if !pg => return ptr
+	int block=ptr.ptr_block(pg)
+	type=ptr.ptr_type()
+	if type
+		int len=block.block_len(pg)
+		int head=block.block_head(pg)
+		int pre=block-head
+		sprintf(temp,"%d#%d+%d-%d*%d[%s]",pg->no,block,len,pre,pg->block_size,ptr.ptr_name())
+		return temp
+	sprintf(temp,"%d#%d+%d [%s]",pg->no,block,pg->block_size,ptr.ptr_name())
+	return temp
+}
+char* today() => return time_str().substr(0,10)
+char* now() => return time_str().substr(11,8)
+char* datetime() => return time_str()
+void test_loop(){
+	mp=[:one,:two,:three]
+	for(int next1=next(mp, -1);has_id(mp,next1);next1+=1){
+		char* val=mp[next1]
+		val.px()	
+	}
+}
+int crash(){
+	char** hello=NULL
+	return **hello
+}
+int str_ascii(char* in){
+	return in[0]
+}
+map* sql_tokenizer(char** line){
+	char* str=*line
+	map* mp=[]
+	if !*str => return NULL
+	char term=closing_paren(*str)
+	if term => str++
+	while *str && *str!=term
+		if "\"'`".strchr(*str) => mp[]=read_quote(&str)
+		else if str.str_start("--") => read_theline(&str);
+		else if str.str_start("/*") => read_upto(&str,"*/");
+		else if *str==':' => mp[]=fox_read_symbol(&str)
+		else if is_oper(*str) => mp[]=fox_read_oper(&str,term)
+		else if *str>='0' && *str<='9' => mp[]=read_num(&str)
+		else if is_alpha(*str) => mp[]=read_alpha(&str)
+		else if "([{".strchr(*str) => mp.read_paren(&str,sql_tokenizer)
+		else if " \t".strchr(*str) => read_space(&str);
+		else if "\n\r".strchr(*str) => read_newline(&str);
+		else if ".,;".strchr(*str) => mp[]=str.substr(0,1)
+		str++
+	
+	*line=str
+	return mp
+}
+map* prop_tokenizer(char** line){
+	char* str=*line
+	map* mp=[]
+	if !*str => return NULL
+	char term=closing_paren(*str)
+	if term => str++
+	while *str && *str!=term
+		if "\"'`".strchr(*str) => mp[]=read_quote(&str)
+		else if str.str_start("--") => read_theline(&str);
+		else if str.str_start("/*") => read_upto(&str,"*/");
+		else if *str==':' => mp[]=fox_read_symbol(&str)
+		else if is_oper(*str) => mp[]=fox_read_oper(&str,term)
+		else if *str>='0' && *str<='9' => mp[]=read_num(&str)
+		else if is_alpha(*str) => mp[]=read_alpha(&str)
+		else if "([{".strchr(*str) => mp.read_paren(&str,sql_tokenizer)
+		else if " \t".strchr(*str) => read_space(&str);
+		else if "\n\r".strchr(*str) => read_newline(&str);
+		else if ".,;".strchr(*str) => mp[]=str.substr(0,1)
+		str++
+	
+	*line=str
+	return mp
+}
+void benchmark_gc(){
+	ret=[]
+	for i=0;i<1000000;i++
+		ret[i%200000]=1024.fox_alloc(String)
+	ret.map_len().dx()
+	mem_usage().dx()
+}
+char* str_echo(char* str) => return str
+map* map_echo(map* in) => return in
+char* str_join(char* str1,char* joiner,char* str2){
+	if !str1.str_len() => return str2
+	if !str2.str_len() => return str1
+	char* ret=NULL
+	ret.=str1
+	ret.=joiner
+	ret.=str2
+	return ret
+}
+map* read_paren(map* mp,char** line,map*(*func)(char**)){
+	char* str=*line
+	mp[]=char_str(*str)
+	mp[]=line.func()
+	mp[]=closing_paren(*str).char_str()
+	return mp
+}
+map* set_map(void* val,map* mp,int idx) => return set(mp,idx,val)

@@ -1,0 +1,28 @@
+
+#include <fox.h>
+#include <foxcmd.h>
+
+__attribute__((destructor)) static void maindtor(void) => gc_end()
+map* args(int argc, char** argv) => return ptrs_vec((void**)argv,argc)
+void* px(void* str,int newline=1){
+	void* ret=str
+	str=str.to_str()
+	if !str.str_len() && !newline => return ret
+	str.print()
+	if newline => "\n".print()
+	return ret
+}
+void xexit(int val=0){
+	gc_end()
+	exit(val)
+}
+void* fox_error(char* msg,int dump=0){
+	"ERROR: ".fputs(stderr)
+	msg.fputs(stderr)
+	"\n_________________________________________ [ERROR]\n".fputs(stderr)
+	"\n".fputs(stderr)
+	if dump => stack_str().fputs(stderr)
+	xexit(-1)
+	return NULL
+}
+void* call_php(map* params,char* func) => return "DUMMY"
