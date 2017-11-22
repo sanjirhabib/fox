@@ -1,5 +1,5 @@
 # Fox Language
-Fox language. Transcompiles souce into into human readable C. Generated code maintains your original format, comment and indention, lines are exactly the same in number as your original source.
+Fox language. Transcompiles source into into human readable C. Generated code maintains your original format, comment and indention, lines are exactly the same in number as your original source.
 
 ## Features
 
@@ -9,7 +9,7 @@ Fox language. Transcompiles souce into into human readable C. Generated code mai
 ### GC Collected
 Tracing GC. 50ms max delay in average use cases.
 
-### Inline map and vectors
+### Inline maps and vectors
 ```
 data={name: Habib, age: 31}
 data.name=:Ibrahim
@@ -20,6 +20,7 @@ days[1].px()
 ### Reflection
 ```
 funcs()
+["hello","Abdul"].call_func(:hello_world)
 ```
 
 ### Multiline string
@@ -39,7 +40,7 @@ or a signed terminator
 ```
 ### Function chaining
 ```
-	"myfile.txt".file_open().parse().print()
+"myfile.txt".file_open().parse().print()
 ```
 
 ### Default parameters
