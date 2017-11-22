@@ -1,0 +1,11 @@
+#include <fox.h>
+
+int main(int argc,char** argv){
+	gc_start()
+	"hello, world".px()
+	[:hello, :world].px()
+	data={name: :Habib, age: 23}.px()
+	data.name=:Ibrahim
+	data.px()
+	return 0
+}
