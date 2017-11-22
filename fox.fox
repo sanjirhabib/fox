@@ -3605,11 +3605,15 @@ int err_msg(char* msg,char** ptr){
 char* tutorial(){
 	return '.end
 	# Fox Language
-	Fox language. Transcompiles souce into C. Line by line. Adds GC, map-vector, multi-line string
+	Fox language. Transcompiles souce into into human readable C. Maintaining your original code format.
 
 	## Features
 
+	### Small code base
+	1K lines for the runtime. The compiler is 4K lines. Creates small 50K binary for hello world.
+
 	### GC Collected
+	Tracing GC. 50ms max delay in average use cases.
 
 	### Inline map and vectors
 	```
