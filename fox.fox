@@ -2902,7 +2902,8 @@ char* foxh(){
 	#include <sys/stat.h>
 
 	#include <signal.h>
-	//#include <ucontext.h>
+	#include <sqlite3.h>
+
 	enum Types {
 		Null,Skip,Int,String,Blob,Map,Vector,Index,Keys,Cell,Cell2,Tail
 	};
