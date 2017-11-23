@@ -4,7 +4,7 @@ Fox language. Transcompiles source into into human readable C. Generated code ma
 ## Features
 
 ### Small code base
-1K lines for the runtime. The compiler is 4K lines. Creates small 30K binary for hello world.
+1K lines for the runtime. The compiler is 4K lines. Creates small 40KB binary for hello world.
 
 ### GC Collected
 Tracing GC. 50ms max delay in average use cases.

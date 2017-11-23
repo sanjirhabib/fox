@@ -1,4 +1,5 @@
 #include <fox.h>
+#include <foxcmd.h>
 
 int main(int argc,char** argv){
 	gc_start()
@@ -7,5 +8,6 @@ int main(int argc,char** argv){
 	data={name: :Habib, age: 23}.px()
 	data.name=:Ibrahim
 	data.px()
+	[:hi,:there].each v => v.px()
 	return 0
 }

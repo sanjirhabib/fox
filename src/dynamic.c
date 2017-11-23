@@ -5,7 +5,7 @@
 #include "sql.h"
 
 char* version(){
-	return mstr("Fox: build: 4647, date: 2017-11-23 00:02:57 [%s old]",time_ago("2017-11-23 00:02:57"), End);
+	return mstr("Fox: build: 4660, date: 2017-11-23 11:06:15 [%s old]",time_ago("2017-11-23 11:06:15"), End);
 };
 void* invoke(map* v,char* name){
 	unsigned long long idn=str_hash((unsigned char*)name);

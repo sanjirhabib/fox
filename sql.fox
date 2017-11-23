@@ -164,7 +164,7 @@ map* sql_map(char* sql){
 	if !sql => return NULL
 	ret=sql.cache(:sql_map)
 	if ret => return ret
-	if !sql.str_has(" ") => sql="select * from %s".mstr(sql)
+	if !sql.str_has(" ") => sql="select * from $sql"
 	return sql.sql_toks().sql_toks_map()
 }
 char* sql_map_join(map* mp,char* joiner){
@@ -185,13 +185,13 @@ map* sql_convert_func(map* mp,char* db){
 		params[]=mp[idx].sql_str()
 	
 	if db===:lite
-		if name===:time => return "substr(%s,12,8)".mstr(params[0]).sql_toks()
-		if name===:date => return "substr(%s,1,10)".mstr(params[0]).sql_toks()
-		if name===:month => return "substr(%s,1,7)".mstr(params[0]).sql_toks()
-		if name===:year => return "substr(%s,1,4)".mstr(params[0]).sql_toks()
-		if name===:quarter => return "substr(%s,1,5)||((substr(%s,6,2)-1)/3+1)".mstr(params[0]).sql_toks()
-		if name===:empty => return "(%s is null or %s='')".mstr(params[0]).sql_toks()
-		if name===:if => return "case when %s then %s else %s end".mstr(params[0],params[1],params[2]).sql_toks()
+		if name===:time => return "substr($(params[0]),12,8)".sql_toks()
+		if name===:date => return "substr($(params[0]),1,10)".sql_toks()
+		if name===:month => return "substr($(params[0]),1,7)".sql_toks()
+		if name===:year => return "substr($(params[0]),1,4)".sql_toks()
+		if name===:quarter => return "substr($(params[0]),1,5)||((substr($(params[0]),6,2)-1)/3+1)".sql_toks()
+		if name===:empty => return "($(params[0]) is null or $(params[0])='')".sql_toks()
+		if name===:if => return "case when $(params[0]) then $(params[1]) else $(params[2]) end".sql_toks()
 	
 	return NULL
 }
@@ -720,15 +720,15 @@ char* lite_create_col(map* col){
 		month=varchar
 	".maptype(col.type)
 	char* name=col.name
-	if type===:varchar => return "%s varchar(%d) collate nocase not null default ''".mstr(name,size)
-	if type===:number => return "%s integer not null default 0".mstr(name)
-	if type===:float => return "%s real not null default 0".mstr(name)
-	if type===:clob => return "%s clob not null default ''".mstr(name)
-	if type===:blob => return "%s blob not null default ''".mstr(name)
-	if type===:date => return "%s date not null default ''".mstr(name)
-	if type===:time => return "%s time not null default ''".mstr(name)
-	if type===:datetime => return "%s datetime not null default ''".mstr(name)
-	if type===:yearmonth => return "%s varchar(7) not null default ''".mstr(name)
+	if type===:varchar => return "$name varchar($size) collate nocase not null default ''"
+	if type===:number => return "$name integer not null default 0"
+	if type===:float => return "$name real not null default 0"
+	if type===:clob => return "$name clob not null default ''"
+	if type===:blob => return "$name blob not null default ''"
+	if type===:date => return "$name date not null default ''"
+	if type===:time => return "$name time not null default ''"
+	if type===:datetime => return "$name datetime not null default ''"
+	if type===:yearmonth => return "$name varchar(7) not null default ''"
 	assert(0)
 	return NULL
 }
@@ -744,19 +744,19 @@ map* create_index_sqls(map* tbl){
 	ret=[]
 	tbl.cols.each f,k,i
 		if !f.type.is_indexed() => continue
-		ret[]="create index idx_%s_%s on %s(%s)".mstr(tbl.name,f.name,tbl.name,f.name)
+		ret[]="create index idx_$(tbl.name)_$(f.name) on $(tbl.name)($(f.name))"
 	return ret
 }
-char* drop_sql(char* name) => return "drop table if exists %s".mstr(name)
+char* drop_sql(char* name) => return "drop table if exists $name"
 char* create_sql(map* tbl,char* name=NULL){
 	if !name => name=tbl.name
 	cls={}
 	tbl.cols.each v ,k,i=> cls[k]=v.lite_create_col()
 	pkeys=tbl.cols.cols_pkeys()
 	if pkeys.map_len()==1 && tbl.cols[pkeys[0]].type.is_word("int integer")
-		cls[pkeys[0]]="%s integer primary key autoincrement".mstr(pkeys[0])
-	else cls[]="primary key (%s)".mstr(pkeys.map_join(","))
-	return "create table %s (%s)".mstr(name,cls.map_join(","))
+		cls[pkeys[0]]="$(pkeys[0]) integer primary key autoincrement"
+	else cls[]="primary key ($(pkeys.map_join(\",\")))"
+	return "create table $name ($(cls.map_join(\",\")))"
 }
 char* meta_type(char* type,int size){
 	if size==36 => return :guid
@@ -851,7 +851,7 @@ map* db_tables(char* db){
 	return ret
 }
 map* db_cols(char* db,char* tbl){
-	map* rs="pragma table_info (%s)".mstr(tbl).lite_exec(db,NULL)
+	map* rs="pragma table_info ($tbl)".lite_exec(db,NULL)
 	map* ret={}
 	//name|type|notnull|dflt_value|pk
 	rs.each v,,idx
@@ -947,7 +947,7 @@ map* sql_vec(char* sql,char* db,map* param=NULL){
 	return ret
 }
 char* sql_drop(char* tbl){
-	return "drop table if exists %s".mstr(tbl)
+	return "drop table if exists $tbl"
 }
 char* to_sql(char* sql){
 	return sql.sql_map().map_sql()
@@ -984,7 +984,7 @@ void* id_update(void* ids,char* tbl,char* db,map* row){
 		fld[]="$k=:$k"
 	map* v1=[]
 	ids.each v2,k2,idx2
-		v1[]="%s=:_old_%s".mstr(k2,k2)
+		v1[]="$k2=:_old_$k2"
 		row["_old_$k2"]=v2
 	return "update $tbl set $(fld.map_join(', ')) where $(v1.map_join(' and '))".lite_exec(db,row)
 }
@@ -1511,7 +1511,7 @@ char* crud_tables(char* db){
 	db.table_names().each v,k,i
 		data[]={
 			table: v,
-			rows: "select count(*) from %s".mstr(v).sql_value(db),
+			rows: "select count(*) from $v".sql_value(db),
 			cols: v.tbl_cols(db).map_len()
 		}
 	return data.render_table("
@@ -1534,7 +1534,7 @@ char* confirm(char* prompt=NULL,char* option1=NULL,char* option2=NULL,char* titl
 	return NULL		
 }
 char* sql_delete(void* ids,char* tbl,char* db){
-	return "delete from %s".mstr(tbl)..re_where(tbl.pkeys_where(db)).lite_exec(db,tbl.sql_id_ids(db,ids))
+	return "delete from $tbl"..re_where(tbl.pkeys_where(db)).lite_exec(db,tbl.sql_id_ids(db,ids))
 }
 char* crud_delete(char* sql,char* db=_globals.ddb,char* back="../"){
 	if "Delete this record?".confirm(:Yes,:No)
@@ -2105,7 +2105,7 @@ map* show_map(char* show){
 char* data_show(map* data,char* show){
 	return NULL
 }
-char* http_redirect(char* url) => return NULL.http_out("301 Moved Permanently","text/html",xvec("Location: %s".mstr(url)))
+char* http_redirect(char* url) => return NULL.http_out("301 Moved Permanently","text/html",xvec("Location: $url"))
 void* http_error(char* msg,char* status) => _globals.fox_error.mstr(status,status,msg).http_out(status); return NULL
 map* compile_template(char* tem){
 	if(!tem) return NULL
@@ -2176,14 +2176,14 @@ char* http_out(char* str=NULL,char* status="200 OK",char* mime="text/html; chars
 			GC: #{gc_runs()}runs.
 			</div>
 			---)
-	"HTTP/1.1 %s".mstr(status).header()
-	"Content-Type: %s".mstr(mime).header()
-	"Content-Length: %d".mstr(str.str_len()).header()
+	"HTTP/1.1 $status".header()
+	"Content-Type: $mime".header()
+	"Content-Length: $(str.str_len())".header()
 	headers.each v,,i => v.header()
 	_globals.res.cookie.each v2,,i2
 		"Set-Cookie: %s".mstr(v2).header()
 	if _globals.res.sess
-		_globals.res.sess.json().write_file("/tmp/sess.%s".mstr(sess_id()))
+		_globals.res.sess.json().write_file("/tmp/sess.$(sess_id())")
 	"".header()
 	str.print()
 	return str
@@ -2255,16 +2255,16 @@ void sess_load(){
 	char* sid=:cookie.header_vals().sessid
 	if(!sid) return
 	_globals[:sessid]=sid
-	_globals[:sess]="/tmp/sess.%s".mstr(sid).fox_read_file(0).xjson_map()
+	_globals[:sess]="/tmp/sess.$sid".fox_read_file(0).xjson_map()
 }
 void	sess_add(char* name, char* value) => _globals.res.sess[name]=value
 char*	sess_id()		=> return _globals.sessid
-char*	sess_file()		=> return sess_id() ? "/tmp/sess.%s".mstr(sess_id()) : NULL
+char*	sess_file()		=> return sess_id() ? "/tmp/sess.$(sess_id())" : NULL
 char*	sess_newid()	=> return rand_str(24)
 void cookie_set(char* name,char* value,char* path="/",char* expire=NULL){
 	char* xexpire=""
-	if expire => xexpire="; expires=%s".mstr(expire)
-	char* ss="%s=%s; path=%s%s".mstr(name,value,path,xexpire)
+	if expire => xexpire="; expires=$expire"
+	char* ss="$name=$value; path=$path$xexpire"
 	_globals.res.cookie=ss
 }
 void sess_delete(){
@@ -2291,7 +2291,7 @@ char* links_ul(map* mp,char* class=NULL){
 			ret.=v.links_ul(class)
 		return ret
 	ret="<ul>"
-	if class => ret="<ul class=\"%s\">".mstr(class)
+	if class => ret="<ul class=\"$class\">"
 	mp.each v,k,i
 		if v.is_map() => ret=ret.xcat("<li>",v.links_ul(class),"</li>")
 		else ret=ret.xcat("<li><a href=",v,">",k,"</a></li>")
@@ -2427,7 +2427,7 @@ void* pages_exec(void* pages,char* path,map* env=NULL){
 	if data.is_str() => data.http_out(); return :ok
 	return data.data_exec(path.url_data(page).map_merge(env))
 }
-char* not_found(char* path) => return "The requested content %s was not found on the server.".mstr(path).http_out("404 Not Found")
+char* not_found(char* path) => return "The requested content $path was not found on the server.".http_out("404 Not Found")
 char* dispatch(map* pages,char* path){
 	if path.static_file() => return NULL
 	if path.fox_at(-1)!='/' && !path.str_has("/?") => return NULL

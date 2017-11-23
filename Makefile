@@ -15,6 +15,8 @@ DEPS=$(patsubst %,$(IDIR)/%,$(_DEPS))
 _OBJ=cmd.o core.o dynamic.o fox.o http.o main.o memsize.o regexp.o sql.o
 OBJ = $(patsubst %,$(ODIR)/%,$(_OBJ))
 
+.PHONY: install clean
+
 .DEFAULT_GOAL:=bin/fox
 
 $(IDIR)/sql.h: sql.fox
@@ -24,9 +26,7 @@ $(IDIR)/http.h: http.fox
 	fox fox_h $< $@
 
 $(IDIR)/fox.h: core.fox
-	fox foxh > $@
-	fox fox_h $< /tmp/out.txt
-	cat /tmp/out.txt >> $@
+	fox fox_h $< $@ 1
 
 $(IDIR)/foxcmd.h: fox.fox
 	fox fox_h $< $@
@@ -49,21 +49,17 @@ $(LDIR)/libfoxcore.a: $(ODIR)/core.o
 	rm -f $@
 	ar rcs $@ $^
 
-$(BDIR)/fox: $(TLIBS) $(ODIR)/main.o
+$(BDIR)/fox: $(TLIBS) $(ODIR)/main.o $(DEPS)
 	gcc -o $@ $(ODIR)/main.o $(CFLAGS) $(LIBS) -L$(LDIR)
 
 
 $(SDIR)/dynamic.c: $(FOXS)
 	fox write_callfunc src/dynamic.c
 
-.PHONY: install
-
 install:
 	cp fox.h $(INSTALL_DIR)/include/fox.h
 	cp $(ODIR)/fox $(INSTALL_DIR)/bin/fox
 	cp $(LDIR)/*.lib $(INSTALL_DIR)/lib/
-
-.PHONY: clean
 
 clean:
 	rm -f $(ODIR)/*.o *~ core $(INCDIR)/*~

@@ -2975,6 +2975,7 @@ char* foxh(){
 	"extern char* skip;\n"
 	"\n"
 	"#define End (char*)(0xFF12B145)\n"
+	"\n"
 	""
 	"";
 };
@@ -3610,7 +3611,7 @@ char* tutorial(){
 	"## Features\n"
 	"\n"
 	"### Small code base\n"
-	"1K lines for the runtime. The compiler is 4K lines. Creates small 30K binary for hello world.\n"
+	"1K lines for the runtime. The compiler is 4K lines. Creates small 40KB binary for hello world.\n"
 	"\n"
 	"### GC Collected\n"
 	"Tracing GC. 50ms max delay in average use cases.\n"

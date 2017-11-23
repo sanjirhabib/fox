@@ -164,7 +164,7 @@ map* sql_map(char* sql){
 	if(!sql){ return NULL; };
 	void* ret=cache(sql,"sql_map",NULL);
 	if(ret){ return ret; };
-	if(!str_has(sql," ")){ sql=mstr("select * from %s",sql, End); };
+	if(!str_has(sql," ")){ sql=xstr("select * from ", sql, End); };
 	return sql_toks_map(sql_toks(sql));
 };
 char* sql_map_join(map* mp,char* joiner){
@@ -185,13 +185,13 @@ map* sql_convert_func(map* mp,char* db){
 		vec_add(params,sql_str(map_id(mp,idx)));
 	};
 	if(str_eq(db,"lite")){
-		if(str_eq(name,"time")){ return sql_toks(mstr("substr(%s,12,8)",map_id(params,0), End)); };
-		if(str_eq(name,"date")){ return sql_toks(mstr("substr(%s,1,10)",map_id(params,0), End)); };
-		if(str_eq(name,"month")){ return sql_toks(mstr("substr(%s,1,7)",map_id(params,0), End)); };
-		if(str_eq(name,"year")){ return sql_toks(mstr("substr(%s,1,4)",map_id(params,0), End)); };
-		if(str_eq(name,"quarter")){ return sql_toks(mstr("substr(%s,1,5)||((substr(%s,6,2)-1)/3+1)",map_id(params,0), End)); };
-		if(str_eq(name,"empty")){ return sql_toks(mstr("(%s is null or %s='')",map_id(params,0), End)); };
-		if(str_eq(name,"if")){ return sql_toks(mstr("case when %s then %s else %s end",map_id(params,0),map_id(params,1),map_id(params,2), End)); };
+		if(str_eq(name,"time")){ return sql_toks(xstr("substr(", map_id(params,0), ",12,8)", End)); };
+		if(str_eq(name,"date")){ return sql_toks(xstr("substr(", map_id(params,0), ",1,10)", End)); };
+		if(str_eq(name,"month")){ return sql_toks(xstr("substr(", map_id(params,0), ",1,7)", End)); };
+		if(str_eq(name,"year")){ return sql_toks(xstr("substr(", map_id(params,0), ",1,4)", End)); };
+		if(str_eq(name,"quarter")){ return sql_toks(xstr("substr(", map_id(params,0), ",1,5)||((substr(", map_id(params,0), ",6,2)-1)/3+1)", End)); };
+		if(str_eq(name,"empty")){ return sql_toks(xstr("(", map_id(params,0), " is null or ", map_id(params,0), "='')", End)); };
+		if(str_eq(name,"if")){ return sql_toks(xstr("case when ", map_id(params,0), " then ", map_id(params,1), " else ", map_id(params,2), " end", End)); };
 	};
 	return NULL;
 };
@@ -720,15 +720,15 @@ char* lite_create_col(map* col){
 	"	month=varchar"
 	"",map_val(col,"type"));
 	char* name=map_val(col,"name");
-	if(str_eq(type,"varchar")){ return mstr("%s varchar(%d) collate nocase not null default ''",name,size, End); };
-	if(str_eq(type,"number")){ return mstr("%s integer not null default 0",name, End); };
-	if(str_eq(type,"float")){ return mstr("%s real not null default 0",name, End); };
-	if(str_eq(type,"clob")){ return mstr("%s clob not null default ''",name, End); };
-	if(str_eq(type,"blob")){ return mstr("%s blob not null default ''",name, End); };
-	if(str_eq(type,"date")){ return mstr("%s date not null default ''",name, End); };
-	if(str_eq(type,"time")){ return mstr("%s time not null default ''",name, End); };
-	if(str_eq(type,"datetime")){ return mstr("%s datetime not null default ''",name, End); };
-	if(str_eq(type,"yearmonth")){ return mstr("%s varchar(7) not null default ''",name, End); };
+	if(str_eq(type,"varchar")){ return xstr(name, " varchar(",int_str( size), ") collate nocase not null default ''", End); };
+	if(str_eq(type,"number")){ return xstr(name, " integer not null default 0", End); };
+	if(str_eq(type,"float")){ return xstr(name, " real not null default 0", End); };
+	if(str_eq(type,"clob")){ return xstr(name, " clob not null default ''", End); };
+	if(str_eq(type,"blob")){ return xstr(name, " blob not null default ''", End); };
+	if(str_eq(type,"date")){ return xstr(name, " date not null default ''", End); };
+	if(str_eq(type,"time")){ return xstr(name, " time not null default ''", End); };
+	if(str_eq(type,"datetime")){ return xstr(name, " datetime not null default ''", End); };
+	if(str_eq(type,"yearmonth")){ return xstr(name, " varchar(7) not null default ''", End); };
 	assert(0);
 	return NULL;
 };
@@ -744,19 +744,19 @@ map* create_index_sqls(map* tbl){
 	map* ret=new_vec();
 	map* map_1=map_val(tbl,"cols"); for(int i=next(map_1,-1,NULL,NULL); has_id(map_1,i); i++){ void* f=map_id(map_1,i); char* k=map_key(map_1, i);
 		if(!is_indexed(map_val(f,"type"))){ continue; };
-		vec_add(ret,mstr("create index idx_%s_%s on %s(%s)",map_val(tbl,"name"),map_val(f,"name"),map_val(tbl,"name"),map_val(f,"name"), End)); };
+		vec_add(ret,xstr("create index idx_", map_val(tbl,"name"), "_", map_val(f,"name"), " on ", map_val(tbl,"name"), "(", map_val(f,"name"), ")", End)); };
 	return ret;
 };
-char* drop_sql(char* name){ return mstr("drop table if exists %s",name, End); };
+char* drop_sql(char* name){ return xstr("drop table if exists ", name, End); };
 char* create_sql(map* tbl,char* name){
 	if(!name){ name=map_val(tbl,"name"); };
 	map* cls=new_map();
 	map* map_1=map_val(tbl,"cols"); for(int i=next(map_1,-1,NULL,NULL); has_id(map_1,i); i++){ void* v =map_id(map_1,i); char* k=map_key(map_1, i); add(cls,k,lite_create_col(v)); };
 	map* pkeys=cols_pkeys(map_val(tbl,"cols"));
 	if(map_len(pkeys)==1 && is_word(map_val(map_val(map_val(tbl,"cols"),map_id(pkeys,0)),"type"),"int integer")){
-		add(cls,map_id(pkeys,0),mstr("%s integer primary key autoincrement",map_id(pkeys,0), End));
-	}else {vec_add(cls,mstr("primary key (%s)",map_join(pkeys,","), End));};
-	return mstr("create table %s (%s)",name,map_join(cls,","), End);
+		add(cls,map_id(pkeys,0),xstr(map_id(pkeys,0), " integer primary key autoincrement", End));
+	}else {vec_add(cls,xstr("primary key (", map_join(pkeys,","), ")", End));};
+	return xstr("create table ", name, " (", map_join(cls,","), ")", End);
 };
 char* meta_type(char* type,int size){
 	if(size==36){ return "guid"; };
@@ -851,7 +851,7 @@ map* db_tables(char* db){
 	return ret;
 };
 map* db_cols(char* db,char* tbl){
-	map* rs=lite_exec(mstr("pragma table_info (%s)",tbl, End),db,NULL);
+	map* rs=lite_exec(xstr("pragma table_info (", tbl, ")", End),db,NULL);
 	map* ret=new_map();
 	//name|type|notnull|dflt_value|pk
 	for(int idx=next(rs,-1,NULL,NULL); has_id(rs,idx); idx++){ void* v=map_id(rs,idx);
@@ -947,7 +947,7 @@ map* sql_vec(char* sql,char* db,map* param){
 	return ret;
 };
 char* sql_drop(char* tbl){
-	return mstr("drop table if exists %s",tbl, End);
+	return xstr("drop table if exists ", tbl, End);
 };
 char* to_sql(char* sql){
 	return map_sql(sql_map(sql));
@@ -984,7 +984,7 @@ void* id_update(void* ids,char* tbl,char* db,map* row){
 		vec_add(fld,xstr(k, "=:", k, End)); };
 	map* v1=new_vec();
 	for(int idx2=next(ids,-1,NULL,NULL); has_id(ids,idx2); idx2++){ void* v2=map_id(ids,idx2); char* k2=map_key(ids, idx2);
-		vec_add(v1,mstr("%s=:_old_%s",k2,k2, End));
+		vec_add(v1,xstr(k2, "=:_old_", k2, End));
 		add(row,xstr("_old_", k2, End),v2); };
 	return lite_exec(xstr("update ", tbl, " set ", map_join(fld,", "), " where ", map_join(v1," and "), End),db,row);
 };
@@ -1511,7 +1511,7 @@ char* crud_tables(char* db){
 	map* map_1=table_names(db); for(int i=next(map_1,-1,NULL,NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i); char* k=map_key(map_1, i);
 		vec_add(data,xmap(
 			"table", v,
-			"rows", sql_value(mstr("select count(*) from %s",v, End),db,NULL),
+			"rows", sql_value(xstr("select count(*) from ", v, End),db,NULL),
 			"cols",int_var( map_len(tbl_cols(v,db))
 		), End)); };
 	return render_table(data,cols_list(str_map(""
@@ -1534,7 +1534,7 @@ char* confirm(char* prompt,char* option1,char* option2,char* title,map* data){
 	return NULL;		
 };
 char* sql_delete(void* ids,char* tbl,char* db){
-	return xstr(mstr("delete from %s",tbl, End),lite_exec(re_where(pkeys_where(tbl,db)),db,sql_id_ids(tbl,db,ids)), End);
+	return xstr(xstr("delete from ", tbl, End),lite_exec(re_where(pkeys_where(tbl,db)),db,sql_id_ids(tbl,db,ids)), End);
 };
 char* crud_delete(char* sql,char* db,char* back){
 	if(confirm("Delete this record?","Yes","No","Confirm",NULL)){
@@ -2105,7 +2105,7 @@ map* show_map(char* show){
 char* data_show(map* data,char* show){
 	return NULL;
 };
-char* http_redirect(char* url){ return http_out(NULL,"301 Moved Permanently","text/html",xvec(mstr("Location: %s",url, End), End)); };
+char* http_redirect(char* url){ return http_out(NULL,"301 Moved Permanently","text/html",xvec(xstr("Location: ", url, End), End)); };
 void* http_error(char* msg,char* status){ http_out(mstr(map_val(_globals,"fox_error"),status,status,msg, End),status,"text/html; charset=utf-8",NULL); return NULL; };
 map* compile_template(char* tem){
 	if(!tem) {return NULL;};
@@ -2176,14 +2176,14 @@ char* http_out(char* str,char* status,char* mime,map* headers){
 			"GC: #{gc_runs()}runs.\n"
 			"</div>"
 			""), End); };
-	header(mstr("HTTP/1.1 %s",status, End));
-	header(mstr("Content-Type: %s",mime, End));
-	header(mstr("Content-Length: %d",str_len(str), End));
+	header(xstr("HTTP/1.1 ", status, End));
+	header(xstr("Content-Type: ", mime, End));
+	header(xstr("Content-Length: ",int_str( str_len(str)), End));
 	for(int i=next(headers,-1,NULL,NULL); has_id(headers,i); i++){ void* v=map_id(headers,i); header(v); };
 	map* map_1=map_val(map_val(_globals,"res"),"cookie"); for(int i2=next(map_1,-1,NULL,NULL); has_id(map_1,i2); i2++){ void* v2=map_id(map_1,i2);
 		header(mstr("Set-Cookie: %s",v2, End)); };
 	if(map_val(map_val(_globals,"res"),"sess")){
-		write_file(json(map_val(map_val(_globals,"res"),"sess"),0),mstr("/tmp/sess.%s",sess_id(), End),0); };
+		write_file(json(map_val(map_val(_globals,"res"),"sess"),0),xstr("/tmp/sess.", sess_id(), End),0); };
 	header("");
 	print(str,stdout);
 	return str;
@@ -2255,16 +2255,16 @@ void sess_load(){
 	char* sid=map_val(header_vals("cookie"),"sessid");
 	if(!sid) {return;};
 	add(_globals,"sessid",sid);
-	add(_globals,"sess",xjson_map(fox_read_file(mstr("/tmp/sess.%s",sid, End),0),Map));
+	add(_globals,"sess",xjson_map(fox_read_file(xstr("/tmp/sess.", sid, End),0),Map));
 };
 void	sess_add(char* name, char* value){ add(add_key(add_key(_globals,"res",Map),"sess",Map),name,value); };
 char*	sess_id(){ return map_val(_globals,"sessid"); };
-char*	sess_file(){ return sess_id() ? mstr("/tmp/sess.%s",sess_id(), End) : NULL; };
+char*	sess_file(){ return sess_id() ? xstr("/tmp/sess.", sess_id(), End) : NULL; };
 char*	sess_newid(){ return rand_str(24); };
 void cookie_set(char* name,char* value,char* path,char* expire){
 	char* xexpire="";
-	if(expire){ xexpire=mstr("; expires=%s",expire, End); };
-	char* ss=mstr("%s=%s; path=%s%s",name,value,path,xexpire, End);
+	if(expire){ xexpire=xstr("; expires=", expire, End); };
+	char* ss=xstr(name, "=", value, "; path=", path, xexpire, End);
 	add(add_key(_globals,"res",Map),"cookie",ss);
 };
 void sess_delete(){
@@ -2291,7 +2291,7 @@ char* links_ul(map* mp,char* class){
 			ret=xcat(ret,links_ul(v,class), End); };
 		return ret; };
 	ret="<ul>";
-	if(class){ ret=mstr("<ul class=\"%s\">",class, End); };
+	if(class){ ret=xstr("<ul class=\"", class, "\">", End); };
 	for(int i=next(mp,-1,NULL,NULL); has_id(mp,i); i++){ void* v=map_id(mp,i); char* k=map_key(mp, i);
 		if(is_map(v)){ ret=xcat(ret,"<li>",links_ul(v,class),"</li>", End); }
 		else {ret=xcat(ret,"<li><a href=",v,">",k,"</a></li>", End);}; };
@@ -2427,7 +2427,7 @@ void* pages_exec(void* pages,char* path,map* env){
 	if(is_str(data)){ http_out(data,"200 OK","text/html; charset=utf-8",NULL); return "ok"; };
 	return data_exec(data,map_merge(url_data(path,page),env));
 };
-char* not_found(char* path){ return http_out(mstr("The requested content %s was not found on the server.",path, End),"404 Not Found","text/html; charset=utf-8",NULL); };
+char* not_found(char* path){ return http_out(xstr("The requested content ", path, " was not found on the server.", End),"404 Not Found","text/html; charset=utf-8",NULL); };
 char* dispatch(map* pages,char* path){
 	if(static_file(path)){ return NULL; };
 	if(fox_at(path,-1)!='/' && !str_has(path,"/?")){ return NULL; };
