@@ -4,24 +4,24 @@
 extern map* _globals;
 
 void* sql_item_type(char* type, char* db){
-	return "select name,data from __item where type=:type and module=:module".sql_pairs(sql_conn(db).ddb,{type: type, module: sql_conn(db).module})
-}
+	return sql_pairs("select name,data from __item where type=:type and module=:module",map_val(sql_conn(db),"ddb"),xmap("type", type, "module", map_val(sql_conn(db),"module"), End));
+};
 void* sql_item(char* name, char* type, char* db){
-	return "select data from __item where name=:name and type=:type and module=:module".sql_value(sql_conn(db).ddb,{name: name, type: type, module: sql_conn(db).module})
-}
+	return sql_value("select data from __item where name=:name and type=:type and module=:module",map_val(sql_conn(db),"ddb"),xmap("name", name, "type", type, "module", map_val(sql_conn(db),"module"), End));
+};
 void* fetch_global(char* in){
-	return in.php_global()
-}
-map* sql_conn(char* name=NULL){
-	if !name => name=_globals.dbs.map_key(0)
-	if !name.is_code() => return name.parse_connection()
-	if !_globals.dbs
-		map* dbs=:_dbs.php_global()
-		dbs.each val, key
-			_globals.dbs[key]=val.parse_connection()
-			_globals.dbs[key].id=key
-	return _globals.dbs[name]
-}
+	return php_global(in);
+};
+map* sql_conn(char* name){
+	if(!name){ name=map_key(map_val(_globals,"dbs"),0); };
+	if(!is_code(name)){ return parse_connection(name); };
+	if(!map_val(_globals,"dbs")){
+		map* dbs=php_global("_dbs");
+		for(int next1=next(dbs,-1,NULL,NULL); has_id(dbs,next1); next1++){ void* val=map_id(dbs,next1); char*  key=map_key(dbs, next1);
+			add(add_key(_globals,"dbs",Map),key,parse_connection(val));
+			add(add_key(add_key(_globals,"dbs",Map),key,Map),"id",key); }; };
+	return map_val(map_val(_globals,"dbs"),name);
+};
 //map* read_paren(map* mp, char** line, map*(*func)(char** ));
 //map* sql_tokenizer(char** line);
 //map* sql_toks(char* line);
@@ -114,15 +114,15 @@ map* sql_conn(char* name=NULL){
 //map* get_ids(char* tbl, char* db);
 //char* sql_table(char* sql);
 //map* sql_pkeys(char* sql, char* db);
-void* sql_value(char* sql, char* db, map* param=NULL);
-map* sql_rows(char* sql, char* db, map* param=NULL);
+void* sql_value(char* sql, char* db, map* param);
+map* sql_rows(char* sql, char* db, map* param);
 //map* sql_query(char* sql, char* db, map* where=NULL);
 //map* tbl_id_ids(char* tbl, char* db, void* id);
 //map* sql_id_ids(char* sql, char* db, void* id);
 //map* sql_id(char* sql, char* db, void* ids);
 //map* sql_row(char* sql, char* db, map* param=NULL);
 //map* sql_vector(char* sql, char* db, map* param=NULL);
-map* sql_pairs(char* sql, char* db, map* param=NULL);
+map* sql_pairs(char* sql, char* db, map* param);
 //map* sql_vec(char* sql, char* db, map* param=NULL);
 //char* sql_drop(char* tbl);
 //char* to_sql(char* sql);

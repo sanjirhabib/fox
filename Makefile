@@ -9,13 +9,13 @@ CFLAGS=-I$(IDIR) -std=gnu99 -Wno-logical-op-parentheses -Os
 FOXS=fox.fox core.fox http.fox cmd.fox main.fox
 LIBS=-lm -lfox -lsqlite3
 _DEPS=fox.h foxcmd.h http.h regexp.h sql.h
-_TLIB=libfoxstatic.a libfoxcmd.a libfoxcore.a
+_TLIB=libfoxstatic.a
 TLIBS=$(patsubst %,$(LDIR)/%,$(_TLIB))
 DEPS=$(patsubst %,$(IDIR)/%,$(_DEPS))
 _OBJ=cmd.o core.o dynamic.o fox.o main.o memsize.o sql.o
 OBJ = $(patsubst %,$(ODIR)/%,$(_OBJ))
 
-.PHONY: install clean
+.PHONY: install clean php
 
 #.DEFAULT_GOAL:=bin/fox
 
@@ -52,9 +52,16 @@ $(SDIR)/dynamic.c: $(FOXS) $(IDIR)/fox.h
 
 install: $(BDIR)/fox $(LDIR)/libfoxstatic.a
 	cp $(IDIR)/fox.h $(INSTALL_DIR)/include/fox.h
-	cp $(ODIR)/fox $(INSTALL_DIR)/bin/fox
-	cp $(LDIR)/*.lib $(INSTALL_DIR)/lib/
-	cp $(LDIR)/*.so $(INSTALL_DIR)/lib/
+	cp $(BDIR)/fox $(INSTALL_DIR)/bin/fox
+	cp $(LDIR)/libfoxstatic.a $(INSTALL_DIR)/lib/
+	cp $(LDIR)/libfox.so $(INSTALL_DIR)/lib/
+
+php: habib.fox
+	fox fox_phpc habib.fox php/habibphp.c
+	fox fox_c habib.fox php/habib.c
+	fox fox_h habib.fox php/habib.h
+	cd php && make && make install
+	php habib.php
 
 clean:
 	rm -f $(ODIR)/*.o *~ core $(INCDIR)/*~

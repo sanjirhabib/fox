@@ -103,6 +103,7 @@ extern char* skip;
 
 #define End (char*)(0xFF12B145)
 
+void* php_global(char* name);
 int rand();
 void* px(void* str, int newline);
 void xexit(int val);
