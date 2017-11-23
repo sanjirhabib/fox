@@ -108,7 +108,7 @@ map* build(map* files=source_files(),char* outdir="c"){
 		ret[]=outfile
 		v2.write_c(outfile)
 	"fox.h".file_rename(outdir).write_foxh()
-	"callfunc.c".file_rename(outdir).write_callfunc()
+	"callfunc.c".file_rename(outdir).write_dynamic()
 	mem_usage().px()
 	return ret
 }
@@ -3143,10 +3143,10 @@ char* write_phpconfig(){
 
 	---.write_file("config.m4")
 }
-char* write_callfunc(char* outfile){
+char* write_dynamic(char* outfile){
 	map* funcs=source_funcs()
 	char* ret=---
-	/* This is a generated file. To change it, edit function write_callfunc() in fox.c */
+	/* This is a generated file. To change it, edit function write_dynamic() in fox.c */
 	#include "sqlite3.h"
 	#include "fox.h"
 	#include "foxcmd.h"
@@ -3174,7 +3174,7 @@ map* eval_params(map* sent,char* name,map* env=NULL){
 	name.assert()
 	ret={}
 	fn=funcs()[name]
-	if !fn => "$name() not found".fox_error()
+	if !fn => "Function $name() not found".fox_error()
 	named=0
 	fn.params.each v,k,i
 		if k==="..."
@@ -3498,7 +3498,7 @@ map* param_test(char* one=:none,char* two=:missing){
 }
 map* cmdline_params(map* args,char* func){
 	map* params=funcs()[func].params
-	if !params => "$func() not found".fox_error()
+	if !params => "Function: $func() not found".fox_error()
 	ret={}
 	int curr=1
 	int variadic=params.map_key(params.map_len()-1)==="..." ? params.map_len() : 0
@@ -3612,7 +3612,7 @@ char* tutorial(){
 	## Features
 
 	### Small code base
-	1K lines for the runtime. The compiler is 4K lines. Creates small 40KB binary for hello world.
+	1K lines for the runtime. The compiler is 4K lines. Creates small 30KB binary for hello world.
 
 	### GC Collected
 	Tracing GC. 50ms max delay in average use cases.
@@ -3696,9 +3696,14 @@ char* tutorial(){
 
 	### Compile
 	```
-	fox make
-	fox compile
-	fox version
+	make
+	make install
+	```
+	
+	### Unit Tests
+	```
+	cd tests
+	fox utests
 	```
 
 	### Bind with PHP. Every function prefixed with :fox_

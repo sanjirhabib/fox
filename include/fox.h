@@ -28,7 +28,8 @@
 #include <sys/stat.h>
 
 #include <signal.h>
-//#include <ucontext.h>
+#include <sqlite3.h>
+
 enum Types {
 	Null,Skip,Int,String,Blob,Map,Vector,Index,Keys,Cell,Cell2,Tail
 };
@@ -464,7 +465,7 @@ char* foxh();
 char* write_foxh(char* outfile);
 char* fox_phpc(char* infile, char* outfile);
 char* write_phpconfig();
-char* write_callfunc(char* outfile);
+char* write_dynamic(char* outfile);
 map* eval_params(map* sent, char* name, map* env);
 char* to_c(void* val);
 char* str_shorten(char* in, int max);

@@ -27,30 +27,31 @@ $(ODIR)/%.o: $(SDIR)/%.c
 	$(CC) -c -o $@ $< $(CFLAGS)
 
 $(BDIR)/fox: $(TLIBS) $(ODIR)/main.o $(DEPS) $(OBJ) $(FOXS)
-	fox fox_h sql.fox $(IDIR)/sql.h
-	fox fox_h http.fox $(IDIR)/http.h
+	gcc -shared -o $(LDIR)/libfox.so $(OBJ) -lsqlite3
+	cp $(LDIR)/libfox.so $(INSTALL_DIR)/lib/libfox.so
+	gcc -o $@ $(ODIR)/main.o $(CFLAGS) $(LIBS)
+
+$(LDIR)/libfoxstatic.a: $(ODIR)/dynamic.o $(ODIR)/fox.o $(ODIR)/memsize.o $(ODIR)/sql.o $(ODIR)/cmd.o $(ODIR)/core.o
+	rm -f $@
+	ar rcs $@ $^
+#
+#$(LDIR)/libfoxcmd.a: $(ODIR)/cmd.o
+#	rm -f $@
+#	ar rcs $@ $^
+#
+#$(LDIR)/libfoxcore.a: $(ODIR)/core.o
+#	rm -f $@
+#	ar rcs $@ $^
+#
+
+$(IDIR)/fox.h: $(FOXS)
 	fox write_foxh $(IDIR)/fox.h
-	fox fox_h fox.fox $(IDIR)/foxcmd.h
-	gcc -o $@ $(ODIR)/main.o $(CFLAGS) $(LIBS) -L$(LDIR)
 
-$(LDIR)/libfoxstatic.a: $(ODIR)/dynamic.o $(ODIR)/fox.o $(ODIR)/memsize.o $(ODIR)/sql.o
-	rm -f $@
-	ar rcs $@ $^
+$(SDIR)/dynamic.c: $(FOXS) $(IDIR)/fox.h
+	fox write_dynamic src/dynamic.c
 
-$(LDIR)/libfoxcmd.a: $(ODIR)/cmd.o
-	rm -f $@
-	ar rcs $@ $^
-
-$(LDIR)/libfoxcore.a: $(ODIR)/core.o
-	rm -f $@
-	ar rcs $@ $^
-
-
-$(SDIR)/dynamic.c: $(FOXS)
-	fox write_callfunc src/dynamic.c
-
-install:
-	cp fox.h $(INSTALL_DIR)/include/fox.h
+install: $(BDIR)/fox $(LDIR)/libfoxstatic.a
+	cp $(IDIR)/fox.h $(INSTALL_DIR)/include/fox.h
 	cp $(ODIR)/fox $(INSTALL_DIR)/bin/fox
 	cp $(LDIR)/*.lib $(INSTALL_DIR)/lib/
 	cp $(LDIR)/*.so $(INSTALL_DIR)/lib/

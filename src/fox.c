@@ -108,7 +108,7 @@ map* build(map* files,char* outdir){
 		vec_add(ret,outfile);
 		write_c(v2,outfile); };
 	write_foxh(file_rename("fox.h",outdir,NULL,NULL,NULL,NULL));
-	write_callfunc(file_rename("callfunc.c",outdir,NULL,NULL,NULL,NULL));
+	write_dynamic(file_rename("callfunc.c",outdir,NULL,NULL,NULL,NULL));
 	px(mem_usage(),1);
 	return ret;
 };
@@ -3143,10 +3143,10 @@ char* write_phpconfig(){
 	""
 	"","config.m4",0);
 };
-char* write_callfunc(char* outfile){
+char* write_dynamic(char* outfile){
 	map* funcs=source_funcs();
 	char* ret=mstr(x_c(""
-	"/* This is a generated file. To change it, edit function write_callfunc() in fox.c */\n"
+	"/* This is a generated file. To change it, edit function write_dynamic() in fox.c */\n"
 	"#include \"sqlite3.h\"\n"
 	"#include \"fox.h\"\n"
 	"#include \"foxcmd.h\"\n"
@@ -3174,7 +3174,7 @@ map* eval_params(map* sent,char* name,map* env){
 	assert(name);
 	map* ret=new_map();
 	void* fn=map_val(funcs(),name);
-	if(!fn){ fox_error(xstr(name, "() not found", End),0); };
+	if(!fn){ fox_error(xstr("Function ", name, "() not found", End),0); };
 	int named=0;
 	map* map_1=map_val(fn,"params"); for(int i=next(map_1,-1,NULL,NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i); char* k=map_key(map_1, i);
 		if(str_eq(k,"...")){
@@ -3498,7 +3498,7 @@ map* param_test(char* one,char* two){
 };
 map* cmdline_params(map* args,char* func){
 	map* params=map_val(map_val(funcs(),func),"params");
-	if(!params){ fox_error(xstr(func, "() not found", End),0); };
+	if(!params){ fox_error(xstr("Function: ", func, "() not found", End),0); };
 	map* ret=new_map();
 	int curr=1;
 	int variadic=str_eq(map_key(params,map_len(params)-1),"...") ? map_len(params) : 0;
@@ -3612,7 +3612,7 @@ char* tutorial(){
 	"## Features\n"
 	"\n"
 	"### Small code base\n"
-	"1K lines for the runtime. The compiler is 4K lines. Creates small 40KB binary for hello world.\n"
+	"1K lines for the runtime. The compiler is 4K lines. Creates small 30KB binary for hello world.\n"
 	"\n"
 	"### GC Collected\n"
 	"Tracing GC. 50ms max delay in average use cases.\n"
@@ -3696,9 +3696,14 @@ char* tutorial(){
 	"\n"
 	"### Compile\n"
 	"```\n"
-	"fox make\n"
-	"fox compile\n"
-	"fox version\n"
+	"make\n"
+	"make install\n"
+	"```\n"
+	"\n"
+	"### Unit Tests\n"
+	"```\n"
+	"cd tests\n"
+	"fox utests\n"
 	"```\n"
 	"\n"
 	"### Bind with PHP. Every function prefixed with :fox_\n"
