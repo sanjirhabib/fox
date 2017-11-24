@@ -1,4 +1,4 @@
-#line 2 "fox.c"
+#line 2 "/web/fox/fox.fox"
 /*
 	TODO
 		suppurt for: return 1 and 2 or 3
@@ -23,7 +23,6 @@ Generational GC
 
 //#define NDEBUG
 #include "fox.h"
-#include "foxcmd.h"
 
 #define MAXMEM 10*1024*1024
 #define MIN_CHAIN 1
@@ -425,7 +424,8 @@ map* xadd(map* mp,...){
 };
 int is_numeric(char* str){
 	if(!str){ return 0; };
-	for(;*str;str++){ if(*str<'0' || *str>'9'){ return 0; }; };
+	int deci=0;
+	for(;*str;str++){ if((*str<'0' || *str>'9') && (*str!='.' || deci++)){ return 0; }; };
 	return 1;
 };
 
@@ -1040,7 +1040,7 @@ map* change_key(map* mp,int idx,char* id){
 char* old_decl_type(map* mp,int idx){
 	int from=stm_start(mp,idx,"{};,().>:=><!&-+/?");
 	for(int i=from;i<idx;i+=2){
-		if(is_word(map_id(mp,i),"int long double char void struct map static extern unsigned register mempage size_t time_t const")){
+		if(is_word(map_id(mp,i),"int long double float char void struct map static extern unsigned register mempage size_t time_t const")){
 			return toks_c(vec_sub(mp,from,idx-from-1)); }; };
 	return NULL;
 };
@@ -1131,9 +1131,11 @@ char* map_str_indent(map* mp,int indent){
 						ret=xcat(ret," ",k2, End);
 					}else if(is_code(v2)){
 						ret=xcat(ret," ",k2,"=",v2, End);
-					}else if(is_i(v2)){
+					}else if(is_num(v2)){
 						if(is_int(v2)){
-							ret=xcat(ret," ",k2,"=#",int_str(is_int(v2)), End); };
+							ret=xcat(ret," ",k2,"=#",int_str(is_int(v2)), End);
+						}else {is_double(v2);};
+							ret=xcat(ret," ",k2,"=#",double_str(is_double(v2)), End);
 					}else{
 						ret=xcat(ret," ",k2,"=",str_quote(v2), End); }; };
 				ret=xcat(ret,"\n", End);
@@ -1150,6 +1152,7 @@ char* map_str_indent(map* mp,int indent){
 		}else if(type==Vector||is_int(k)){
 			ret=xcat(ret,to_str(v,"",0),"\n", End);
 		}else if(is_i(v)){ ret=xcat(ret,k,"=#",int_str(is_int(v)),"\n", End); }
+		else if(is_double(v)){ ret=xcat(ret,k,"=#",double_str(is_double(v)),"\n", End); }
 		else if(is_str(v)){
 			if(strchr(v,'\n')){
 				ret=xcat(ret,k,"=|\n", End);
@@ -1267,7 +1270,7 @@ size_t file_time(char* file){
 	};
 	return statbuf.st_mtime;
 };
-int is_num(char c){ return (c>='0' && c<='9') || c=='.' || c=='-' || c=='+'; };
+int is_number(char c){ return (c>='0' && c<='9') || c=='.' || c=='-' || c=='+'; };
 int is_alphanum(char c,char* others){
 	if((c>='a' && c<='z') || (c>='A' && c<='Z') || (c>='0' && c<='9') || c=='_'){ return 1; };
 	if(others && strchr(others,c)){ return 1; };
@@ -1286,7 +1289,7 @@ int str_is_oper(char* str){
 };
 int str_is_num(char* str){
 	if(!str_len(str)){ return 0; };
-	while(*str++) {if(!is_num(str[-1])){ return 0; };};
+	while(*str++) {if(!is_number(str[-1])){ return 0; };};
 	return 1;
 };
 int is_code(char* str){
@@ -1297,8 +1300,10 @@ int is_code(char* str){
 };
 char* read_num(char** in){
 	char* str=*in;
+	int deci=0;
 	str++;
-	while(*str && *str>='0' && *str<='9') {str++;};
+	while(*str && ((*str>='0' && *str<='9')||(*str=='.' && !deci++ && !is_alpha(str[1],NULL)))){
+		str++; };
 	char* from=*in;
 	*in=str-1;
 	return substr(from,0,str-from);
@@ -1489,7 +1494,7 @@ map* tokenizer(char** line,char* comment){
 		else if(str_start(str,"/*")){ read_upto_word(&str,"*/"); }
 		else if(*str==':'){ vec_add(mp,fox_read_symbol(&str)); }
 		else if(is_oper(*str)){ vec_add(mp,fox_read_oper(&str,term)); }
-		else if(*str>='0' && *str<='9'){ vec_add(mp,read_num(&str)); }
+		else if((*str=='.' && (str[1]>='0' && str[1]<='9'))|| (*str>='0' && *str<='9')){ vec_add(mp,read_num(&str)); }
 		else if(is_alpha(*str,NULL)){ vec_add(mp,read_alpha(&str)); }
 		else if(strchr("([{",*str)){
 			char temp[2]={0};
@@ -2478,7 +2483,10 @@ map* type_convert(map* tok,char* outtype,map* env,map* fs,map* fn){
 	if(str_eq(intype,outtype)){ return tok; };
 	if(str_eq(intype,"int")){
 		if(str_eq(outtype,"void*")){ return wrap_call(tok,"int_var"); }
-		else if(str_eq(outtype,"char*")){ return wrap_call(tok,"int_str"); };
+		else if(str_eq(outtype,"char*")){ return wrap_call(tok,"int_str"); }; };
+	if(str_eq(intype,"double")){
+		if(str_eq(outtype,"void*")){ return wrap_call(tok,"double_var"); }
+		else if(str_eq(outtype,"char*")){ return wrap_call(tok,"double_str"); };
 	}
 //		if outtype==="char*" => return tok.wrap_call(:json)
 	else if(str_eq(intype,"char*")){
@@ -2680,7 +2688,7 @@ char* expr_type(map* toks,int idx,int upto,map* env,map* fs){
 	assert(is_str(w) && str_len(w));
 	if(next_tok(toks,idx,"?",upto)){
 		return expr_type(toks,next_tok(toks,idx,"?",0)+1,upto,env,fs);
-	}else if(next_tok(toks,idx,"/",upto)){ return "int"; }
+	}
 	else if(str_eq(map_id(toks,idx+3),"(")){
 		char* name=map_id(toks,idx+1);
 		if(map_val(fs,name)){ return map_val(map_val(fs,name),"type"); };
@@ -2689,7 +2697,7 @@ char* expr_type(map* toks,int idx,int upto,map* env,map* fs){
 	else if(*w=='"'){ return "char*"; }
 	else if(*w=='\'' && w[1]=='\''){ return "char*"; }
 	else if(*w=='\''){ return "char"; }
-	else if(*w>='0' && *w<='9' || *w=='-' || *w=='+'){ return "int"; }
+	else if(*w>='0' && *w<='9' || *w=='-' || *w=='+'){ return strchr(w,'.') ? "double" : "int"; }
 	else if(is_typecast(toks,idx)){ return is_typecast(toks,idx); }
 	else if(str_eq(w,"(")){ return expr_type(map_id(toks,idx+3),0,upto,env,fs); }
 	else if(str_eq(w,"*")){ return sub_str(expr_type(toks,idx+2,upto,env,fs),0,-1); }
@@ -2772,13 +2780,13 @@ int syn_assign_val(map* syn){
 };
 int is_assign(map* syn){ return next_tok(syn,0,"=",0); };
 int is_var_decl(map* syn){
-	return is_word(map_id(syn,1),"int long double char void struct map static extern unsigned register mempage size_t time_t const FILE inline");
+	return is_word(map_id(syn,1),"int long double float char void struct map static extern unsigned register mempage size_t time_t const FILE inline");
 };
 int is_func_decl(map* syn){
 	int idx=next_tok(syn,0,"(",0);
 	if(!idx--){ return 0; };
 	if(next_tok(syn,0,"=",0)){ return 0; };
-	if(!is_word(map_id(syn,1),"int long double char void struct map static extern unsigned register mempage size_t time_t const FILE inline")){
+	if(!is_word(map_id(syn,1),"int long double float char void struct map static extern unsigned register mempage size_t time_t const FILE inline")){
 		return 0; };
 	if(str_eq(map_id(syn,idx+7),";")){ return 1; };
 	if(str_eq(map_id(syn,idx+7),"{") && str_eq(map_id(syn,idx+13),";")){ return 1; };
@@ -2802,10 +2810,12 @@ char* func_ccall(map* fn){
 		if(str_eq(v,"char*")){ post=".is_str()"; }
 		else if(str_eq(v,"map*")){ post=".is_map()"; }
 		else if(is_word(v,"int long size_t char time_t") || str_eq(v,"long long")){ post=".to_int()"; }
+		else if(is_word(v,"double float")){ post=".to_double()"; }
 		else if(str_eq(k,"...")){
 			char* mtype=NULL;
 			if(str_end(map_val(fn,"type"),"*")){ mtype="ptr"; }
 			else if(str_eq(map_val(fn,"type"),"int")){ mtype="int"; }
+			else if(str_eq(map_val(fn,"type"),"double")){ mtype="double"; }
 			else {return NULL;};
 			return mstr("call_variadic_%s(v,%s,\"%s\")",mtype,map_val(fn,"name"),map_val(fn,"name"), End);
 		}else if(!str_end(v,"*")){
@@ -2816,9 +2826,9 @@ char* func_ccall(map* fn){
 	return mstr("%s(%s)",map_val(fn,"name"),null_str(sub_str(ret,0,-1)), End);
 };
 char* map_ccode(void* mp){
-	if(!mp) {return "NULL";};
-	if(is_str(mp)) {return str_quote(mp);};
-	if(is_int(mp)) {return int_str(is_int(mp));};
+	if(!mp){ return "NULL"; };
+	if(is_str(mp)){ return str_quote(mp); };
+	if(is_int(mp)){ return int_str(is_int(mp)); };
 	if(ptr_type(mp)==Map){
 		if(!map_len(mp)) {return "new_map()";};
 		char* ret="xmap(";
@@ -2844,7 +2854,8 @@ char* callfunc_c(map* funcs){
 		char* isvoid="return ";
 		char* isvoid2="";
 		char* ftype=map_val(v,"type");
-		if(is_word(ftype,"int long long size_t time_t char")) {post=".int_var()";}
+		if(is_word(ftype,"int long long size_t time_t char")){ post=".int_var()"; }
+		else if(is_word(ftype,"double float")){ post=".double_var()"; }
 		else if(str_eq(ftype,"void")){
 			isvoid="";
 			isvoid2=" return NULL;";
@@ -2905,7 +2916,7 @@ char* foxh(){
 	"#include <sqlite3.h>\n"
 	"\n"
 	"enum Types {\n"
-	"	Null,Skip,Int,String,Blob,Map,Vector,Index,Keys,Cell,Cell2,Tail\n"
+	"	Null,Skip,Int,Double,String,Blob,Map,Vector,Index,Keys,Cell,Cell2,Tail\n"
 	"};\n"
 	"typedef struct cons {\n"
 	"	short nextid;\n"
@@ -2929,8 +2940,9 @@ char* foxh(){
 	"#ifdef __MINGW32__\n"
 	"#define is_i(x) ((int)(x)>>30 & 1)\n"
 	"#else\n"
-	"#define is_i(x) ((long long)(x)>>62 & 1)\n"
+	"#define is_i(x) ((long long)(x)>>61 & 2)\n"
 	"#define is_f(x) ((*(long long*)&(x))>>61 & 1)\n"
+	"#define is_num(x) ((*(long long*)&(x))>>61 & 3)\n"
 	"#endif\n"
 	"\n"
 	"typedef struct mempage {\n"
@@ -3165,7 +3177,8 @@ char* fox_phpc(char* infile,char* outfile){
 	"	if(!v) { ZVAL_NULL(&ret); }\n", 
 	"	else if(is_map(v)) return map_zval(v);\n", 
 	"	else if(is_str(v) && v){ ZVAL_STRING(&ret,v); }\n", 
-	"	else if(is_int(v)){ ZVAL_LONG(&ret,is_int(v)); }\n", 
+	"	else if(is_i(v)){ ZVAL_LONG(&ret,is_int(v)); }\n", 
+	"	else if(is_f(v)){ ZVAL_DOUBLE(&ret,is_double(v)); }\n", 
 	"	return ret;\n", 
 	"}\n", 
 	"zval map_zval(map* mp){\n", 
@@ -3248,8 +3261,6 @@ char* write_dynamic(char* outfile){
 	"/* This is a generated file. To change it, edit function write_dynamic() in fox.c */\n"
 	"#include \"sqlite3.h\"\n"
 	"#include \"fox.h\"\n"
-	"#include \"foxcmd.h\"\n"
-	"#include \"sql.h\"\n"
 	"\n"
 	"char* version(){\n"
 	"	return \"Fox: build: %s, date: %s [%%s old]\".mstr(\"%s\".time_ago());\n"
@@ -3300,6 +3311,7 @@ map* eval_params(map* sent,char* name,map* env){
 char* to_c(void* val){
 	if(!val){ return "NULL"; };
 	if(is_i(val)){ return int_str(is_int(val)); };
+	if(is_f(val)){ return double_str(is_double(val)); };
 	if(is_str(val)){ return str_quote(val); };
 	if(is_map(val)){ return json(val,0); };
 	assert(0);
@@ -3357,9 +3369,15 @@ int eval_expr_cont(map* mp,int idx,map* env,void** last,int level){
 		void* val=map_id(mp,idx);	
 		if(!val){ continue; }; //abnormal
 		if(is_map(val)){ ret=eval_toks(val,env); continue; }
-		else if(is_i(val)){ px("int",1); ret=val; continue; }
-		else if(is_numeric(val)){ ret=int_var(stoi(val)); continue; }
-		else if(fox_at(val,0)=='"'){
+		else if(is_num(val)){ px("int",1); ret=val; continue; }
+		else if(is_numeric(val)){
+			if(strchr(val,'.')){
+				double v2=0.0;
+				sscanf(val,"%lf",&v2);
+				ret=double_var(v2);
+			}else {ret=int_var(stoi(val));};
+			continue;
+		}else if(fox_at(val,0)=='"'){
 			ret=str_unquote(val);
 			while(fox_at(is_str(map_id(mp,idx+2)),0)=='"'){
 				ret=xcat(ret,str_unquote(map_id(mp,idx+2)), End);
@@ -3422,13 +3440,13 @@ int eval_expr_cont(map* mp,int idx,map* env,void** last,int level){
 		};
 		int clevel=1;
 		if(level<=clevel){ idx-=2; break; };
-		if(str_eq(val,"/")){ idx+=2; ret=int_var((is_int(ret)/is_int(eval_expr(mp,&idx,env,clevel)))); continue; }
-		else if(str_eq(val,"*")){ idx+=2; ret=int_var((is_int(ret)*is_int(eval_expr(mp,&idx,env,clevel)))); continue; };
+		if(str_eq(val,"/")){ idx+=2; ret=binary_op(ret,'/',eval_expr(mp,&idx,env,clevel)); continue; }
+		else if(str_eq(val,"*")){ idx+=2; ret=binary_op(ret,'*',eval_expr(mp,&idx,env,clevel)); continue; };
 
 		clevel++;
 		if(level<=clevel){ idx-=2; break; };
-		if(str_eq(val,"-")){ idx+=2; ret=int_var((is_int(ret)-is_int(eval_expr(mp,&idx,env,clevel)))); continue; }
-		else if(str_eq(val,"+")){ idx+=2; ret=int_var((is_int(ret)+is_int(eval_expr(mp,&idx,env,clevel)))); continue; };
+		if(str_eq(val,"-")){ idx+=2; ret=binary_op(ret,'-',eval_expr(mp,&idx,env,clevel)); continue; }
+		else if(str_eq(val,"+")){ idx+=2; ret=binary_op(ret,'+',eval_expr(mp,&idx,env,clevel)); continue; };
 
 
 		clevel++;
@@ -3497,9 +3515,29 @@ int eval_expr_cont(map* mp,int idx,map* env,void** last,int level){
 	*last=ret;
 	return idx;
 };
+void* binary_op(void* left, char oper, void* right){
+	if(is_f(left)||is_f(right)){
+		double a=is_double(left);
+		double b=is_double(right);
+		if(oper=='+'){ return double_var((a+b)); };
+		if(oper=='-'){ return double_var((a-b)); };
+		if(oper=='/'){ return double_var((a/b)); };
+		if(oper=='*'){ return double_var((a*b)); };
+		return double_var(0);
+		fox_error(xstr("Unknown operator ", oper, End),0); };
+	int a=is_int(left);
+	int b=is_int(right);
+	if(oper=='+'){ return int_var((a+b)); };
+	if(oper=='-'){ return int_var((a-b)); };
+	if(oper=='/'){ return int_var((a/b)); };
+	if(oper=='*'){ return int_var((a*b)); };
+	fox_error(xstr("Unknown operator ", oper, End),0);
+	return NULL;
+};
 int is_true(void * val){
 	if(!val){ return 0; };
 	if(is_i(val)){ return is_int(val); };
+	if(is_f(val)){ return is_double(val); };
 	if(is_map(val)){ return map_len(val); };
 	if(is_str(val)){ return str_len(val); };
 	return 1;
@@ -3672,7 +3710,7 @@ int run_cmdline(map* args){
 		ret=invoke(cmdline_params(vec_sub(args,2,0),name),name); };
 	if(_printed){ return 0; };
 	if(is_map(ret)){ px(json(ret,1),1); return 0; };
-	if(is_str(ret) || is_int(ret)){ px(to_str(ret,"",0),1); };
+	if(is_str(ret) || is_num(ret)){ px(to_str(ret,"",0),1); };
 	return 0;
 };
 int utests(char* test,char* file){
@@ -4033,7 +4071,7 @@ char* h(char* in){
 	, End),NULL);
 };
 char* type_name(int type){
-	char* names[]={"Free","Skip","Int","String","Blob","Map","Vector","Index","Keys","Cell","Cell2"};
+	char* names[]={"Free","Skip","Int","Double","String","Blob","Map","Vector","Index","Keys","Cell","Cell2"};
 	return names[type];
 };
 char* ptr_name(void* var){ return type_name(ptr_type(var)); };

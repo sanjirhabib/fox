@@ -1,6 +1,4 @@
-
 #include <fox.h>
-#include <foxcmd.h>
 
 __attribute__((destructor)) static void maindtor(void){ gc_end(); };
 map* args(int argc, char** argv){ return ptrs_vec((void**)argv,argc); };

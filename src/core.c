@@ -1,4 +1,4 @@
-#line 2 "core.fox"
+#line 2 "/web/fox/core.fox"
 //#define NDEBUG
 #include "fox.h"
 
@@ -119,6 +119,7 @@ char* vec_json(map* mp,int indent){
 		if(!v){ ret=xcat(ret,"null", End); }
 		else if(is_str(v)){ ret=xcat(ret,str_quote(is_str(v)), End); }
 		else if(is_i(v)){ ret=xcat(ret,int_str(is_int(v)), End); }
+		else if(is_f(v)){ ret=xcat(ret,double_str(is_double(v)), End); }
 		else if(is_map(v)){ ret=xcat(ret,vec_json(is_map(v),indent ? indent+1 : 0), End); };
 		ret=xcat(ret,", ", End);
 	};
@@ -136,7 +137,8 @@ char* json(map* mp,int indent){
 	ret=xcat(ret,"{", End);
 	for(int i=next(mp,-1,NULL,NULL); has_id(mp,i); i++){ void* v=map_id(mp,i); char* k=map_key(mp, i);
 		if(indent){ ret=xcat(ret,"\n",str_times("\t",indent-1), End); };
-		if(is_i(k)){ ret=xcat(ret,int_str(is_int(k)-1), End); }
+		if(is_i(k)){ ret=xcat(ret,int_str(is_int(k)-1), End); };
+		if(is_f(k)){ ret=xcat(ret,double_str(is_double(k)), End); }
 		else {ret=xcat(ret,str_quote(is_str(k)), End);};
 		ret=xcat(ret,":", End);
 		if(is_str(v)){ ret=xcat(ret,str_quote(is_str(v)), End); }
@@ -153,6 +155,7 @@ char* to_str(void* v,char* null,int human){
 	if(!v){ return NULL; }
 	else if(is_str(v)){ return v; }
 	else if(is_i(v)){ return int_str(is_int(v)); }
+	else if(is_f(v)){ return double_str(is_double(v)); }
 	else if(is_map(v)){ return json(v,human); }
 	else {return "";};
 };
@@ -203,6 +206,11 @@ char* str_quote(char* head){
 	ret[i]='"';
 	assert(!ret[i+1]);
 	return ret;
+};
+char* double_str(double val){
+	char ret[21]={0};
+	sprintf(ret,"%g",val);
+	return str_dup(ret);
 };
 char* int_str(long long value){
 	int neg=0;
@@ -318,9 +326,17 @@ map* set(map* mp,int idx,void* val){
 	return mp;
 };
 int is_int(void* v){ return is_i(v) ? (int)((long long)v & ~(1ll<<62)) : 0; };
-double is_double(void* v){ return is_f(v) ? *(double*)((long long)v & ~(1ll<<61)) : 0; };
+double is_double(void* v){
+	if(!is_f(v)){ return is_int(v); };
+	long long ret=(long long)v & ~(1ll<<61);
+	return *(float*)&ret;
+};
 void* int_var(int i){ return (void*)((long long)i | (1ll<<62)); };
-void* double_var(double f){ return (void*)((*(long long*)&f) | (1ll<<61)); };
+void* double_var(double f){
+	void* ret=NULL;
+	*(float*)&ret=(float)f;
+	return (void*)((*(long long*)&ret) | (1ll<<61));
+};
 int has_id(map* mp,int idx){ return idx>=0 && idx<mp->len; };
 void* map_id(map* mp,int idx){
 	if(!mp){ return NULL; };
@@ -336,7 +352,7 @@ int map_len(map* mp){
 };
 char* map_key(map* mp,int idx){ return idx<0 ? NULL : (ptr_type(mp)==Map ? mp->pairs[idx].id : int_var((idx+1))); };
 char* is_str(void* v){
-	if(!v || is_i(v)){ return NULL; };
+	if(!v || is_num(v)){ return NULL; };
 	int type=ptr_type(v);
 	return type==String || type==Blob ? v : NULL;
 };
@@ -344,6 +360,14 @@ char* is_blob(void* v){ return ptr_type(v)==Blob ? v: NULL; };
 map* is_vec(void* v){ return ptr_type(v)==Vector ? v: NULL; };
 map* is_hash(void* v){ return ptr_type(v)==Map ? v: NULL; };
 map* is_map(void* v){ return ptr_type(v)>=Map ? v: NULL; };
+double to_double(void* v){
+	if(is_str(v)){
+		double ret=0.0;
+		if(!v){ return ret; };
+		sscanf(v,"%lf",&ret);
+		return ret; };
+	return is_double(v);
+};
 int to_int(void* v){
 	if(is_str(v)){ return stoi(v); };
 	return is_int(v);
@@ -389,6 +413,7 @@ int ptr_block(void* ptr,mempage* pg){ return ((char*)ptr-pg->page)/pg->block_siz
 int ptr_type(void* ptr){
 	if(!ptr){ return Null; };
 	if(is_i(ptr)){ return Int; };
+	if(is_f(ptr)){ return Double; };
 	mempage* pg=ptr_page(ptr);
 	if(!pg){ return String; };
 //	if pg->type => return pg->type
@@ -396,7 +421,7 @@ int ptr_type(void* ptr){
 };
 int cell2_mark(cons* pairs,int size){
 	for(int i=0;i<size;i++){
-		if(!is_i(pairs[i].id)){ gc_mark(pairs[i].id); };
+		if(!is_num(pairs[i].id)){ gc_mark(pairs[i].id); };
 		gc_mark(pairs[i].val);
 	};
 	return 0;

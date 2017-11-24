@@ -1,4 +1,4 @@
-#line 2 "core.fox"
+#line 2 "/web/fox/core.fox"
 //#define NDEBUG
 #include "fox.h"
 
@@ -119,6 +119,7 @@ char* vec_json(map* mp,int indent=0){
 		if !v => ret.=:null
 		else if v.is_str() => ret.=v.is_str().str_quote()
 		else if v.is_i() => ret.=v.is_int()
+		else if v.is_f() => ret.=v.is_double()
 		else if v.is_map() => ret.=v.is_map().vec_json(indent ? indent+1 : 0)
 		ret.=", "
 		
@@ -137,6 +138,7 @@ char* json(map* mp,int indent=0){
 	mp.each v,k,i
 		if indent => ret=ret.xcat("\n","\t".str_times(indent-1))
 		if k.is_i() => ret.=k.is_int()-1
+		if k.is_f() => ret.=k.is_double()
 		else ret.=k.is_str().str_quote()
 		ret.=":"
 		if v.is_str() => ret.=v.is_str().str_quote()
@@ -153,6 +155,7 @@ char* to_str(void* v,char* null="",int human=0){
 	if !v => return NULL
 	else if v.is_str() => return v
 	else if v.is_i() => return v.is_int().int_str()
+	else if v.is_f() => return v.is_double().double_str()
 	else if v.is_map() => return v.json(human)
 	else return ""
 }
@@ -203,6 +206,11 @@ char* str_quote(char* head){
 	ret[i]='"'
 	assert(!ret[i+1])
 	return ret
+}
+char* double_str(double val){
+	char ret[21]={0}
+	ret.sprintf("%g",val)
+	return ret.str_dup()
 }
 char* int_str(long long value){
 	neg=0
@@ -318,9 +326,17 @@ map* set(map* mp,int idx,void* val){
 	return mp
 }
 int is_int(void* v)			 	=> return v.is_i() ? (int)((long long)v & ~(1ll<<62)) : 0
-double is_double(void* v)		=> return v.is_f() ? *(double*)((long long)v & ~(1ll<<61)) : 0
+double is_double(void* v){
+	if !v.is_f() => return v.is_int()
+	long long ret=(long long)v & ~(1ll<<61)
+	return *(float*)&ret
+}
 void* int_var(int i)			=> return (void*)((long long)i | (1ll<<62))
-void* double_var(double f)		=> return (void*)((*(long long*)&f) | (1ll<<61))
+void* double_var(double f){
+	ret=NULL
+	*(float*)&ret=(float)f
+	return (void*)((*(long long*)&ret) | (1ll<<61))
+}
 int has_id(map* mp,int idx)		=> return idx>=0 && idx<mp->len
 void* map_id(map* mp,int idx){
 	if !mp => return NULL
@@ -336,7 +352,7 @@ int map_len(map* mp){
 }
 char* map_key(map* mp,int idx)	=> return idx<0 ? NULL : (mp.ptr_type()==Map ? mp->pairs[idx].id : (idx+1).int_var())
 char* is_str(void* v){
-	if !v || v.is_i() => return NULL
+	if !v || v.is_num() => return NULL
 	type=ptr_type(v);
 	return type==String || type==Blob ? v : NULL
 }
@@ -344,6 +360,14 @@ char* is_blob(void* v)	=> return ptr_type(v)==Blob ? v: NULL
 map* is_vec(void* v)			=> return ptr_type(v)==Vector ? v: NULL
 map* is_hash(void* v)			=> return ptr_type(v)==Map ? v: NULL
 map* is_map(void* v)			=> return ptr_type(v)>=Map ? v: NULL
+double to_double(void* v){
+	if v.is_str()
+		ret=0.0
+		if !v => return ret
+		sscanf(v,"%lf",&ret)
+		return ret
+	return v.is_double()
+}
 int to_int(void* v){
 	if v.is_str() => return v.stoi()
 	return v.is_int()
@@ -389,6 +413,7 @@ int ptr_block(void* ptr,mempage* pg) => return ((char*)ptr-pg->page)/pg->block_s
 int ptr_type(void* ptr){
 	if !ptr => return Null
 	if ptr.is_i() => return Int
+	if ptr.is_f() => return Double
 	mempage* pg=ptr.ptr_page()
 	if !pg => return String
 //	if pg->type => return pg->type
@@ -396,7 +421,7 @@ int ptr_type(void* ptr){
 }
 int cell2_mark(cons* pairs,int size){
 	for i=0;i<size;i++
-		if !pairs[i].id.is_i() => gc_mark(pairs[i].id)
+		if !pairs[i].id.is_num() => gc_mark(pairs[i].id)
 		gc_mark(pairs[i].val)
 	
 	return 0

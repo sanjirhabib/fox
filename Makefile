@@ -8,7 +8,7 @@ IDIR=./include
 CFLAGS=-I$(IDIR) -std=gnu99 -Wno-logical-op-parentheses -Os
 FOXS=fox.fox core.fox http.fox cmd.fox main.fox
 LIBS=-lm -lfox -lsqlite3
-_DEPS=fox.h foxcmd.h http.h regexp.h sql.h
+_DEPS=fox.h http.h regexp.h sql.h
 _TLIB=libfoxstatic.a
 TLIBS=$(patsubst %,$(LDIR)/%,$(_TLIB))
 DEPS=$(patsubst %,$(IDIR)/%,$(_DEPS))
@@ -26,23 +26,13 @@ $(SDIR)/%.c: ./%.fox
 $(ODIR)/%.o: $(SDIR)/%.c
 	$(CC) -c -o $@ $< $(CFLAGS)
 
-$(BDIR)/fox: $(TLIBS) $(ODIR)/main.o $(DEPS) $(OBJ) $(FOXS)
+$(BDIR)/fox: $(TLIBS) $(ODIR)/main.o $(DEPS) $(OBJ) $(FOXS) $(LDIR)/libfoxstatic.a
 	gcc -shared -o $(LDIR)/libfox.so $(OBJ) -lsqlite3
-	cp $(LDIR)/libfox.so $(INSTALL_DIR)/lib/libfox.so
-	gcc -o $@ $(ODIR)/main.o $(CFLAGS) $(LIBS)
+	gcc -o $@ $(ODIR)/main.o $(CFLAGS) -Llib -lm -lsqlite3 -lfoxstatic
 
 $(LDIR)/libfoxstatic.a: $(ODIR)/dynamic.o $(ODIR)/fox.o $(ODIR)/memsize.o $(ODIR)/sql.o $(ODIR)/cmd.o $(ODIR)/core.o
 	rm -f $@
 	ar rcs $@ $^
-#
-#$(LDIR)/libfoxcmd.a: $(ODIR)/cmd.o
-#	rm -f $@
-#	ar rcs $@ $^
-#
-#$(LDIR)/libfoxcore.a: $(ODIR)/core.o
-#	rm -f $@
-#	ar rcs $@ $^
-#
 
 $(IDIR)/fox.h: $(FOXS)
 	fox write_foxh $(IDIR)/fox.h

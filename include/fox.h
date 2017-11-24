@@ -31,7 +31,7 @@
 #include <sqlite3.h>
 
 enum Types {
-	Null,Skip,Int,String,Blob,Map,Vector,Index,Keys,Cell,Cell2,Tail
+	Null,Skip,Int,Double,String,Blob,Map,Vector,Index,Keys,Cell,Cell2,Tail
 };
 typedef struct cons {
 	short nextid;
@@ -55,8 +55,9 @@ typedef struct map {
 #ifdef __MINGW32__
 #define is_i(x) ((int)(x)>>30 & 1)
 #else
-#define is_i(x) ((long long)(x)>>62 & 1)
+#define is_i(x) ((long long)(x)>>61 & 2)
 #define is_f(x) ((*(long long*)&(x))>>61 & 1)
+#define is_num(x) ((*(long long*)&(x))>>61 & 3)
 #endif
 
 typedef struct mempage {
@@ -129,6 +130,7 @@ char* new_blob(int size);
 char* str_dup_len(char* str, int len);
 char* str_dup(char* str);
 char* str_quote(char* head);
+char* double_str(double val);
 char* int_str(long long value);
 int str_eq(char* str, char* str1);
 size_t str_hash(unsigned char * str);
@@ -155,6 +157,7 @@ char* is_blob(void* v);
 map* is_vec(void* v);
 map* is_hash(void* v);
 map* is_map(void* v);
+double to_double(void* v);
 int to_int(void* v);
 int next(map* mp, int idx, char** key, void** val);
 int stoi(char* str);
@@ -339,7 +342,7 @@ map* map_vec(map* mp);
 map* toks_keywords(map* mp, char* keywords);
 map* map_split(map* mp, char* str, int limit);
 size_t file_time(char* file);
-int is_num(char c);
+int is_number(char c);
 int is_alphanum(char c, char* others);
 int is_alpha(char c, char* others);
 int is_oper(char c);
@@ -477,6 +480,7 @@ static void* eval_toks(map* mp, map* env);
 static void* eval_expr(map* mp, int* idx, map* env, int level);
 void* eval(char* in, map* env);
 int eval_expr_cont(map* mp, int idx, map* env, void** last, int level);
+void* binary_op(void* left, char oper, void* right);
 int is_true(void * val);
 char* read_line(FILE* fp);
 char* skip_quote(char* str);

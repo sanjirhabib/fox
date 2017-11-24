@@ -1,7 +1,4 @@
-#include <sqlite3.h>
 #include "fox.h"
-#include "foxcmd.h"
-#include "sql.h"
 
 int _is_web=0;
 
