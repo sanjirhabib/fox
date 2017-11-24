@@ -136,7 +136,7 @@ char* json(map* mp,int indent){
 	ret=xcat(ret,"{", End);
 	for(int i=next(mp,-1,NULL,NULL); has_id(mp,i); i++){ void* v=map_id(mp,i); char* k=map_key(mp, i);
 		if(indent){ ret=xcat(ret,"\n",str_times("\t",indent-1), End); };
-		if(is_i(k)){ ret=xcat(ret,is_int(k)-1, End); }
+		if(is_i(k)){ ret=xcat(ret,int_str((is_int(k)-1)), End); }
 		else if(is_f(k)){ ret=xcat(ret,k, End); }
 		else {ret=xcat(ret,str_quote(is_str(k)), End);};
 		ret=xcat(ret,":", End);

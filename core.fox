@@ -136,7 +136,7 @@ char* json(map* mp,int indent=0){
 	ret.="{"
 	mp.each v,k,i
 		if indent => ret=ret.xcat("\n","\t".str_times(indent-1))
-		if k.is_i() => ret.=k.is_int()-1
+		if k.is_i() => ret.=(k.is_int()-1).int_str()
 		else if k.is_f() => ret.=k
 		else ret.=k.is_str().str_quote()
 		ret.=":"
