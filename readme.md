@@ -6,8 +6,11 @@ Fox language. Transcompiles source into into human readable C. Generated code ma
 ### Small code base
 1K lines for the runtime. The compiler is 4K lines. Creates small 30KB binary for hello world.
 
-### GC Collected
+### GCed
 Tracing GC. 50ms max delay in average use cases.
+
+### Minimal boiler code
+Primitive types are not boxed. Use int, double, float, char* as usual. Variant is void*.
 
 ### Inline maps and vectors
 ```
