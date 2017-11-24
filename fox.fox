@@ -2263,7 +2263,7 @@ map* call_count(map* toks,map* counter,char* infunc){
 	for i=0; i<toks->len; i+=2
 		char* name=toks.syn_is_call(i)
 		if name!==infunc
-			counter[name]=counter[name].is_int()+1
+			counter[name]=(counter[name].is_int()+1).int_var()
 		if toks[i+1].is_map()
 			toks[i+1].call_count(counter,infunc)
 	return counter
@@ -2987,7 +2987,7 @@ char* foxh(){
 
 	extern char* skip;
 
-	#define End (char*)(0xFF12B145)
+	#define End (char*)(0x0FF1B14E059AD3BA)
 
 	void* php_global(char* name);
 
@@ -3375,7 +3375,11 @@ int eval_expr_cont(map* mp,int idx,map* env,void** last,int level){
 				v2=0.0
 				sscanf(val,"%lf",&v2)
 				ret=v2.double_var()
-			else ret=val.stoi().int_var()
+			else
+				long long v2=0
+				sscanf(val,"%lld",&v2)
+				ret=v2.int_var()
+//				ret=atoi(val).int_var()
 			continue
 		else if val.fox_at(0)=='"'
 			ret=val.str_unquote()
@@ -3525,8 +3529,8 @@ void* binary_op(void* left, char oper, void* right){
 		if oper=='*' => return (a*b).double_var()
 		return 0.double_var()
 		"Unknown operator $oper".fox_error()
-	int a=left.is_int()
-	int b=right.is_int()
+	long long a=left.is_int()
+	long long b=right.is_int()
 	if oper=='+' => return (a+b).int_var()
 	if oper=='-' => return (a-b).int_var()
 	if oper=='/' => return (a/b).int_var()
@@ -4631,3 +4635,11 @@ map* read_paren(map* mp,char** line,map*(*func)(char**)){
 	return mp
 }
 map* set_map(void* val,map* mp,int idx) => return set(mp,idx,val)
+char* var_bits(void* var){
+	char* ret=72.fox_alloc(String)
+	unsigned char *ptr = (unsigned char*)&var
+	for idx=64,i=0;idx--;i++
+		if i && !(i%8) => ret[i+i/8-1]='-'
+		ret[i+i/8]=ptr[idx/8] & (1u << (idx%8) ) ? '1' : '0'
+	return ret
+}

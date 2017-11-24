@@ -138,25 +138,17 @@ char* json(map* mp,int indent=0){
 	mp.each v,k,i
 		if indent => ret=ret.xcat("\n","\t".str_times(indent-1))
 		if k.is_i() => ret.=k.is_int()-1
-		if k.is_f() => ret.=k.is_double()
+		else if k.is_f() => ret.=k
 		else ret.=k.is_str().str_quote()
 		ret.=":"
 		if v.is_str() => ret.=v.is_str().str_quote()
 		else if !v => ret.=:null
 		else if v.is_map() => ret.=v.is_map().json(indent ? indent+1 : 0)
-		else ret.=v.is_int()
+		else ret.=v
 		if i<mp->len-1 => ret.=", "
 		
 	if ret.str_len()>1 && indent => ret=ret.xcat("\n","\t".str_times(indent-2))
 	ret.="}"
-	return ret
-}
-char* var_bits(void* var){
-	char* ret=72.fox_alloc(String)
-	unsigned char *ptr = (unsigned char*)&var
-	for idx=64,i=0;idx--;i++
-		if i && !(i%8) => ret[i+i/8-1]='-'
-		ret[i+i/8]=ptr[idx/8] & (1u << (idx%8) ) ? '1' : '0'
 	return ret
 }
 char* to_str(void* v,char* null="",int human=0){
@@ -217,7 +209,7 @@ char* str_quote(char* head){
 }
 char* double_str(double val){
 	char ret[21]={0}
-	ret.sprintf("%g",val)
+	ret.sprintf("%.14g",val)
 	return ret.str_dup()
 }
 char* int_str(long long value){
@@ -294,7 +286,9 @@ int key_eq(map* mp,int idx,char* id){
 }
 int key_hash(char* id) => return id.is_str() ? str_hash((unsigned char*)id) : id.is_int()
 int map_has_key(map* mp,char* id){
-	if !id||!mp||!mp->len => return 0
+	if !id||!mp => return 0
+	assert(mp.is_map())
+	if !mp->len => return 0
 	if mp.ptr_type()==Vector
 		if id.is_str() => return 0
 		idx=id.is_int()

@@ -137,26 +137,18 @@ char* json(map* mp,int indent){
 	ret=xcat(ret,"{", End);
 	for(int i=next(mp,-1,NULL,NULL); has_id(mp,i); i++){ void* v=map_id(mp,i); char* k=map_key(mp, i);
 		if(indent){ ret=xcat(ret,"\n",str_times("\t",indent-1), End); };
-		if(is_i(k)){ ret=xcat(ret,is_int(k)-1, End); };
-		if(is_f(k)){ ret=xcat(ret,double_str(is_double(k)), End); }
+		if(is_i(k)){ ret=xcat(ret,is_int(k)-1, End); }
+		else if(is_f(k)){ ret=xcat(ret,k, End); }
 		else {ret=xcat(ret,str_quote(is_str(k)), End);};
 		ret=xcat(ret,":", End);
 		if(is_str(v)){ ret=xcat(ret,str_quote(is_str(v)), End); }
 		else if(!v){ ret=xcat(ret,"null", End); }
 		else if(is_map(v)){ ret=xcat(ret,json(is_map(v),indent ? indent+1 : 0), End); }
-		else {ret=xcat(ret,is_int(v), End);};
+		else {ret=xcat(ret,v, End);};
 		if(i<mp->len-1){ ret=xcat(ret,", ", End); };
 	};
 	if(str_len(ret)>1 && indent){ ret=xcat(ret,"\n",str_times("\t",indent-2), End); };
 	ret=xcat(ret,"}", End);
-	return ret;
-};
-char* var_bits(void* var){
-	char* ret=fox_alloc(72,String);
-	unsigned char *ptr = (unsigned char*)&var;
-	for(int idx=64,i=0;idx--;i++){
-		if(i && !(i%8)){ ret[i+i/8-1]='-'; };
-		ret[i+i/8]=ptr[idx/8] & (1u << (idx%8) ) ? '1' : '0'; };
 	return ret;
 };
 char* to_str(void* v,char* null,int human){
@@ -217,7 +209,7 @@ char* str_quote(char* head){
 };
 char* double_str(double val){
 	char ret[21]={0};
-	sprintf(ret,"%g",val);
+	sprintf(ret,"%.14g",val);
 	return str_dup(ret);
 };
 char* int_str(long long value){
@@ -294,7 +286,9 @@ int key_eq(map* mp,int idx,char* id){
 };
 int key_hash(char* id){ return is_str(id) ? str_hash((unsigned char*)id) : is_int(id); };
 int map_has_key(map* mp,char* id){
-	if(!id||!mp||!mp->len){ return 0; };
+	if(!id||!mp){ return 0; };
+	assert(is_map(mp));
+	if(!mp->len){ return 0; };
 	if(ptr_type(mp)==Vector){
 		if(is_str(id)){ return 0; };
 		long long idx=is_int(id);

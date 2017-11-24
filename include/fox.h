@@ -102,7 +102,7 @@ extern int _is_web;
 
 extern char* skip;
 
-#define End (char*)(0xFF12B145)
+#define End (char*)(0x0FF1B14E059AD3BA)
 
 void* php_global(char* name);
 int rand();
@@ -124,7 +124,6 @@ char* xcat(char* ret, ...);
 char* cat(char* str1, char* str2);
 char* vec_json(map* mp, int indent);
 char* json(map* mp, int indent);
-char* var_bits(void* var);
 char* to_str(void* v, char* null, int human);
 size_t blob_size(char* in);
 char* new_blob(int size);
@@ -557,6 +556,7 @@ map* map_echo(map* in);
 char* str_join(char* str1, char* joiner, char* str2);
 map* read_paren(map* mp, char** line, map*(*func)(char** ));
 map* set_map(void* val, map* mp, int idx);
+char* var_bits(void* var);
 map* sql_toks(char* line);
 map* split_keywords(map* mp, char* words);
 void* key_var(char* key);

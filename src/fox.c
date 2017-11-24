@@ -2263,7 +2263,7 @@ map* call_count(map* toks,map* counter,char* infunc){
 	for(int i=0; i<toks->len; i+=2){
 		char* name=syn_is_call(toks,i);
 		if(!str_eq(name,infunc)){
-			add(counter,name,is_int(map_val(counter,name))+1); };
+			add(counter,name,int_var((is_int(map_val(counter,name))+1))); };
 		if(is_map(map_id(toks,i+1))){
 			call_count(map_id(toks,i+1),counter,infunc); }; };
 	return counter;
@@ -2987,7 +2987,7 @@ char* foxh(){
 	"\n"
 	"extern char* skip;\n"
 	"\n"
-	"#define End (char*)(0xFF12B145)\n"
+	"#define End (char*)(0x0FF1B14E059AD3BA)\n"
 	"\n"
 	"void* php_global(char* name);\n"
 	""
@@ -3375,7 +3375,11 @@ int eval_expr_cont(map* mp,int idx,map* env,void** last,int level){
 				double v2=0.0;
 				sscanf(val,"%lf",&v2);
 				ret=double_var(v2);
-			}else {ret=int_var(stoi(val));};
+			}else{
+				long long v2=0;
+				sscanf(val,"%lld",&v2);
+				ret=int_var(v2); };
+//				ret=atoi(val).int_var()
 			continue;
 		}else if(fox_at(val,0)=='"'){
 			ret=str_unquote(val);
@@ -3525,8 +3529,8 @@ void* binary_op(void* left, char oper, void* right){
 		if(oper=='*'){ return double_var((a*b)); };
 		return double_var(0);
 		fox_error(xstr("Unknown operator ", oper, End),0); };
-	int a=is_int(left);
-	int b=is_int(right);
+	long long a=is_int(left);
+	long long b=is_int(right);
 	if(oper=='+'){ return int_var((a+b)); };
 	if(oper=='-'){ return int_var((a-b)); };
 	if(oper=='/'){ return int_var((a/b)); };
@@ -4631,3 +4635,11 @@ map* read_paren(map* mp,char** line,map*(*func)(char**)){
 	return mp;
 };
 map* set_map(void* val,map* mp,int idx){ return set(mp,idx,val); };
+char* var_bits(void* var){
+	char* ret=fox_alloc(72,String);
+	unsigned char *ptr = (unsigned char*)&var;
+	for(int idx=64,i=0;idx--;i++){
+		if(i && !(i%8)){ ret[i+i/8-1]='-'; };
+		ret[i+i/8]=ptr[idx/8] & (1u << (idx%8) ) ? '1' : '0'; };
+	return ret;
+};
