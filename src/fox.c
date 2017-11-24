@@ -1133,7 +1133,7 @@ char* map_str_indent(map* mp,int indent){
 						ret=xcat(ret," ",k2,"=",v2, End);
 					}else if(is_num(v2)){
 						if(is_int(v2)){
-							ret=xcat(ret," ",k2,"=#",int_str(is_int(v2)), End);
+							ret=xcat(ret," ",k2,"=#",is_int(v2), End);
 						}else {is_double(v2);};
 							ret=xcat(ret," ",k2,"=#",double_str(is_double(v2)), End);
 					}else{
@@ -1151,7 +1151,7 @@ char* map_str_indent(map* mp,int indent){
 				if(bl){ ret=xcat(ret,"\n",bl, End); }; };
 		}else if(type==Vector||is_int(k)){
 			ret=xcat(ret,to_str(v,"",0),"\n", End);
-		}else if(is_i(v)){ ret=xcat(ret,k,"=#",int_str(is_int(v)),"\n", End); }
+		}else if(is_i(v)){ ret=xcat(ret,k,"=#",is_int(v),"\n", End); }
 		else if(is_double(v)){ ret=xcat(ret,k,"=#",double_str(is_double(v)),"\n", End); }
 		else if(is_str(v)){
 			if(strchr(v,'\n')){
@@ -2263,7 +2263,7 @@ map* call_count(map* toks,map* counter,char* infunc){
 	for(int i=0; i<toks->len; i+=2){
 		char* name=syn_is_call(toks,i);
 		if(!str_eq(name,infunc)){
-			add(counter,name,int_var(is_int(map_val(counter,name))+1)); };
+			add(counter,name,is_int(map_val(counter,name))+1); };
 		if(is_map(map_id(toks,i+1))){
 			call_count(map_id(toks,i+1),counter,infunc); }; };
 	return counter;
@@ -3412,22 +3412,22 @@ int eval_expr_cont(map* mp,int idx,map* env,void** last,int level){
 				add(env,val,ret);
 			}else if(str_eq(map_id(mp,idx+2),"++")){
 				idx+=2;
-				add(env,val,int_var(is_int(map_val(env,val))+1));
+				add(env,val,binary_op(map_val(env,val),'+',int_var(1)));
 			}else if(str_eq(map_id(mp,idx+2),"--")){
 				idx+=2;
-				add(env,val,int_var(is_int(map_val(env,val))-1));
+				add(env,val,binary_op(map_val(env,val),'-',int_var(1)));
 			}else if(str_eq(map_id(mp,idx+2),"+=")){
 				idx+=4;
-				add(env,val,int_var(is_int(map_val(env,val))+is_int(eval_expr(mp,&idx,env,6))));
+				add(env,val,binary_op(map_val(env,val),'+',eval_expr(mp,&idx,env,6)));
 			}else if(str_eq(map_id(mp,idx+2),"-=")){
 				idx+=4;
-				add(env,val,int_var(is_int(map_val(env,val))-is_int(eval_expr(mp,&idx,env,6))));
+				add(env,val,binary_op(map_val(env,val),'-',eval_expr(mp,&idx,env,6)));
 			}else if(str_eq(map_id(mp,idx+2),"*=")){
 				idx+=4;
-				add(env,val,int_var(is_int(map_val(env,val))*is_int(eval_expr(mp,&idx,env,6))));
+				add(env,val,binary_op(map_val(env,val),'*',eval_expr(mp,&idx,env,6)));
 			}else if(str_eq(map_id(mp,idx+2),"/=")){
 				idx+=4;
-				add(env,val,int_var(is_int(map_val(env,val))/is_int(eval_expr(mp,&idx,env,6))));
+				add(env,val,binary_op(map_val(env,val),'/',eval_expr(mp,&idx,env,6)));
 			}else{
 				ret=map_val(env,val); };
 			continue;

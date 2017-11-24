@@ -151,6 +151,14 @@ char* json(map* mp,int indent=0){
 	ret.="}"
 	return ret
 }
+char* var_bits(void* var){
+	char* ret=72.fox_alloc(String)
+	unsigned char *ptr = (unsigned char*)&var
+	for idx=64,i=0;idx--;i++
+		if i && !(i%8) => ret[i+i/8-1]='-'
+		ret[i+i/8]=ptr[idx/8] & (1u << (idx%8) ) ? '1' : '0'
+	return ret
+}
 char* to_str(void* v,char* null="",int human=0){
 	if !v => return NULL
 	else if v.is_str() => return v
@@ -325,17 +333,22 @@ map* set(map* mp,int idx,void* val){
 	else mp.vec_set(idx+1,val)
 	return mp
 }
-int is_int(void* v)			 	=> return v.is_i() ? (int)((long long)v & ~(1ll<<62)) : 0
+long long is_int(void* v){
+	if !v.is_i() => return 0
+	size_t val=((size_t)v >> 63) & 1 ? 3 : 0;
+	return (long long)((((size_t)v) & ~(3ll<<61)) | ((val & 3ll)<<61));
+}
 double is_double(void* v){
 	if !v.is_f() => return v.is_int()
-	long long ret=(long long)v & ~(1ll<<61)
-	return *(float*)&ret
+	size_t val=(((size_t)v) >> 60) & 1 ? 1 : 2;
+	val=(size_t)((((size_t)v) & ~(3ll<<61)) | ((val & 3ll)<<61));
+	return *(double*)&val;
 }
-void* int_var(int i)			=> return (void*)((long long)i | (1ll<<62))
+void* int_var(size_t i){
+	return (void*)((i & ~(3ll<<61)) | ((2ll & 3ll)<<61));
+}
 void* double_var(double f){
-	ret=NULL
-	*(float*)&ret=(float)f
-	return (void*)((*(long long*)&ret) | (1ll<<61))
+	return (void*)(((*(size_t*)&f) & ~(3ll<<61)) | ((1ll & 3ll)<<61));
 }
 int has_id(map* mp,int idx)		=> return idx>=0 && idx<mp->len
 void* map_id(map* mp,int idx){
