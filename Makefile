@@ -15,7 +15,7 @@ DEPS=$(patsubst %,$(IDIR)/%,$(_DEPS))
 _OBJ=cmd.o core.o dynamic.o fox.o main.o memsize.o sql.o
 OBJ = $(patsubst %,$(ODIR)/%,$(_OBJ))
 
-.PHONY: install clean php
+.PHONY: install clean php tests
 
 #.DEFAULT_GOAL:=bin/fox
 
@@ -41,6 +41,7 @@ $(SDIR)/dynamic.c: $(FOXS) $(IDIR)/fox.h
 	fox write_dynamic src/dynamic.c
 
 install: $(BDIR)/fox $(LDIR)/libfoxstatic.a
+	cd tests && ../bin/fox utests
 	cp $(IDIR)/fox.h $(INSTALL_DIR)/include/fox.h
 	cp $(BDIR)/fox $(INSTALL_DIR)/bin/fox
 	cp $(LDIR)/libfoxstatic.a $(INSTALL_DIR)/lib/
@@ -58,3 +59,5 @@ clean:
 	rm -f $(LDIR)/*.lib
 	rm -f $(LDIR)/*.so
 	rm -f $(BDIR)/fox
+tests:
+	cd tests && ../bin/fox utests

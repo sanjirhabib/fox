@@ -62,7 +62,7 @@ char* sub_str(char* src,int from,int len){
 	if(len<=0){ return NULL; };
 	if(from>=slen){ return NULL; };
 	if(from+len>=slen){ return str_dup((src+from)); };
-	char* ret=fox_alloc(len+1,String);
+	char* ret=new_str(len);
 	memcpy(ret,src+from,len);
 	assert(!ret[len]);
 	return ret;
@@ -75,7 +75,7 @@ char* print(char* str,FILE* fp){
 };
 char* str_times(char* str,int times){
 	if(times<=0){ return NULL; };
-	char* ret=fox_alloc(strlen(str)*times+1,String);
+	char* ret=new_str(strlen(str)*times);
 	while(times--) {ret=xcat(ret,str, End);};
 	return ret;
 };
@@ -117,9 +117,8 @@ char* vec_json(map* mp,int indent){
 	ret=xcat(ret,"[", End);
 	for(int i=next(mp,-1,NULL,NULL); has_id(mp,i); i++){ void* v=map_id(mp,i);
 		if(!v){ ret=xcat(ret,"null", End); }
-		else if(is_str(v)){ ret=xcat(ret,str_quote(is_str(v)), End); }
-		else if(is_i(v)){ ret=xcat(ret,is_int(v), End); }
-		else if(is_f(v)){ ret=xcat(ret,double_str(is_double(v)), End); }
+		else if(is_str(v)){ ret=xcat(ret,str_quote(v), End); }
+		else if(is_num(v)){ ret=xcat(ret,v, End); }
 		else if(is_map(v)){ ret=xcat(ret,vec_json(is_map(v),indent ? indent+1 : 0), End); };
 		ret=xcat(ret,", ", End);
 	};
@@ -176,7 +175,7 @@ char* str_dup_len(char* str, int len){
 	if(!str){ return NULL; };
 	if(is_blob(str)){
 		return memcpy(new_blob(len),str,len); };
-	char* ret=fox_alloc(len+1,String);
+	char* ret=new_str(len);
 	memcpy(ret,str,len);
 	ret[len]='\0';
 	return ret;
@@ -192,7 +191,7 @@ char* str_quote(char* head){
 	char* quoteto="\\\"nrt";
 	while((c=*str++)) {if(strchr(quotable,c)){ extra++; };};
 	assert(extra<=len);
-	char* ret=fox_alloc(str_len(head)+extra+3,String);
+	char* ret=new_str(str_len(head)+extra+2);
 	ret[0]='"';
 	str=head;
 	int i=1;
@@ -267,6 +266,7 @@ map* xmap(char* k1,...){
 	va_end(args);
 	return mp;
 };
+char* new_str(int len){ return fox_alloc(len+1,String); };
 map* new_map(){
 	map* ret=fox_alloc(sizeof(map),Map);
 	ret->type=Map;

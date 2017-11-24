@@ -179,7 +179,7 @@ char* va_str(char* format,va_list args){
 	va_list copy
 	copy.va_copy(args)
 	int len=NULL.vsnprintf(0,format,args)
-	char* ret=fox_alloc(len+1,String)
+	char* ret=new_str(len)
 	ret.vsnprintf(len+1,format,copy)
 	copy.va_end()
 	return ret
@@ -294,7 +294,7 @@ char* str_escape(char* head){
 	char* quoteto="\\\""
 	while((c=*str++)) if quotable.strchr(c) => extra++
 	assert(extra<=len)
-	char* ret=fox_alloc(head.str_len()+extra+1,String)
+	char* ret=new_str(head.str_len()+extra)
 	str=head
 	i=0
 	char* fox_at
@@ -384,7 +384,7 @@ char* str_replace(char* str,void* find,void* replace=NULL){
 		dels+=i*k.str_len()
 		adds+=i*v.str_len()
 	if !dels => return str
-	char* ret=fox_alloc(str.str_len()+adds-dels,String)
+	char* ret=new_str(str.str_len()+adds-dels-1)
 	temp=str
 	temp2=ret
 	for ;*temp;temp++,temp2++
@@ -1097,7 +1097,7 @@ char fox_at(char* str,int idx){
 	return idx<str_len(str) ? str[idx] : '\0'
 }
 char* indent_str(int i){
-	char* ret=fox_alloc(i+2,String)
+	char* ret=new_str(i+1)
 	ret.memset('\t',i+1)
 	ret[0]='\n'
 	return ret
@@ -1179,7 +1179,7 @@ map* dir_files(char* path){
 	while (dir=d.readdir())
 		char* name=dir->d_name
 		if name.is_word(". ..") => continue
-		ret[]="%s%s".mstr(padd,name)
+		ret[]="$padd$name"
 		
 	d.closedir()
 	return ret
@@ -1901,7 +1901,7 @@ int str_hasvar(char* in){
 	return 0
 }
 char* str_mstr(char* in){
-	char* ret=fox_alloc(in.str_len()+1,String)
+	char* ret=in.str_len().new_str()
 	rethead=ret
 	char* type=NULL
 	str=in
@@ -1933,7 +1933,7 @@ char* str_mstr(char* in){
 }
 map* xstr_parts(char* in){
 	ret=[]
-	char* tok=fox_alloc(in.str_len()+1,String)
+	char* tok=new_str(in.str_len())
 	tokhead=tok
 	incode=0
 	str=in
@@ -2001,12 +2001,6 @@ map* str_dollars(map* mp){
 			subs=str.str_xstr().x_map().colon_str().dot_key().vec_sub(1)
 			mp.vec_splice(idx,1,subs)
 			idx+=subs.map_len()-1
-//		else if *str=='"' && str.strchr('%')
-//			subst=str.str_mstr()
-//			if *subst!='"' && *subst!='='
-//				map* subs=subst.x_map().colon_str().dot_key().vec_sub(1)
-//				mp.vec_splice(idx,1,subs)
-//				idx+=subs.map_len()-1
 	return mp
 }
 map* single_quotes(map* mp){
@@ -2792,8 +2786,8 @@ int is_func_decl(map* syn){
 	if syn[idx+7]==="{" && syn[idx+13]===";" => return 1
 	return 0
 }
-char* fox_h(char* infile,char* outfile,int with_foxh=0) => return ((with_foxh ? foxh() : "")..infile.file_funcs().funcs_cdecl(0)).write_file(outfile)
-char* fox_c(char* infile, char* outfile) => return infile.fox_read_file().x_c().write_file(outfile)
+char* fox_h(char* infile,char* outfile=NULL,int with_foxh=0) => return ((with_foxh ? foxh() : "")..infile.file_funcs().funcs_cdecl(0)).write_file(outfile)
+char* fox_c(char* infile, char* outfile=NULL) => return infile.fox_read_file().x_c().write_file(outfile)
 map* x_map(char* in) => return c_tokenizer(&in,'\0')
 char* c_x(char* in) => return in.x_map().map_tox().toks_c()
 
@@ -2817,7 +2811,7 @@ char* func_ccall(map* fn){
 			else if fn.type===:int => mtype=:int
 			else if fn.type===:double => mtype=:double
 			else return NULL
-			return "call_variadic_%s(v,%s,\"%s\")".mstr(mtype,fn.name,fn.name)
+			return "call_variadic_$mtype(v,$(fn.name),\"$(fn.name)\")"
 		else if !v.str_end("*")
 			"ignoring %s/%s/%s".verbose(fn.name,v,k)
 			return NULL
@@ -4391,20 +4385,6 @@ map* toks_macros(map* mp){
 			ret[toks[1]]= xmap(:name, toks[1], :params, params, :body, toks.vec_sub(8,upto-9))
 	return ret
 }
-void devel(char* file){
-	file.fox_read_file().x_map()
-		.colon_str()
-		.dot_key()
-		.str_dollars()
-		.add_curly()
-		.force_curly()
-		.add_semicolon()
-		.dot_func()
-		.dot_each()
-		.toks_c()
-		.px()
-}
-
 int is_inline_vector(map* toks,int idx){
 	if !toks[idx].is_word("[ { ") => return 0
 	char* pre=toks[idx-2].is_str()
@@ -4612,7 +4592,7 @@ map* prop_tokenizer(char** line){
 void benchmark_gc(){
 	ret=[]
 	for i=0;i<1000000;i++
-		ret[i%200000]=1024.fox_alloc(String)
+		ret[i%200000]=1023.new_str()
 	ret.map_len().dx()
 	mem_usage().dx()
 }
@@ -4636,7 +4616,7 @@ map* read_paren(map* mp,char** line,map*(*func)(char**)){
 }
 map* set_map(void* val,map* mp,int idx) => return set(mp,idx,val)
 char* var_bits(void* var){
-	char* ret=72.fox_alloc(String)
+	char* ret=71.new_str()
 	unsigned char *ptr = (unsigned char*)&var
 	for idx=64,i=0;idx--;i++
 		if i && !(i%8) => ret[i+i/8-1]='-'

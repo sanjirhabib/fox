@@ -62,7 +62,7 @@ char* sub_str(char* src,int from,int len=0){
 	if len<=0 => return NULL
 	if from>=slen => return NULL
 	if from+len>=slen => return (src+from).str_dup()
-	char* ret=fox_alloc(len+1,String)
+	char* ret=new_str(len)
 	ret.memcpy(src+from,len)
 	assert(!ret[len])
 	return ret
@@ -75,7 +75,7 @@ char* print(char* str,FILE* fp=stdout){
 }
 char* str_times(char* str,int times){
 	if times<=0 => return NULL
-	char* ret=fox_alloc(str.strlen()*times+1,String)
+	char* ret=new_str(str.strlen()*times)
 	while(times--) ret.=str
 	return ret
 }
@@ -117,9 +117,8 @@ char* vec_json(map* mp,int indent=0){
 	ret.="["
 	mp.each v,,i
 		if !v => ret.=:null
-		else if v.is_str() => ret.=v.is_str().str_quote()
-		else if v.is_i() => ret.=v.is_int()
-		else if v.is_f() => ret.=v.is_double()
+		else if v.is_str() => ret.=v.str_quote()
+		else if v.is_num() => ret.=v
 		else if v.is_map() => ret.=v.is_map().vec_json(indent ? indent+1 : 0)
 		ret.=", "
 		
@@ -176,7 +175,7 @@ char* str_dup_len(char* str, int len){
 	if !str => return NULL
 	if str.is_blob()
 		return new_blob(len).memcpy(str,len)
-	char* ret=fox_alloc(len+1,String)
+	char* ret=new_str(len)
 	ret.memcpy(str,len)
 	ret[len]='\0'
 	return ret
@@ -192,7 +191,7 @@ char* str_quote(char* head){
 	char* quoteto="\\\"nrt"
 	while((c=*str++)) if quotable.strchr(c) => extra++
 	assert(extra<=len)
-	char* ret=fox_alloc(head.str_len()+extra+3,String)
+	char* ret=new_str(head.str_len()+extra+2)
 	ret[0]='"'
 	str=head
 	i=1
@@ -267,6 +266,7 @@ map* xmap(char* k1=End, void* ...){
 	args.va_end()
 	return mp
 }
+char* new_str(int len) => return fox_alloc(len+1,String)
 map* new_map(){
 	map* ret=map.sizeof().fox_alloc(Map)
 	ret->type=Map

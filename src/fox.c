@@ -179,7 +179,7 @@ char* va_str(char* format,va_list args){
 	va_list copy;
 	va_copy(copy,args);
 	int len=vsnprintf(NULL,0,format,args);
-	char* ret=fox_alloc(len+1,String);
+	char* ret=new_str(len);
 	vsnprintf(ret,len+1,format,copy);
 	va_end(copy);
 	return ret;
@@ -294,7 +294,7 @@ char* str_escape(char* head){
 	char* quoteto="\\\"";
 	while((c=*str++)) {if(strchr(quotable,c)){ extra++; };};
 	assert(extra<=len);
-	char* ret=fox_alloc(str_len(head)+extra+1,String);
+	char* ret=new_str(str_len(head)+extra);
 	str=head;
 	int i=0;
 	char* fox_at;
@@ -384,7 +384,7 @@ char* str_replace(char* str,void* find,void* replace){
 		dels+=i*str_len(k);
 		adds+=i*str_len(v); };
 	if(!dels){ return str; };
-	char* ret=fox_alloc(str_len(str)+adds-dels,String);
+	char* ret=new_str(str_len(str)+adds-dels-1);
 	char* temp=str;
 	char* temp2=ret;
 	for(;*temp;temp++,temp2++){
@@ -1097,7 +1097,7 @@ char fox_at(char* str,int idx){
 	return idx<str_len(str) ? str[idx] : '\0';
 };
 char* indent_str(int i){
-	char* ret=fox_alloc(i+2,String);
+	char* ret=new_str(i+1);
 	memset(ret,'\t',i+1);
 	ret[0]='\n';
 	return ret;
@@ -1179,7 +1179,7 @@ map* dir_files(char* path){
 	while((dir=readdir(d))){
 		char* name=dir->d_name;
 		if(is_word(name,". ..")){ continue; };
-		vec_add(ret,mstr("%s%s",padd,name, End));
+		vec_add(ret,xstr(padd, name, End));
 	};
 	closedir(d);
 	return ret;
@@ -1901,7 +1901,7 @@ int str_hasvar(char* in){
 	return 0;
 };
 char* str_mstr(char* in){
-	char* ret=fox_alloc(str_len(in)+1,String);
+	char* ret=new_str(str_len(in));
 	char* rethead=ret;
 	char* type=NULL;
 	char* str=in;
@@ -1933,7 +1933,7 @@ char* str_mstr(char* in){
 };
 map* xstr_parts(char* in){
 	map* ret=new_vec();
-	char* tok=fox_alloc(str_len(in)+1,String);
+	char* tok=new_str(str_len(in));
 	char* tokhead=tok;
 	int incode=0;
 	char* str=in;
@@ -2001,12 +2001,6 @@ map* str_dollars(map* mp){
 			map* subs=vec_sub(dot_key(colon_str(x_map(str_xstr(str)))),1,0);
 			vec_splice(mp,idx,1,subs);
 			idx+=map_len(subs)-1; }; };
-//		else if *str=='"' && str.strchr('%')
-//			subst=str.str_mstr()
-//			if *subst!='"' && *subst!='='
-//				map* subs=subst.x_map().colon_str().dot_key().vec_sub(1)
-//				mp.vec_splice(idx,1,subs)
-//				idx+=subs.map_len()-1
 	return mp;
 };
 map* single_quotes(map* mp){
@@ -2817,7 +2811,7 @@ char* func_ccall(map* fn){
 			else if(str_eq(map_val(fn,"type"),"int")){ mtype="int"; }
 			else if(str_eq(map_val(fn,"type"),"double")){ mtype="double"; }
 			else {return NULL;};
-			return mstr("call_variadic_%s(v,%s,\"%s\")",mtype,map_val(fn,"name"),map_val(fn,"name"), End);
+			return xstr("call_variadic_", mtype, "(v,", map_val(fn,"name"), ",\"", map_val(fn,"name"), "\")", End);
 		}else if(!str_end(v,"*")){
 			verbose("ignoring %s/%s/%s",map_val(fn,"name"),v,k, End);
 			return NULL; };
@@ -4391,20 +4385,6 @@ map* toks_macros(map* mp){
 			add(ret,map_id(toks,1), xmap("name", map_id(toks,1), "params", params, "body", vec_sub(toks,8,upto-9), End)); }; };
 	return ret;
 };
-void devel(char* file){
-	px(
-		toks_c(
-		dot_each(
-		dot_func(
-		add_semicolon(
-		force_curly(
-		add_curly(
-		str_dollars(
-		dot_key(
-		colon_str(
-		x_map(fox_read_file(file,1))))),1)),1)))),1);
-};
-
 int is_inline_vector(map* toks,int idx){
 	if(!is_word(map_id(toks,idx),"[ { ")){ return 0; };
 	char* pre=is_str(map_id(toks,idx-2));
@@ -4612,7 +4592,7 @@ map* prop_tokenizer(char** line){
 void benchmark_gc(){
 	map* ret=new_vec();
 	for(int i=0;i<1000000;i++){
-		set(ret,i%200000,fox_alloc(1024,String)); };
+		set(ret,i%200000,new_str(1023)); };
 	dx(int_var(map_len(ret)),NULL,0);
 	dx(mem_usage(),NULL,0);
 };
@@ -4636,7 +4616,7 @@ map* read_paren(map* mp,char** line,map*(*func)(char**)){
 };
 map* set_map(void* val,map* mp,int idx){ return set(mp,idx,val); };
 char* var_bits(void* var){
-	char* ret=fox_alloc(72,String);
+	char* ret=new_str(71);
 	unsigned char *ptr = (unsigned char*)&var;
 	for(int idx=64,i=0;idx--;i++){
 		if(i && !(i%8)){ ret[i+i/8-1]='-'; };
