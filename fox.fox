@@ -985,7 +985,6 @@ int utest(char* found,char* expect,char* in="",char* title=""){
 	[WRONG]
 	$found
 	[DIFF]_____________________
-	$(in.str_quote())
 	$(expect.str_quote())
 	$(found.str_quote())
 	_______________________________________________[ERROR]
@@ -1657,16 +1656,6 @@ map* heredoc_parts(char* str){
 	parts.xadd("\n"..tabs,"\"\"")
 	return parts
 }
-map* heredoc_vars(map* mp){
-	for int idx=2; idx<mp.map_len(); idx+=2
-		char* str=mp[idx].is_str()
-		if !str => continue
-		if *str=='"' && str.str_hasvar()
-			subs=str.str_xstr().x_map().colon_str().dot_key().vec_sub(1)
-			mp.vec_splice(idx,1,subs)
-			idx+=subs.map_len()-1
-	return mp
-}
 map* heredoc_str(map* mp){
 	for int idx=1; idx<mp.map_len(); idx+=2
 		if mp[idx].is_map() => mp[idx].heredoc_str()
@@ -1997,7 +1986,7 @@ map* str_dollars(map* mp){
 			continue
 		char* str=mp[idx].is_str()
 		if !str => continue
-		if *str=='"' && str.str_hasvar()
+		if (*str=='"' || str.str_start("---")) && str.str_hasvar()
 			subs=str.str_xstr().x_map().colon_str().dot_key().vec_sub(1)
 			mp.vec_splice(idx,1,subs)
 			idx+=subs.map_len()-1
@@ -2876,7 +2865,7 @@ char* funcs_cdecl(map* fns=funcs(),int show_default=1){
 	return ret
 }
 char* foxh(){
-	return ---
+	return '---
 	/* This is a generated file. To change it, edit function foxh() in fox.c */
 	#define _XOPEN_SOURCE
 	#ifndef _GNU_SOURCE
@@ -2985,7 +2974,7 @@ char* foxh(){
 
 	void* php_global(char* name);
 
-	---
+	---'
 }
 char* write_foxh(char* outfile="fox.h"){
 	return (foxh()..source_funcs().funcs_cdecl(0)).write_file(outfile)
@@ -3069,12 +3058,13 @@ char* fox_phpc(char* infile,char* outfile=NULL){
 		call=call.sub_str(0,-1)
 		ret.="\nPHP_FUNCTION($foxname){\n"
 		if v.params.map_len()
-			ret=ret.xcat(---
-			%s	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,"%s"%s)==FAILURE){ RETURN_NULL(); }
-			%s
-			---.mstr(decls,format,pointers,post))
+			ret=ret..---
+			$decls	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,"$format"$pointers)==FAILURE){ RETURN_NULL(); }
+			$post
+
+			---
 		if v.type===:void
-			ret.="\t$(v.name)($(call));\n";
+			ret.="\t$(v.name)($call);\n";
 			ret.="\tRETURN_NULL();\n"
 		else
 			ret.="\t%s ret=%s(%s);\n".mstr(v.type,v.name,call);
@@ -3238,7 +3228,7 @@ char* fox_phpc(char* infile,char* outfile=NULL){
 	return ret.write_file(outfile)
 }
 char* write_phpconfig(){
-	return ---
+	return '---
 	PHP_ARG_ENABLE(foxphp, whether to enable FoxPHP library support,
 	[ --enable-foxphp   Enable FoxPHP library support])
 	if test "$PHP_FOXPHP" = "yes"; then
@@ -3247,32 +3237,34 @@ char* write_phpconfig(){
 	  PHP_NEW_EXTENSION(foxphp, foxphp.c fox.c sql.c extern.c callfunc.c, $ext_shared,,-Wno-logical-op-parentheses -DPHP_MOD)
 	fi
 
-	---.write_file("config.m4")
+	---'.write_file("config.m4")
 }
 char* write_dynamic(char* outfile){
 	map* funcs=source_funcs()
-	char* ret=---
+	return ---
 	/* This is a generated file. To change it, edit function write_dynamic() in fox.c */
 	#include "sqlite3.h"
 	#include "fox.h"
 
 	char* version(){
-		return "Fox: build: %s, date: %s [%%s old]".mstr("%s".time_ago());
+		return "Fox: build: $(increase_version()), date: $(time_str()) [%s old]".mstr("$(time_str())".time_ago());
 	}
 	void* invoke(map* v,char* name){
 		unsigned long long idn=str_hash((unsigned char*)name)
 		switch(idn){
-	//%s
+	//$(funcs.callfunc_c())
 		}
-		return "invoke(): Function $name not defined".fox_error()
+		return "invoke(): Function $$name not defined".fox_error()
 	}
 	map* reflect(){
-		return %s;
+		return {
+			funcs: $(funcs.map_ccode()),
+			macros: $(source_macros().map_ccode()),
+			structs: $(source_structs().map_ccode())
+		}
 	}
 
-	---.x_c().mstr(increase_version(),time_str(),time_str(),funcs.callfunc_c(),{funcs: funcs, macros: source_macros(), structs: source_structs()}.map_ccode())
-	ret.write_file(outfile,1)
-	return ret
+	---.x_c().write_file(outfile,1)
 }
 map* eval_params(map* sent,char* name,map* env=NULL){
 	name.assert()
@@ -3770,18 +3762,33 @@ char* tutorial(){
 	```
 
 	### Multiline string
+	Three dashes with variable substitution.
+	```
+	---
+	thee dash multiline comment
+	with substitution $variable. 
+	You can put code: $(1+1)
+	or call functions $(name.str_upper())
+	---
+	```
+	Or use double quotes
 	```
 	"
-	Use double quote
+	Just like three dash version.
+	With embeded variables.
 	"
+	```
+	Or single quote. No variable will be interpreted within.
+	```
 	'
-	or single quote
+	Single quote.
+	No $variable substitution will occure.
 	'
-	---
-	or three dashes
-	---
+	```
+	You can add string terminators with single and double quote version
+	```
 	".end1
-	or a signed terminator
+	Using an unique sting terminator.
 	.end1"
 	```
 	### Function chaining

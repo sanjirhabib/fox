@@ -377,7 +377,6 @@ map* add_ctok(void* data, map* mp, int iscode);
 map* c_tokenizer(char** line, char term);
 int func_dot(map* mp, int idx);
 map* heredoc_parts(char* str);
-map* heredoc_vars(map* mp);
 map* heredoc_str(map* mp);
 map* dot_each(map* mp);
 map* map_implode(map* mp, char* joiner);

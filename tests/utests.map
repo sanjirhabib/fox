@@ -2228,45 +2228,45 @@ vec_splice/254
 
 str_xstr/255
 ---
-	----
+	'----
 	 $hello()
-	----.str_xstr()
+	----'.str_xstr()
 ---
 xstr(" ", hello, "()")
 
 
 str_xstr/256
 ---
-	----
+	'----
 	$hello()
-	----.str_xstr()
+	----'.str_xstr()
 ---
 xstr(hello, "()")
 
 
 str_xstr/257
 ---
-	----
+	'----
 	$hello$world
-	----.str_xstr()
+	----'.str_xstr()
 ---
 xstr(hello, world)
 
 
 str_xstr/258
 ---
-	----
+	'----
 	$hello$(world)
-	----.str_xstr()
+	----'.str_xstr()
 ---
 xstr(hello, world)
 
 
 str_xstr/259
 ---
-	----
+	'----
 	$hello$(world+1)
-	----.str_xstr()
+	----'.str_xstr()
 ---
 xstr(hello, world+1)
 

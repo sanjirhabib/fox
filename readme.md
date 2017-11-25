@@ -27,18 +27,33 @@ funcs()
 ```
 
 ### Multiline string
+Three dashes with variable substitution.
+```
+---
+thee dash multiline comment
+with substitution $variable. 
+You can put code: $(1+1)
+or call functions $(name.str_upper())
+---
+```
+Or use double quotes
 ```
 "
-Use double quote
+Just like three dash version.
+With embeded variables.
 "
+```
+Or single quote. No variable will be interpreted within.
+```
 '
-or single quote
+Single quote.
+No $variable substitution will occure.
 '
----
-or three dashes
----
+```
+You can add string terminators with single and double quote version
+```
 ".end1
-or a signed terminator
+Using an unique sting terminator.
 .end1"
 ```
 ### Function chaining

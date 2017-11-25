@@ -985,7 +985,6 @@ int utest(char* found,char* expect,char* in,char* title){
 	"[WRONG]\n", 
 	found, "\n", 
 	"[DIFF]_____________________\n", 
-	str_quote(in), "\n", 
 	str_quote(expect), "\n", 
 	str_quote(found), "\n", 
 	"_______________________________________________[ERROR]", 
@@ -1657,16 +1656,6 @@ map* heredoc_parts(char* str){
 	xadd(parts,xstr("\n",tabs, End),"\"\"", End);
 	return parts;
 };
-map* heredoc_vars(map* mp){
-	for(int idx=2; idx<map_len(mp); idx+=2){
-		char* str=is_str(map_id(mp,idx));
-		if(!str){ continue; };
-		if(*str=='"' && str_hasvar(str)){
-			map* subs=vec_sub(dot_key(colon_str(x_map(str_xstr(str)))),1,0);
-			vec_splice(mp,idx,1,subs);
-			idx+=map_len(subs)-1; }; };
-	return mp;
-};
 map* heredoc_str(map* mp){
 	for(int idx=1; idx<map_len(mp); idx+=2){
 		if(is_map(map_id(mp,idx))){ heredoc_str(map_id(mp,idx)); };
@@ -1997,7 +1986,7 @@ map* str_dollars(map* mp){
 			continue; };
 		char* str=is_str(map_id(mp,idx));
 		if(!str){ continue; };
-		if(*str=='"' && str_hasvar(str)){
+		if((*str=='"' || str_start(str,"---")) && str_hasvar(str)){
 			map* subs=vec_sub(dot_key(colon_str(x_map(str_xstr(str)))),1,0);
 			vec_splice(mp,idx,1,subs);
 			idx+=map_len(subs)-1; }; };
@@ -3069,10 +3058,11 @@ char* fox_phpc(char* infile,char* outfile){
 		call=sub_str(call,0,-1);
 		ret=xcat(ret,xstr("\nPHP_FUNCTION(", foxname, "){\n", End), End);
 		if(map_len(map_val(v,"params"))){
-			ret=xcat(ret,mstr(""
-			"%s	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,\"%s\"%s)==FAILURE){ RETURN_NULL(); }\n"
-			"%s"
-			"",decls,format,pointers,post, End), End); };
+			ret=xstr(ret,xstr("", 
+			decls, "\tif(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,\"", format, "\"", pointers, ")==FAILURE){ RETURN_NULL(); }\n", 
+			post, "\n", 
+			"", 
+			"", End), End); };
 		if(str_eq(map_val(v,"type"),"void")){
 			ret=xcat(ret,xstr("\t", map_val(v,"name"), "(", call, ");\n", End), End);
 			ret=xcat(ret,"\tRETURN_NULL();\n", End);
@@ -3251,28 +3241,30 @@ char* write_phpconfig(){
 };
 char* write_dynamic(char* outfile){
 	map* funcs=source_funcs();
-	char* ret=mstr(x_c(""
-	"/* This is a generated file. To change it, edit function write_dynamic() in fox.c */\n"
-	"#include \"sqlite3.h\"\n"
-	"#include \"fox.h\"\n"
-	"\n"
-	"char* version(){\n"
-	"	return \"Fox: build: %s, date: %s [%%s old]\".mstr(\"%s\".time_ago());\n"
-	"}\n"
-	"void* invoke(map* v,char* name){\n"
-	"	unsigned long long idn=str_hash((unsigned char*)name)\n"
-	"	switch(idn){\n"
-	"//%s\n"
-	"	}\n"
-	"	return \"invoke(): Function $name not defined\".fox_error()\n"
-	"}\n"
-	"map* reflect(){\n"
-	"	return %s;\n"
-	"}\n"
-	""
-	""),increase_version(),time_str(0),time_str(0),callfunc_c(funcs),map_ccode(xmap("funcs", funcs, "macros", source_macros(), "structs", source_structs(), End)), End);
-	write_file(ret,outfile,1);
-	return ret;
+	return write_file(x_c(xstr("", 
+	"/* This is a generated file. To change it, edit function write_dynamic() in fox.c */\n", 
+	"#include \"sqlite3.h\"\n", 
+	"#include \"fox.h\"\n", 
+	"\n", 
+	"char* version(){\n", 
+	"\treturn \"Fox: build: ", increase_version(), ", date: ", time_str(0), " [%s old]\".mstr(\"", time_str(0), "\".time_ago());\n", 
+	"}\n", 
+	"void* invoke(map* v,char* name){\n", 
+	"	unsigned long long idn=str_hash((unsigned char*)name)\n", 
+	"	switch(idn){\n", 
+	"//", callfunc_c(funcs), "\n", 
+	"	}\n", 
+	"\treturn \"invoke(): Function $name not defined\".fox_error()\n", 
+	"}\n", 
+	"map* reflect(){\n", 
+	"	return {\n", 
+	"\t\tfuncs: ", map_ccode(funcs), ",\n", 
+	"\t\tmacros: ", map_ccode(source_macros()), ",\n", 
+	"\t\tstructs: ", map_ccode(source_structs()), "\n", 
+	"	}\n", 
+	"}\n", 
+	"", 
+	"", End)),outfile,1);
 };
 map* eval_params(map* sent,char* name,map* env){
 	assert(name);
@@ -3770,18 +3762,33 @@ char* tutorial(){
 	"```\n"
 	"\n"
 	"### Multiline string\n"
+	"Three dashes with variable substitution.\n"
+	"```\n"
+	"---\n"
+	"thee dash multiline comment\n"
+	"with substitution $variable. \n"
+	"You can put code: $(1+1)\n"
+	"or call functions $(name.str_upper())\n"
+	"---\n"
+	"```\n"
+	"Or use double quotes\n"
 	"```\n"
 	"\"\n"
-	"Use double quote\n"
+	"Just like three dash version.\n"
+	"With embeded variables.\n"
 	"\"\n"
+	"```\n"
+	"Or single quote. No variable will be interpreted within.\n"
+	"```\n"
 	"'\n"
-	"or single quote\n"
+	"Single quote.\n"
+	"No $variable substitution will occure.\n"
 	"'\n"
-	"---\n"
-	"or three dashes\n"
-	"---\n"
+	"```\n"
+	"You can add string terminators with single and double quote version\n"
+	"```\n"
 	"\".end1\n"
-	"or a signed terminator\n"
+	"Using an unique sting terminator.\n"
 	".end1\"\n"
 	"```\n"
 	"### Function chaining\n"
