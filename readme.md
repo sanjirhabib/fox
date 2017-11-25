@@ -10,9 +10,10 @@ Fox language. Transcompiles source into into human readable C. Generated code ma
 Tracing GC. 50ms max delay in average use cases.
 
 ### Minimal boiler code
-Primitive types are not boxed. Use int, double, float, char* as usual. Variant is void*.
+Primitive types are not boxed. Use C native int, double, float, char* as usual. Variants are void*.
+It isn't until you use vectors and maps when you need structures.
 
-### Inline maps and vectors
+### Inline maps and vectors. Inline JSON.
 ```
 data={name: Habib, age: 31}
 data.name=:Ibrahim
@@ -36,24 +37,24 @@ You can put code: $(1+1)
 or call functions $(name.str_upper())
 ---
 ```
-Or use double quotes
+Or double quotes. Same as triple dashes.
 ```
 "
-Just like three dash version.
-With embeded variables.
+Escape dollar sign using double dollars, like $$this.
 "
 ```
-Or single quote. No variable will be interpreted within.
+Or single quote. Without variable substitution.
 ```
 '
-Single quote.
+Single quote, without variable substitution.
 No $variable substitution will occure.
 '
 ```
 You can add string terminators with single and double quote version
+Or extend the tripple dashes with more dashes and a closing match.
 ```
 ".end1
-Using an unique sting terminator.
+Using an unique string terminator.
 .end1"
 ```
 ### Function chaining
@@ -77,7 +78,7 @@ Use => in single line blocks
 if a==1 || b==2 => done=1; return 1
 ```
 
-### No semicolons, unless you want to
+### No semicolons, unless needed
 ```
 a=1+1
 a.px()
@@ -91,23 +92,24 @@ vals={a: b, c: d}
 
 ### Easily call functions from command line
 ```
-# ./fox sub_str hello 3 -1
+./fox sub_str hello 3 -1
 ```
 
 ### Execute code from CL
 ```
-# ./fox ":todo.table('todo.db').cols.px()"
+./fox ":todo.table('todo.db').cols.px()"
 ```
 
 ### Execute a file from CL
 ```
-# ./fox ./tests.fox
+./fox ./tests.fox
 ```
 
 ### Compile
 ```
 make
 make install
+make tests
 ```
 
 ### Unit Tests
