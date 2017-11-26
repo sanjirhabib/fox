@@ -53,7 +53,6 @@ char* stack_str(){
 	return ret;
 };
 void fox_stack_dump(){ fox_error("Crashed!\n",1); };
-//TODO: delete sub_str()
 char* sub_str(char* src,int from,int len){
 	int slen=str_len(src);
 	if(!slen){ return ""; };

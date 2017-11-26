@@ -1,10 +1,13 @@
 # Fox Language
-Fox language. Transcompiles source into into human readable C. Generated code maintains your original format, comment and indention, lines are exactly the same in number as your original source.
+Fox language. Transcompiles source into into human readable C.
+Generated code maintains your original format, comment and indention, lines are exactly the same in number as your original source.
+With an embeded Fox-C interpreter.
+The compiler is bootstrapped.
 
 ## Features
 
 ### Small code base
-1K lines for the runtime. The compiler is 4K lines. Creates small 30KB binary for hello world.
+1K lines for the runtime. The compiler with interpreter is 4K lines. Creates small 30KB binary for staticaly linked hello world app.
 
 ### GCed
 Tracing GC. 50ms max delay in average use cases.

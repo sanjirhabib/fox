@@ -1,0 +1,2 @@
+let rec fib x = if x < 2 then x else fib (x - 1) + fib (x - 2);;
+print_endline (string_of_int (fib 32));;

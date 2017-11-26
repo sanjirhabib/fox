@@ -1,0 +1,23 @@
+fox fib 32
+real	0m0.045s
+
+go run fib.go
+real	0m0.222s
+
+node fib.js
+real	0m0.086s
+
+luajit fib.lua
+real	0m0.049s
+
+lua fib.lua
+real	0m0.597s
+
+python fib.py
+real	0m1.210s
+
+ruby fib.rb
+real	0m0.562s
+
+mono fib.exe
+real	0m0.062s

@@ -1,0 +1,21 @@
+#!/bin/bash
+echo fox fib 32
+time fox fib 32
+echo go run fib.go
+time go run fib.go
+echo node fib.js
+time node fib.js
+echo luajit fib.lua
+time luajit fib.lua
+echo lua fib.lua
+time lua fib.lua
+#echo php fib.php
+#time php fib.php
+echo python fib.py
+time python fib.py
+echo ruby fib.rb
+time ruby fib.rb
+echo mono fib.exe
+time mono fib.exe
+echo ocaml fib.caml
+time ocaml fib.caml

@@ -4,3 +4,4 @@ lib/*
 obj/*
 bin/*
 mybits*
+speed/*.fib

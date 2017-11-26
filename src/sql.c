@@ -2178,7 +2178,7 @@ char* http_out(char* str,char* status,char* mime,map* headers){
 	header(xstr("Content-Length: ",int_str( str_len(str)), End));
 	for(int i=next(headers,-1,NULL,NULL); has_id(headers,i); i++){ void* v=map_id(headers,i); header(v); };
 	map* map_1=map_val(map_val(_globals,"res"),"cookie"); for(int i2=next(map_1,-1,NULL,NULL); has_id(map_1,i2); i2++){ void* v2=map_id(map_1,i2);
-		header(mstr("Set-Cookie: %s",v2, End)); };
+		header(xstr("Set-Cookie: ", v2, End)); };
 	if(map_val(map_val(_globals,"res"),"sess")){
 		write_file(json(map_val(map_val(_globals,"res"),"sess"),0),xstr("/tmp/sess.", sess_id(), End),0); };
 	header("");

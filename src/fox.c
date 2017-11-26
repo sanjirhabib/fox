@@ -1971,7 +1971,7 @@ char* str_xstr(char* in){
 				map* xparts=xstr_parts(str_unquote(val));
 				if(idx){ set(xparts,0,xstr(map_id(parts,idx-1),map_id(xparts,0), End)); };
 				vec_merge(nparts,xparts); }; };
-		char* ret=mstr("xstr(%s)",map_join(nparts,", "), End);
+		char* ret=xstr("xstr(", map_join(nparts,", "), ")", End);
 		return ret;
 	};
 	map* ret=xstr_parts(str_unquote(in));
@@ -2031,7 +2031,7 @@ map* dot_func(map* mp){
 			char* s=is_str(map_id(mp,from));
 			if(!s){ break; };
 			char* s2=is_str(map_id(mp,from+2));
-			if(is_word(s,") } ]") && is_word(s2,". -> [")) {from-=6;}
+			if(is_word(s,") } ]") && is_word(s2,". -> ( [")) {from-=6;}
 			else if(is_word(s,". ->") || *s=='"' || *s=='\'' || str_start(s,"---")) {from-=2;}
 			else if((is_code(s)||is_numeric(s)) && is_word(s2,". -> ( { [")) {from-=2;}
 			else {break;}; };
@@ -2804,9 +2804,9 @@ char* func_ccall(map* fn){
 		}else if(!str_end(v,"*")){
 			verbose("ignoring %s/%s/%s",map_val(fn,"name"),v,k, End);
 			return NULL; };
-		if(def){ ret=xcat(ret,mstr("v->len>=%d ? %sv.map_id(%d)%s : %s,",i,pre,i,post,sub_str(x_c(def),0,-1), End), End); }
-		else{ ret=xcat(ret,mstr("%sv.map_id(%d)%s,",pre,i,post, End), End); }; };
-	return mstr("%s(%s)",map_val(fn,"name"),null_str(sub_str(ret,0,-1)), End);
+		if(def){ ret=xcat(ret,xstr("v->len>=",int_str( i), " ? ", pre, "v.map_id(",int_str( i), ")", post, " : ", sub_str(x_c(def),0,-1), ",", End), End); }
+		else{ ret=xcat(ret,xstr(pre, "v.map_id(",int_str( i), ")", post, ",", End), End); }; };
+	return xstr(map_val(fn,"name"), "(", null_str(sub_str(ret,0,-1)), ")", End);
 };
 char* map_ccode(void* mp){
 	if(!mp){ return "NULL"; };
@@ -2816,13 +2816,13 @@ char* map_ccode(void* mp){
 		if(!map_len(mp)) {return "new_map()";};
 		char* ret="xmap(";
 		for(int i=next(mp,-1,NULL,NULL); has_id(mp,i); i++){ void* v=map_id(mp,i); char* k=map_key(mp, i);
-			ret=xcat(ret,mstr("%s,%s,",str_quote(k),map_ccode(v), End), End); };
+			ret=xcat(ret,xstr(str_quote(k), ",", map_ccode(v), ",", End), End); };
 		return xstr(ret,"End)", End); };
 	if(ptr_type(mp)==Vector){
 		if(!map_len(mp)) {return "new_vec()";};
 		char* ret="xvec(";
 		for(int i1=next(mp,-1,NULL,NULL); has_id(mp,i1); i1++){ void* v1=map_id(mp,i1);
-			ret=xcat(ret,mstr("%s,",map_ccode(v1), End), End); };
+			ret=xcat(ret,xstr(map_ccode(v1), ",", End), End); };
 		return xstr(ret,"End)", End); };
 	return fox_error(xstr("Unknown type of variable ", to_str(mp,"",0), " [", ptr_name(mp), "]", End),0);	
 };
@@ -2843,7 +2843,7 @@ char* callfunc_c(map* funcs){
 			isvoid="";
 			isvoid2=" return NULL;";
 		}else if(!is_word(ftype,"void* map* char*")) {continue;};
-		char* exp=x_c(mstr("%s%s",str_params,post, End));
+		char* exp=x_c(xstr(str_params, post, End));
 		ret=xcat(ret,mstr("\t\tcase %p: %s%s%s break;\n",str_hash(map_val(v,"name")),isvoid,exp,isvoid2, End), End); };
 	return ret;
 };
@@ -2857,7 +2857,7 @@ char* func_cdecl(map* fn,int show_default){
 		if(str_eq(name,"...")){ s=name; };
 		if(show_default){ s=str_join(s,"=",map_val(param,"default")); };
 		ret2=str_join(ret2,", ",s); };
-	return mstr("%s %s(%s);",map_val(fn,"decltype"), map_val(fn,"name"), ret2, End);
+	return xstr(map_val(fn,"decltype"), " ", map_val(fn,"name"), "(", ret2, ");", End);
 };
 char* funcs_cdecl(map* fns,int show_default){
 	char* ret="";
@@ -3067,7 +3067,7 @@ char* fox_phpc(char* infile,char* outfile){
 			ret=xcat(ret,xstr("\t", map_val(v,"name"), "(", call, ");\n", End), End);
 			ret=xcat(ret,"\tRETURN_NULL();\n", End);
 		}else{
-			ret=xcat(ret,mstr("\t%s ret=%s(%s);\n",map_val(v,"type"),map_val(v,"name"),call, End), End);
+			ret=xcat(ret,xstr("\t", map_val(v,"type"), " ret=", map_val(v,"name"), "(", call, ");\n", End), End);
 			if(str_eq(map_val(v,"type"),"int")){ ret=xcat(ret,"\tRETURN_LONG(ret);\n", End); }
 			else if(str_eq(map_val(v,"type"),"char*")){
 				ret=xcat(ret,"\tif(!ret) RETURN_NULL();\n", End);
@@ -3311,7 +3311,7 @@ char* call_c(map* params,char* name){
 	map* ret=new_vec();
 	for(int i=next(params,-1,NULL,NULL); has_id(params,i); i++){ void* v=map_id(params,i);
 		vec_add(ret,str_shorten(to_c(v),40)); };
-	return mstr("%s(%s)",name,map_join(ret,", "), End);
+	return xstr(name, "(", map_join(ret,", "), ")", End);
 };
 void* call_func(map* params,char* name,map* env){
 	params=eval_params(params,name,env);
@@ -3608,7 +3608,7 @@ map* command_line(char* in,int argc,char** argv){
 		if(str_eq(map_id(toks,0),argv[1])){
 			if(argc!=toks->len+1){
 				px("Invalid number of arguments",1);
-				px(mstr("Usage: fox %s",v, End),1);
+				px(xstr("Usage: fox ", v, End),1);
 				return NULL; };
 			map* ret=xvec(str_trim(argv[1],"-"), End);
 			for(int i=2;i<argc;i++){ xadd(ret,argv[i], End); };
@@ -3734,12 +3734,15 @@ int err_msg(char* msg,char** ptr){
 char* tutorial(){
 	return ""
 	"# Fox Language\n"
-	"Fox language. Transcompiles source into into human readable C. Generated code maintains your original format, comment and indention, lines are exactly the same in number as your original source.\n"
+	"Fox language. Transcompiles source into into human readable C.\n"
+	"Generated code maintains your original format, comment and indention, lines are exactly the same in number as your original source.\n"
+	"With an embeded Fox-C interpreter.\n"
+	"The compiler is bootstrapped.\n"
 	"\n"
 	"## Features\n"
 	"\n"
 	"### Small code base\n"
-	"1K lines for the runtime. The compiler is 4K lines. Creates small 30KB binary for hello world.\n"
+	"1K lines for the runtime. The compiler with interpreter is 4K lines. Creates small 30KB binary for staticaly linked hello world app.\n"
 	"\n"
 	"### GCed\n"
 	"Tracing GC. 50ms max delay in average use cases.\n"
@@ -4101,11 +4104,11 @@ char* fork_exec(char* cmd,map* params){
 			case 5: execlp(cmd,cmd,map_id(params,0),map_id(params,1),map_id(params,2),map_id(params,3),map_id(params,4),NULL); break;
 			case 6: execlp(cmd,cmd,map_id(params,0),map_id(params,1),map_id(params,2),map_id(params,3),map_id(params,4),map_id(params,5),NULL); break;
 			default: return "6 max params supported in fork/exec"; break; };
-	}else if(pid<0){ return mstr("Can't exec %s",cmd, End); }
+	}else if(pid<0){ return xstr("Can't exec ", cmd, End); }
 	else{
 		int status=0;
 		pid_t ws=waitpid(pid,&status,WNOHANG);
-		if(ws == -1){ return mstr("Exec fox_error while running %s",cmd, End); }
+		if(ws == -1){ return xstr("Exec fox_error while running ", cmd, End); }
 		else if(WIFEXITED(status)){ return WEXITSTATUS(status) ? mstr("command %s failed",cmd, End) : NULL; }
 		else if(WIFSIGNALED(status)){ mstr("command %s killed",cmd, End); }; };
 	return NULL;
@@ -4507,18 +4510,18 @@ char* time_ago(char* stime){
 	if(secs < 0){ secs*=-1; };
 	if(secs<120) {return "a minute";};
 	secs/=60;
-	if(secs<60) {return mstr("%d minutes",secs, End);};
+	if(secs<60) {return xstr(int_str(secs), " minutes", End);};
 	secs/=60;
 	if(secs<2) {return "an hour";};
-	if(secs<24) {return mstr("%d hours",secs, End);};
+	if(secs<24) {return xstr(int_str(secs), " hours", End);};
 	secs/=24;
 	if(secs<2) {return "a day";};
-	if(secs<30) {return mstr("%d days",secs, End);};
+	if(secs<30) {return xstr(int_str(secs), " days", End);};
 	if(secs<60) {return "a month";};
-	if(secs<365) {return mstr("%d months",secs/30, End);};
+	if(secs<365) {return xstr(int_str(secs/30), " months", End);};
 	secs/=365;
 	if(secs<2) {return "a year";};
-	return mstr("%d years",secs, End);
+	return xstr(int_str(secs), " years", End);
 };
 char* ptr_id(void* ptr){
 	static char temp[128];

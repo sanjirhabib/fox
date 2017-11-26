@@ -1971,7 +1971,7 @@ char* str_xstr(char* in){
 				xparts=val.str_unquote().xstr_parts()
 				if idx => xparts[0]=parts[idx-1]..xparts[0]
 				nparts.vec_merge(xparts)
-		ret="xstr(%s)".mstr(nparts.map_join(", "))
+		ret="xstr($(nparts.map_join(\", \")))"
 		return ret
 			
 	ret=in.str_unquote().xstr_parts()
@@ -2031,7 +2031,7 @@ map* dot_func(map* mp){
 			s=mp[from].is_str()
 			if !s => break
 			s2=mp[from+2].is_str()
-			if(s.is_word(") } ]") && s2.is_word(". -> [")) from-=6
+			if(s.is_word(") } ]") && s2.is_word(". -> ( [")) from-=6
 			else if(s.is_word(". ->") || *s=='"' || *s=='\'' || s.str_start("---")) from-=2
 			else if((s.is_code()||s.is_numeric()) && s2.is_word(". -> ( { [")) from-=2
 			else break
@@ -2804,9 +2804,9 @@ char* func_ccall(map* fn){
 		else if !v.str_end("*")
 			"ignoring %s/%s/%s".verbose(fn.name,v,k)
 			return NULL
-		if def => ret.="v->len>=%d ? %sv.map_id(%d)%s : %s,".mstr(i,pre,i,post,def.x_c().sub_str(0,-1))
-		else => ret.="%sv.map_id(%d)%s,".mstr(pre,i,post)
-	return "%s(%s)".mstr(fn.name,ret.sub_str(0,-1).null_str())
+		if def => ret.="v->len>=$i ? $(pre)v.map_id($i)$(post) : $(def.x_c().sub_str(0,-1)),"
+		else => ret.="$(pre)v.map_id($i)$post,"
+	return "$(fn.name)($(ret.sub_str(0,-1).null_str()))"
 }
 char* map_ccode(void* mp){
 	if !mp => return :NULL
@@ -2816,13 +2816,13 @@ char* map_ccode(void* mp){
 		if(!mp.map_len()) return "new_map()"
 		char* ret="xmap("
 		mp.each v,k,i
-			ret.="%s,%s,".mstr(k.str_quote(),v.map_ccode())
+			ret.="$(k.str_quote()),$(v.map_ccode()),"
 		return ret.."End)"
 	if mp.ptr_type()==Vector
 		if(!mp.map_len()) return "new_vec()"
 		char* ret="xvec("
 		mp.each v1,,i1
-			ret.="%s,".mstr(v1.map_ccode())
+			ret.="$(v1.map_ccode()),"
 		return ret.."End)"
 	return "Unknown type of variable $(mp.to_str()) [$(mp.ptr_name())]".fox_error()	
 }
@@ -2843,7 +2843,7 @@ char* callfunc_c(map* funcs){
 			isvoid=""
 			isvoid2=" return NULL;"
 		else if(!ftype.is_word("void* map* char*")) continue
-		char* exp="%s%s".mstr(str_params,post).x_c()
+		char* exp="$str_params$post".x_c()
 		ret.="\t\tcase %p: %s%s%s break;\n".mstr(v.name.str_hash(),isvoid,exp,isvoid2)
 	return ret
 }
@@ -2857,7 +2857,7 @@ char* func_cdecl(map* fn,int show_default=1){
 		if name==="..." => s=name
 		if show_default => s=s.str_join("=",param.default)
 		ret2=ret2.str_join(", ",s)
-	return "%s %s(%s);".mstr(fn.decltype, fn.name, ret2)
+	return "$(fn.decltype) $(fn.name)($ret2);"
 }
 char* funcs_cdecl(map* fns=funcs(),int show_default=1){
 	ret=""
@@ -3064,10 +3064,10 @@ char* fox_phpc(char* infile,char* outfile=NULL){
 
 			---
 		if v.type===:void
-			ret.="\t$(v.name)($call);\n";
+			ret.="\t$(v.name)($call);\n"
 			ret.="\tRETURN_NULL();\n"
 		else
-			ret.="\t%s ret=%s(%s);\n".mstr(v.type,v.name,call);
+			ret.="\t$(v.type) ret=$(v.name)($call);\n"
 			if v.type===:int => ret.="\tRETURN_LONG(ret);\n"
 			else if v.type==="char*"
 				ret.="\tif(!ret) RETURN_NULL();\n"
@@ -3311,7 +3311,7 @@ char* call_c(map* params,char* name){
 	ret=[]
 	params.each v,,i
 		ret[]=v.to_c().str_shorten()
-	return "%s(%s)".mstr(name,ret.map_join(", "))
+	return "$name($(ret.map_join(\", \")))"
 }
 void* call_func(map* params,char* name,map* env=NULL){
 	params=params.eval_params(name,env)
@@ -3608,7 +3608,7 @@ map* command_line(char* in,int argc,char** argv){
 		if toks[0]===argv[1]
 			if argc!=toks->len+1
 				"Invalid number of arguments".px()
-				"Usage: fox %s".mstr(v).px()
+				"Usage: fox $v".px()
 				return NULL
 			map* ret=xvec(argv[1].str_trim("-"))
 			for int i=2;i<argc;i++ => ret.xadd(argv[i])
@@ -3734,12 +3734,15 @@ int err_msg(char* msg,char** ptr){
 char* tutorial(){
 	return '.end
 	# Fox Language
-	Fox language. Transcompiles source into into human readable C. Generated code maintains your original format, comment and indention, lines are exactly the same in number as your original source.
+	Fox language. Transcompiles source into into human readable C.
+	Generated code maintains your original format, comment and indention, lines are exactly the same in number as your original source.
+	With an embeded Fox-C interpreter.
+	The compiler is bootstrapped.
 
 	## Features
 
 	### Small code base
-	1K lines for the runtime. The compiler is 4K lines. Creates small 30KB binary for hello world.
+	1K lines for the runtime. The compiler with interpreter is 4K lines. Creates small 30KB binary for staticaly linked hello world app.
 
 	### GCed
 	Tracing GC. 50ms max delay in average use cases.
@@ -4101,11 +4104,11 @@ char* fork_exec(char* cmd,map* params){
 			case 5: execlp(cmd,cmd,params[0],params[1],params[2],params[3],params[4],NULL); break
 			case 6: execlp(cmd,cmd,params[0],params[1],params[2],params[3],params[4],params[5],NULL); break
 			default: return "6 max params supported in fork/exec"; break
-	else if pid<0 => return "Can't exec %s".mstr(cmd)
+	else if pid<0 => return "Can't exec $cmd"
 	else
 		int status=0
 		pid_t ws=pid.waitpid(&status,WNOHANG)
-		if ws == -1 => return "Exec fox_error while running %s".mstr(cmd)
+		if ws == -1 => return "Exec fox_error while running $cmd"
 		else if status.WIFEXITED() => return status.WEXITSTATUS() ? "command %s failed".mstr(cmd) : NULL
 		else if status.WIFSIGNALED() => "command %s killed".mstr(cmd)
 	return NULL
@@ -4507,18 +4510,18 @@ char* time_ago(char* stime){
 	if secs < 0 => secs*=-1
 	if(secs<120) return "a minute"
 	secs/=60
-	if(secs<60) return "%d minutes".mstr(secs)
+	if(secs<60) return "$secs minutes"
 	secs/=60;
 	if(secs<2) return "an hour"
-	if(secs<24) return "%d hours".mstr(secs)
+	if(secs<24) return "$secs hours"
 	secs/=24;
 	if(secs<2) return "a day"
-	if(secs<30) return "%d days".mstr(secs)
+	if(secs<30) return "$secs days"
 	if(secs<60) return "a month"
-	if(secs<365) return "%d months".mstr(secs/30)
+	if(secs<365) return "$(secs/30) months"
 	secs/=365;
 	if(secs<2) return "a year"
-	return "%d years".mstr(secs)
+	return "$secs years"
 }
 char* ptr_id(void* ptr){
 	static char temp[128];

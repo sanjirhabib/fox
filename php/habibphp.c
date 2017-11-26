@@ -17,6 +17,7 @@ PHP_FUNCTION(sql_item_type){
 	char* in_db=NULL;
 	size_t in_db_len=-1;
 	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,"ss", &in_type, &in_type_len, &in_db, &in_db_len)==FAILURE){ RETURN_NULL(); }
+
 	void* ret=sql_item_type(in_type,in_db);
 	zval zret=var_zval(ret);
 	RETURN_ZVAL(&zret,0,0);
@@ -30,6 +31,7 @@ PHP_FUNCTION(sql_item){
 	char* in_db=NULL;
 	size_t in_db_len=-1;
 	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,"sss", &in_name, &in_name_len, &in_type, &in_type_len, &in_db, &in_db_len)==FAILURE){ RETURN_NULL(); }
+
 	void* ret=sql_item(in_name,in_type,in_db);
 	zval zret=var_zval(ret);
 	RETURN_ZVAL(&zret,0,0);
@@ -39,6 +41,7 @@ PHP_FUNCTION(fetch_global){
 	char* in_in=NULL;
 	size_t in_in_len=-1;
 	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,"s", &in_in, &in_in_len)==FAILURE){ RETURN_NULL(); }
+
 	void* ret=fetch_global(in_in);
 	zval zret=var_zval(ret);
 	RETURN_ZVAL(&zret,0,0);
@@ -50,6 +53,7 @@ PHP_FUNCTION(sql_conn){
 	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,"|s", &in_name, &in_name_len)==FAILURE){ RETURN_NULL(); }
 	if(in_name_len==-1) in_name=NULL;
 	else in_name=str_dup(in_name);
+
 	map* ret=sql_conn(in_name);
 	zval zret;
 	if(!ret){
@@ -69,6 +73,7 @@ PHP_FUNCTION(sql_value){
 	void* in_param=NULL;
 	if(!in_param_zval) in_param=NULL;
 	else in_param=zval_var(in_param_zval);
+
 	void* ret=sql_value(in_sql,in_db,in_param);
 	zval zret=var_zval(ret);
 	RETURN_ZVAL(&zret,0,0);
@@ -84,6 +89,7 @@ PHP_FUNCTION(sql_rows){
 	void* in_param=NULL;
 	if(!in_param_zval) in_param=NULL;
 	else in_param=zval_var(in_param_zval);
+
 	map* ret=sql_rows(in_sql,in_db,in_param);
 	zval zret;
 	if(!ret){
@@ -103,6 +109,7 @@ PHP_FUNCTION(sql_pairs){
 	void* in_param=NULL;
 	if(!in_param_zval) in_param=NULL;
 	else in_param=zval_var(in_param_zval);
+
 	map* ret=sql_pairs(in_sql,in_db,in_param);
 	zval zret;
 	if(!ret){
@@ -116,6 +123,7 @@ PHP_FUNCTION(db_table_names){
 	char* in_db=NULL;
 	size_t in_db_len=-1;
 	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,"s", &in_db, &in_db_len)==FAILURE){ RETURN_NULL(); }
+
 	map* ret=db_table_names(in_db);
 	zval zret;
 	if(!ret){
@@ -202,7 +210,8 @@ zval var_zval(void* v){
 	if(!v) { ZVAL_NULL(&ret); }
 	else if(is_map(v)) return map_zval(v);
 	else if(is_str(v) && v){ ZVAL_STRING(&ret,v); }
-	else if(is_int(v)){ ZVAL_LONG(&ret,is_int(v)); }
+	else if(is_i(v)){ ZVAL_LONG(&ret,is_int(v)); }
+	else if(is_f(v)){ ZVAL_DOUBLE(&ret,is_double(v)); }
 	return ret;
 }
 zval map_zval(map* mp){

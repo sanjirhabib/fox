@@ -2178,7 +2178,7 @@ char* http_out(char* str=NULL,char* status="200 OK",char* mime="text/html; chars
 	"Content-Length: $(str.str_len())".header()
 	headers.each v,,i => v.header()
 	_globals.res.cookie.each v2,,i2
-		"Set-Cookie: %s".mstr(v2).header()
+		"Set-Cookie: $v2".header()
 	if _globals.res.sess
 		_globals.res.sess.json().write_file("/tmp/sess.$(sess_id())")
 	"".header()
