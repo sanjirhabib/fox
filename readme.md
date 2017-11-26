@@ -1,8 +1,8 @@
 # Fox Language
 Fox language. Transcompiles source into into human readable C.
-Generated code maintains your original format, comment and indention, lines are exactly the same in number as your original source.
-With an embeded Fox-C interpreter.
-The compiler is bootstrapped.
+Generated code maintains your original format, comment and indention.
+Generated code have exactly the same number of lines as original source.
+Builtin Fox & C interpreter. Compiler is bootstrapped.
 
 ## Features
 
@@ -14,7 +14,7 @@ Tracing GC. 50ms max delay in average use cases.
 
 ### Minimal boiler code
 Primitive types are not boxed. Use C native int, double, float, char* as usual. Variants are void*.
-It isn't until you use vectors and maps when you need structures.
+It isn't until you wish to use vectors and maps when you need structures.
 
 ### Inline maps and vectors. Inline JSON.
 ```
