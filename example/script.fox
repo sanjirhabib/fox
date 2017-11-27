@@ -1,3 +1,8 @@
-ping()
+ping().px()
+:hello.ping().px()
 {a: 1}.px()
-(char*)hello().px()
+{
+	name: "Anas"
+	age: 21,
+	city: :Dhaka,
+}.ping_map().px()

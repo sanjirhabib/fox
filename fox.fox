@@ -32,6 +32,7 @@ Generational GC
 #endif
 
 
+char* strstr(const char* str1,const char* str2);
 int chdir(const char* path);
 void* invoke(map* v,char* name);
 map* reflect();
@@ -51,7 +52,7 @@ int make(map* files=source_files(),char* outdir="c"){
 	return req ? files.compile(outdir) : 0
 }
 int foxc(char* file){
-	optimize="-g -O0"
+	optimize="-g -Os"
 	in=file..".fox"
 	in.fox_c(file..".c")
 	in.fox_h(file..".h")
@@ -68,7 +69,7 @@ int compile(map* files=source_files(),char* outdir="c",char* outfile=:fox,char* 
 			"mv fox failed".fox_error()
 	output=''
 	infiles=out_c.map_join(" ")
-	optimize="-g -O0"
+	optimize="-g -Os"
 	if release => optimize="-O3"
 	ret="gcc $(optimize) $(infiles) $('callfunc.c'.file_rename(outdir)) extern.c -o $(outfile) -rdynamic -std=gnu99 -Wno-logical-op-parentheses -lfox -lm -I $outdir/ $(options) 2>&1"
 		.px()
@@ -179,7 +180,7 @@ char* va_str(char* format,va_list args){
 	va_list copy
 	copy.va_copy(args)
 	int len=NULL.vsnprintf(0,format,args)
-	char* ret=new_str(len)
+	ret=new_str(len)
 	ret.vsnprintf(len+1,format,copy)
 	copy.va_end()
 	return ret
@@ -189,7 +190,7 @@ void* verbose(char* msg,...){
 	if is_web() => return NULL
 	va_list args
 	args.va_start(msg)
-	char* ret=msg.va_str(args)
+	ret=msg.va_str(args)
 	ret.puts()
 	args.va_end()
 	stdout.fflush()
@@ -231,8 +232,7 @@ char* fox_read_file(char* filename,int error_on_fail=1){
 	if !fp => return error_on_fail ? "Can't read file $filename".fox_error(1) : NULL
 	fp.fseek(0,SEEK_END)
 	size=fp.ftell()
-	char* ret=size.new_blob()
-//	char* ret=(size+1).fox_alloc(String)
+	ret=size.new_blob()
 	fp.fseek(0,SEEK_SET)
 	read=ret.fread(1,size,fp)
 	fp.fclose()
@@ -242,7 +242,7 @@ char* fox_read_file(char* filename,int error_on_fail=1){
 	return ret
 }
 char* read_stdin(int size=0,char* terminator=NULL){
-	char* ret=NULL
+	ret=''
 	char buff[1024+1]={0}
 	block=1024
 	if size && size<block
@@ -263,8 +263,8 @@ char* str_unquote(char* str){
 	if str==="\"\"" || str==="''" => return ""
 	if *str=='\'' || *str=='"' => str=str.sub_str(1,-1)
 	if !str.str_chr('\\') => return str
-	char* temp=str.str_dup()
-	char* ret=temp
+	temp=str.str_dup()
+	ret=temp
 	while *str
 		other=0
 		if *str=='\\'
@@ -289,15 +289,15 @@ char* str_escape(char* head){
 	assert(len<4000)
 	extra=0
 	char c
-	char* str=head
-	char* quotable="\\\""
-	char* quoteto="\\\""
+	str=head
+	quotable="\\\""
+	quoteto="\\\""
 	while((c=*str++)) if quotable.strchr(c) => extra++
 	assert(extra<=len)
-	char* ret=new_str(head.str_len()+extra)
+	ret=new_str(head.str_len()+extra)
 	str=head
 	i=0
-	char* fox_at
+	fox_at=''
 	while((c=*str++))
 		if !(fox_at=quotable.strchr(c)) => ret[i++]=c; continue
 		ret[i++]='\\'
@@ -384,7 +384,7 @@ char* str_replace(char* str,void* find,void* replace=NULL){
 		dels+=i*k.str_len()
 		adds+=i*v.str_len()
 	if !dels => return str
-	char* ret=new_str(str.str_len()+adds-dels-1)
+	ret=new_str(str.str_len()+adds-dels-1)
 	temp=str
 	temp2=ret
 	for ;*temp;temp++,temp2++
@@ -433,7 +433,7 @@ map* to_map(void* val) => return val.is_map() ? val : val.to_str().str_map()
 map* del_index(map* mp,int idx){
 	if !mp => return mp
 	assert(idx>=0 && idx<mp->len)
-	char* id=mp.map_key(idx)
+	id=mp.map_key(idx)
 	if !id
 		assert(0)
 		return mp
@@ -468,7 +468,7 @@ map* map_del(map* mp,int idx,int len=1){
 map* xjson_map(char* in,int type=Map) => return xjson_map_recurse(&in,type)
 map* xjson_map_recurse(char** line,int type=Map){
 	if !line||!*line||!**line => return type==Vector ? [] : {}
-	char* str=*line
+	str=*line
 	term='}'
 	map* ret=NULL
 	if *str=='['
@@ -548,20 +548,20 @@ void* marked_str(char* str,char* name=NULL){
 
 	if str[0]=='{'
 		if str[str.str_len()-1]=='}' => str[str.str_len()-1]='\0'
-		map* mp=xjson_map(str+1,Map)
+		mp=xjson_map(str+1,Map)
 		return mp
 	
 	if str.is_numeric() => return str.stoi().int_var()
 	if str[0]=='['
 		if str[str.str_len()-1]==']' => str[str.str_len()-1]='\0'
-		map* mp=xjson_map(str+1,Vector)
+		mp=xjson_map(str+1,Vector)
 		return mp
 	
 	if str[0]=='\\' => return str.sub_str(1)
 	if str[0]==':'
 		str++
-		char* thealpha=read_alpha(&str)
-		return xmap(:type,thealpha,:name,name).map_merge(xjson_map(str+1,Index))
+		thealpha=read_alpha(&str)
+		return {type: thealpha,name: name}.map_merge(xjson_map(str+1,Index))
 	return str
 }
 map* map_add_pair(map* mp,void* name,void* value,int type){
@@ -577,8 +577,8 @@ map* map_add_pair(map* mp,void* name,void* value,int type){
 		else
 			char* str=value
 			str++
-			char* thealpha=read_alpha(&str)
-			value=xmap(:type,thealpha,:name,name).map_merge(xjson_map(str+1,Index))
+			thealpha=read_alpha(&str)
+			value={type: thealpha,name: name}.map_merge(xjson_map(str+1,Index))
 
 	if value===:null => value=NULL
 	else if value.is_numeric() => value=value.to_int().int_var()
@@ -588,14 +588,14 @@ map* map_add_pair(map* mp,void* name,void* value,int type){
 	return mp[name]=value
 }
 map* add_name_val(map* mp,char* str,char** name,char** val,int type){
-	char* name1=*name
-	char* val1=*val
+	name1=*name
+	val1=*val
 	if !name1 && !val1 => return mp
 	*name=NULL
 	*val=NULL
 	void* v=NULL
 	if type==Vector
-		char* s=name1.substr(0,str-name1).str_trim()
+		s=name1.substr(0,str-name1).str_trim()
 		return mp[]=s.marked_str()
 	
 	if(val1)
@@ -612,8 +612,8 @@ map* add_name_val(map* mp,char* str,char** name,char** val,int type){
 	return mp
 }
 char* read_as_block(char** from,int level,char* terminator="-"){
-	char* str=*from
-	char* ret=NULL
+	str=*from
+	ret=''
 	while *str
 		if str.str_start("//") => str+=str.line_len(); continue
 		tabs=str.str_level()
@@ -634,13 +634,13 @@ map* block_map(char** from,int inlevel,int maptype){
 	map* ret=NULL
 	if maptype==Vector => ret=[]
 	else ret={}
-	char* str=*from
+	str=*from
 	if !str.str_len() => return NULL
 	level=0
 	iscomment=0
-	char* blk=NULL
-	char* name=NULL
-	char* val=NULL
+	blk=''
+	name=''
+	val=''
 	for ;*str;str++
 		if *str=='\n'||*str=='\r'
 			ret.add_name_val(str,name,val,maptype)
@@ -657,7 +657,7 @@ map* block_map(char** from,int inlevel,int maptype){
 				*from=blk
 				return ret
 			if level>inlevel
-				char* s=ret[ret->len-1].is_str()
+				s=ret[ret->len-1].is_str()
 				if s==="|" => read_as_block(&blk,inlevel+1).set_map(ret,ret->len-1)
 				else if s && s.str_start("---") => read_as_block(&blk,inlevel+1,s).set_map(ret,ret->len-1)
 				else if ret[ret->len-1].ptr_type()==Vector => block_map(&blk,inlevel+1,Vector).set_map(ret,ret->len-1)
@@ -727,7 +727,7 @@ void rewrite_ptr(mempage* pg,void** ptr){
 	len=1
 	while(len<=off && (pg->types[off-len] & (1<<6))) len++
 	assert(len<=off)
-	char* head=pg->page+(off-len)*pg->block_size
+	head=pg->page+(off-len)*pg->block_size
 	*ptr=*(char**)head+((char*)*ptr-head)
 }
 void rewrite_ptrs(mempage* old){
@@ -857,7 +857,7 @@ map* vec_shift(map* mp,int idx,int len,int offset){
 	int ofrom=offset<0 ? offset+idx : idx+len
 	int olen=offset.abs()
 	assert(ofrom>=0 && ofrom<mp->len)
-	map* old=mp.vec_sub(ofrom,olen)
+	old=mp.vec_sub(ofrom,olen)
 	memmove(mp->vars+ofrom,mp->vars+idx,olen*sizeof(void*))
 	int ointo=offset<0 ? ofrom+len : idx
 	memcpy(mp->vars+ointo,old->vars,old->len*sizeof(void*))
@@ -871,14 +871,14 @@ map* vec_sub(map* mp,int from,int len=0){
 	else if from+len>mp->len => len=mp->len-from
 	if !len => len=mp->len-from
 	if len<=0 => return NULL
-	map* ret=[]
+	ret=[]
 	ret.vec_realloc(len);	
 	memcpy(ret->vars,mp->vars+from,sizeof(void*)*len)
 	ret->len=len
 	return ret
 }
 map* vec_slice(map* mp,int from,int len=0){
-	map* ret=mp.vec_sub(from,len)
+	ret=mp.vec_sub(from,len)
 	mp.vec_del(from,len)
 	return ret
 }
@@ -941,7 +941,7 @@ int floor_pow2(int i){
 }
 map* vec_dup(map* mp){
 	if !mp||!mp->len => return []
-	map* ret=[]
+	ret=[]
 	ret.vec_realloc(mp->len)
 	memcpy(ret->vars,mp->vars,mp->len*sizeof(void*))
 	ret->len=mp->len
@@ -1052,20 +1052,20 @@ map* add_key(map* mp,char* k,int type=Map){
 	return mp[k]
 }
 char* str_upper(char* s){
-	char* ret=s
+	ret=s
 	for(;*s;++s) *s=toupper(*s)
 	return ret
 }
 char* str_lower(char* s){
-	char* ret=s
+	ret=s
 	for(;*s;++s) *s=tolower(*s)
 	return ret
 }
 map* str_split(char* str,char* by,int limit=0){
 	if !str => return NULL
-	map* ret=[]
-	char* head=str
-	char* end=NULL
+	ret=[]
+	head=str
+	end=''
 	int found=0
 	while (end=head.str_has(by))
 		ret[]=head.substr(0,end-head)
@@ -1082,7 +1082,7 @@ char* toks_str(map* mp){
 }
 char* map_join(map* mp,char* joiner=""){
 	if !mp.is_map() => return mp.to_str()
-	char* ret=NULL
+	ret=''
 	mp.each v,,idx
 		if idx => ret.=joiner
 		if v.is_map() => ret.=v.map_join(joiner)
@@ -1096,7 +1096,7 @@ char fox_at(char* str,int idx){
 	return idx<str_len(str) ? str[idx] : '\0'
 }
 char* indent_str(int i){
-	char* ret=new_str(i+1)
+	ret=new_str(i+1)
 	ret.memset('\t',i+1)
 	ret[0]='\n'
 	return ret
@@ -1112,10 +1112,10 @@ int str_chars(char* str,char* chars){
 }
 char* map_str(map* mp) => return mp.map_str_indent(0)
 char* map_str_indent(map* mp,int indent){
-	char* ret=NULL
+	ret=''
 	if !mp => return ret
 	int type=mp.ptr_type()
-	char* istr="\t".str_times(indent)
+	istr="\t".str_times(indent)
 	mp.each v,k,i
 		ret.=istr
 		if v.is_map()
@@ -1146,7 +1146,7 @@ char* map_str_indent(map* mp,int indent){
 					if !eq => ret.="="
 					ret.="[]"
 				
-				char* bl=v.map_str_indent(indent+1)
+				bl=v.map_str_indent(indent+1)
 				if bl => ret.="\n"..bl
 		else if type==Vector||k.is_int()
 			ret.=v.to_str().."\n"
@@ -1168,9 +1168,9 @@ map* dir_files(char* path){
 	if !path => return NULL
 	DIR *d=opendir(path)
 	if !d => return NULL
-	map* ret=[]
+	ret=[]
 	struct dirent *dir
-	char* padd=""
+	padd=''
 	if path!=="."
 		padd=path
 		if padd.fox_at(-1)!='/' => padd.="/"
@@ -1185,10 +1185,10 @@ map* dir_files(char* path){
 }
 char* end_word(char* str,char* words){
 	if !str||!words => return NULL
-	char* word=words.str_dup()
+	word=words.str_dup()
 	int total=word.terminate_words()
 	for int i=0;i<total;i++
-		char* ret=str.str_end(word)
+		ret=str.str_end(word)
 		if ret => return ret
 		word+=word.str_len()+1
 	
@@ -1196,10 +1196,10 @@ char* end_word(char* str,char* words){
 }
 char* has_word(char* str,char* words){
 	if !str||!words => return NULL
-	char* word=words.str_dup()
+	word=words.str_dup()
 	int total=word.terminate_words()
 	for int i=0;i<total;i++
-		char* ret=str.strstr(word)
+		ret=str.strstr(word)
 		if ret => return ret
 		word+=word.str_len()+1
 	
@@ -1209,7 +1209,7 @@ int is_word(char* word,char* list){
 	assert(list)
 	assert(list.is_str())
 	if !word.is_str() => return 0
-	char* ret=list
+	ret=list
 	while (ret=ret.str_has(word))
 		if ret && (ret==list||ret[-1]==' ') && (ret[word.strlen()]==' '||!ret[word.strlen()]) => return ret-list+1
 		ret+=word.strlen()
@@ -1217,21 +1217,21 @@ int is_word(char* word,char* list){
 }
 int terminate_words(char* in){//Takes a string and adds NULL between eash words. Returns total number of words terminated with NULL
 	if !in => return 0
-	char* s=in
+	s=in
 	int ret=1
 	for(;*s;s++) if *s==' ' => ret++; *s='\0'
 	return ret
 }
 map* map_vec(map* mp){
 	if mp.ptr_type()==Vector => return mp
-	map* ret=[]
+	ret=[]
 	mp.each v,,i => ret[]=v
 	return ret
 }
 map* toks_keywords(map* mp,char* keywords){
 	if !mp => return mp
-	map* ret={}
-	map* curr=[]
+	ret={}
+	curr=[]
 	curr_key=''
 	mp.each ,,i
 		if mp[i].is_word(keywords)
@@ -1247,8 +1247,8 @@ map* toks_keywords(map* mp,char* keywords){
 map* map_split(map* mp,char* str,int limit=0){
 	if !mp => return mp
 	if limit==1 => return mp.map_vec()
-	map* ret=[]
-	map* curr=[]
+	ret=[]
+	curr=[]
 	mp.each ,,i
 		if mp[i]===str
 			if curr->len
@@ -1298,12 +1298,12 @@ int is_code(char* str){
 	return 1
 }
 char* read_num(char** in){
-	char* str=*in
+	str=*in
 	deci=0
 	str++
 	while *str && ((*str>='0' && *str<='9')||(*str=='.' && !deci++ && !str[1].is_alpha()))
 		str++
-	char* from=*in
+	from=*in
 	*in=str-1
 	return from.substr(0,str-from)
 }
@@ -1530,7 +1530,7 @@ char* char_str(char c){
 	char ret[2]={0}
 	ret[0]=c
 	ret[1]='\0'
-	char* str=ret.str_dup()
+	str=ret.str_dup()
 	assert(str.str_len()==1)
 	return str
 }
@@ -1540,13 +1540,13 @@ int map_has_word(map* mp,char* str){
 }
 int is_keyword(char* str) => return str.is_word("abstract and as break callable case catch class clone const continue declare default do echo else elseif enddeclare endfor endforeach endif endswitch endwhile extends final for foreach def function global goto if implements include include_once instanceof insteadof interface namespace new or private protected public require require_once return static switch throw trait try use while xor yield false true null")
 char* toks_c(map* mp){
-	char* ret=NULL
+	ret=''
 	if !mp => return ret
 	mp.each ,,i
 		if mp[i].is_map()
 			ret.=mp[i].toks_c()
 			continue
-		char* str=mp[i].is_str()
+		str=mp[i].is_str()
 		assert(str || !mp[i].is_str())
 		if !str => continue
 		ret.=mp[i]
@@ -1563,7 +1563,7 @@ map* add_ctok(void* data,map* mp,int iscode){
 	else if incode && !iscode => mp[]=data
 	else if !incode && !iscode
 		if mp->len
-			char* old=mp[mp->len-1].is_str()
+			old=mp[mp->len-1].is_str()
 			mp->vars[mp->len-1]=old..data
 		else mp[]=data
 	else if !incode && iscode => mp[]=data
@@ -1571,14 +1571,14 @@ map* add_ctok(void* data,map* mp,int iscode){
 }
 map* c_tokenizer(char** line,char term){
 	if !line||!*line||!**line => return NULL
-	char* head=*line
+	head=*line
 	int headlen=head.str_len()
-	char* expected_end=head+head.str_len()
-	char* str=*line
-	map* mp=[]
-	char* space=NULL
+	expected_end=head+head.str_len()
+	str=*line
+	mp=[]
+	space=''
 	int code=0
-	char* last=NULL
+	last=''
 	while *str && *str!=term
 		assert(last!=str)
 		assert(head.str_len()==headlen)
@@ -1614,18 +1614,18 @@ int func_dot(map* mp,int idx){
 	if !mp[idx-2].is_str().is_code() => return idx
 	if mp[idx-4]==="." => return idx
 	if mp[idx-2].is_str().is_keyword() => return idx
-	map* params=mp[idx+2].is_map()
+	params=mp[idx+2].is_map()
 	if !params->len => return idx
 	if params[1].ptr_type()!=String && !params[1].is_str().is_code() => return idx
 	int len=2
 	while 1
-		char* s=params[len+1].is_str()
+		s=params[len+1].is_str()
 		if s.is_word("( [ {") => len+=6
 		else if s.is_word(". ->") || s.is_code() => len+=2
 		else break
 	
 	if params->len>len && params[len+1]!=="," => return idx
-	map* out=params.vec_slice(1,len-1)
+	out=params.vec_slice(1,len-1)
 	params.vec_del(0,1)
 	if params->len>len => params.vec_del(len,2)
 	vec_compact(params)
@@ -1649,7 +1649,7 @@ map* heredoc_parts(char* str){
 		if i==lines->len-1 => continue
 		int cut=v.str_level()
 		if cut>indent => cut=indent;	
-		char* nl="\\n"
+		nl="\\n"
 		if i==lines->len-2 => nl=""
 		parts[]="\n"..tabs
 		parts[]="\"%s%s\"".mstr(v.sub_str(cut,0).str_escape(),nl)
@@ -1670,12 +1670,12 @@ map* dot_each(map* mp){
 		if mp[idx].is_map() => mp[idx].dot_each()
 		if idx<2 || !mp[idx-2].is_str().is_word("each each_mem")
 			continue
-		map* params=mp[idx+2].is_map().toks_split(",")
-		map* newp=mp[idx+2].is_map().toks_split(",")
+		params=mp[idx+2].is_map().toks_split(",")
+		newp=mp[idx+2].is_map().toks_split(",")
 		if params[0].map_len()>=4
 			temp++
 			temp_name=:map_..temp.int_str()
-			map* pre=xcat("map* ",temp_name.."=",params[0].toks_c(),"; ").x_map().vec_del(0).vec_compact()
+			pre=xcat("map* ",temp_name.."=",params[0].toks_c(),"; ").x_map().vec_del(0).vec_compact()
 			newp[0]=temp_name.x_map()
 			mp[idx+2]=newp.toks_join(",")
 			mp.vec_splice(idx-2,0,pre)
@@ -1716,7 +1716,7 @@ map* dot_each(map* mp){
 	return mp
 }
 map* map_implode(map* mp,char* joiner){
-	map* ret=[]
+	ret=[]
 	mp.each v,,i
 		if i>0 => ret[]=joiner
 		ret.vec_merge(v)
@@ -1742,12 +1742,12 @@ int requires_semicolon(map* mp,int idx){
 	idx++
 	if idx<2 => return 0
 	if !mp[idx-1].str_chr('\n') => return 0
-	char* pre=mp[idx-2].is_str()
+	pre=mp[idx-2].is_str()
 	if !pre => return 0
-	char* post=mp[idx].is_str()
+	post=mp[idx].is_str()
 	if pre==="}" && post.is_word(:else) => return 0
 	if post===")" => return 0
-	char* forbidden=";+=-/?:.&,|!%"
+	forbidden=";+=-/?:.&,|!%"
 	if (forbidden.strchr(pre.fox_at(-1))||post && forbidden.strchr(post[0])) && !pre.is_word("++ --") => return 0
 	return 1
 }
@@ -1758,9 +1758,9 @@ map* add_semicolon(map* mp,int recurse=1){
 			mp[idx+2].add_semicolon()
 			idx+=4
 			continue
-		if(mp.requires_semicolon(idx-1)) mp.vec_splice(idx-1,0,xvec(NULL,";"))//.vec_sub(idx-6,12).px()
+		if(mp.requires_semicolon(idx-1)) mp.vec_splice(idx-1,0,[NULL,";"])//.vec_sub(idx-6,12).px()
 	if(!mp[mp->len-mp->len%2-1].is_word(";"))
-		mp.vec_splice(mp->len-mp->len%2,0,xvec(NULL,";"))
+		mp.vec_splice(mp->len-mp->len%2,0,[NULL,";"])
 	return mp
 }
 char* hello() => return :Hi
@@ -1772,7 +1772,7 @@ map* force_curly(map* mp){
 	if !mp.is_map() => return mp
 	for int idx=1; idx<mp->len; idx+=2
 		if mp[idx].is_map() => mp[idx].force_curly()
-		char* w=mp[idx].is_str()
+		w=mp[idx].is_str()
 		if !w => continue
 		if !w.is_word("if while for each do else each_mem")
 			continue
@@ -1810,13 +1810,13 @@ map* add_curly(map* mp,int recursive=1){
 		if(mp[idx]==="=>")
 			int from=idx
 			int upto=mp.tok_endl(idx+2)
-			mp.vec_splice(from-1,upto-from,xvec(NULL,"{",NULL,mp.vec_sub(from+1,upto-from-2)," ","}")).vec_compact()
+			mp.vec_splice(from-1,upto-from,[NULL,"{",NULL,mp.vec_sub(from+1,upto-from-2)," ","}"]).vec_compact()
 		if !recursive => continue
 		if(mp[idx]==="{")
 			mp[idx+2].add_curly()
 			idx+=4
 			continue
-		char* w=mp[idx].is_str()
+		w=mp[idx].is_str()
 		if !w => continue
 		if !w.is_word("if while switch for each do else each_mem") => continue
 		if w.is_word(:else) && mp[idx+2]===:if && !mp[idx+1].block_level() => continue
@@ -1830,7 +1830,7 @@ map* add_curly(map* mp,int recursive=1){
 					upto=i-1
 					break
 			mp[idx+1]=NULL
-			map* sub=xvec( NULL,"(", NULL,mp.vec_sub(from-1,upto-from+1), NULL,")")
+			sub=[ NULL,"(", NULL,mp.vec_sub(from-1,upto-from+1), NULL,")"]
 			if w.is_word(:while) && mp[idx-2]==="}" && mp[idx-8]===:do
 				sub.xadd(NULL,";")
 			mp.vec_splice(from-1,upto-from+1,sub).vec_compact()
@@ -1859,27 +1859,27 @@ map* add_curly(map* mp,int recursive=1){
 				upto=i-1
 				break
 		if(curr_indent) curr_indent--
-		char* space=" "
-		char* blankline=mp[upto]
-		char* tail=NULL
+		space=" "
+		blankline=mp[upto].is_str()
+		tail=''
 		if(blankline)
-			map* lns=blankline.str_split("\n",3)
+			lns=blankline.str_split("\n",3)
 			if(((lns->len==3||(lns->len==2 && mp->len==upto+1)) && !lns[1].has_chars()) || w.is_word(:do) || (w.is_word(:if) && mp[upto+1]===:else))
 				if(lns->len==3) tail="\n"..lns[2]
 				else tail=lns[2]
 				space=lns[0].."\n".."\t".str_times(curr_indent)
 				mp[upto]=tail
-		mp.vec_splice(from-1,upto-from+1,xvec(NULL,"{",NULL,mp.vec_sub(from-1,upto-from+1),space,"}")).vec_compact()
+		mp.vec_splice(from-1,upto-from+1,[NULL,"{",NULL,mp.vec_sub(from-1,upto-from+1),space,"}"]).vec_compact()
 	return mp
 }
 map* dot_key(map* mp){
 	return mp
 	for(int idx=1;idx<=mp.map_len();idx+=2)
 		if mp[idx].is_map() => mp[idx].dot_key(); continue
-		char* str=mp[idx].is_str()
+		str=mp[idx].is_str()
 		if !str => continue
 		if idx>=2 && *str=='"' && mp[idx-2]==="."
-			mp.vec_splice(idx,1,xvec(:map_val,NULL,"(",NULL,xvec(NULL,str),NULL,")"))
+			mp.vec_splice(idx,1,[:map_val,NULL,"(",NULL,[NULL,str],NULL,")"])
 	return mp
 }
 int str_hasvar(char* in){
@@ -1890,12 +1890,12 @@ int str_hasvar(char* in){
 	return 0
 }
 char* str_mstr(char* in){
-	char* ret=in.str_len().new_str()
+	ret=in.str_len().new_str()
 	rethead=ret
-	char* type=NULL
+	type=''
 	str=in
 	params=[]
-	char* expr=NULL
+	expr=''
 	for ;*str;str++
 		if *str=='%'	
 			if str[1]=='%'
@@ -1922,7 +1922,7 @@ char* str_mstr(char* in){
 }
 map* xstr_parts(char* in){
 	ret=[]
-	char* tok=new_str(in.str_len())
+	tok=in.str_len().new_str()
 	tokhead=tok
 	incode=0
 	str=in
@@ -1984,7 +1984,7 @@ map* str_dollars(map* mp){
 		if mp[idx].is_map()
 			mp[idx].str_dollars()
 			continue
-		char* str=mp[idx].is_str()
+		str=mp[idx].is_str()
 		if !str => continue
 		if (*str=='"' || str.str_start("---")) && str.str_hasvar()
 			subs=str.str_xstr().x_map().colon_str().dot_key().vec_sub(1)
@@ -1995,7 +1995,7 @@ map* str_dollars(map* mp){
 map* single_quotes(map* mp){
 	for(int idx=1;idx<=mp.map_len();idx+=2)
 		if mp[idx].is_map() => mp[idx].single_quotes(); continue
-		char* str=mp[idx].is_str()
+		str=mp[idx].is_str()
 		if !str => continue
 		if str==="''"
 			mp[idx]=:NULL
@@ -2013,7 +2013,7 @@ map* colon_str(map* mp){
 			str=str.sub_str(1).str_unquote().str_quote()
 			mp[idx]=str
 		if idx>=2 && *str=='"' && mp[idx-2]==="."
-			mp.vec_splice(idx,1,xvec(:map_val,NULL,"(",NULL,xvec(NULL,str),NULL,")"))
+			mp.vec_splice(idx,1,[:map_val,NULL,"(",NULL,[NULL,str],NULL,")"])
 	return mp
 }
 map* dot_func(map* mp){
@@ -2041,17 +2041,17 @@ map* dot_func(map* mp){
 		mp.vec_del(idx-1,2).vec_compact()
 		from+=2
 		idx-=2
-		map* sub=mp.vec_slice(from,idx-from+2)
+		sub=mp.vec_slice(from,idx-from+2)
 		sub.each ,,idx2
 			if(sub[idx2].is_str().fox_at(0)==')' && sub[idx2+2].is_str().fox_at(0)=='(') sub.vec_shift(idx2+2,6,-idx2-2)
 			//if(sub[idx].is_str().fox_at(0)==')' && sub[idx+2].is_str().fox_at(0)=='(') sub.vec_shift(idx+2,6,-idx-2)
 			idx2++
-		map* params=mp[idx+6].is_map()
+		params=mp[idx+6].is_map()
 		params.assert()
 		if !params => params=mp->vars[idx+6]=[]
 		if params->len => sub.xadd(",")
 		else sub.vec_del(sub->len-1,1).vec_compact()
-		map* sub1=[]
+		sub1=[]
 		sub1[]=prespace
 		sub1.vec_merge(sub)
 		params.vec_splice(1-1,0,sub1)
@@ -2066,24 +2066,11 @@ map* map_tox(map* mp){
 	if !mp => return mp
 	for int idx=1+next(mp,-1);idx;idx=1+next(mp,idx-1)
 		if idx%2-1
-			map* mp1=mp[idx-1].is_map()
+			mp1=mp[idx-1].is_map()
 			if(mp1) mp1.map_tox()
 			continue
 		idx=mp.func_dot(idx-1)
 	return mp
-}
-int stm_end(map* mp,int idx,char* words="} ;",int including=1){
-	idx++
-	assert(idx<mp->len)
-	int from=idx
-	while idx<mp->len
-		if mp[idx].is_word(words)
-			if including
-				while mp[idx].is_word(words) => idx+=2
-			break
-		idx+=2
-	if idx>from => idx-=2
-	return idx
 }
 int stm_start(map* mp,int idx,char* terms="};,).>:"){
 	idx-=2
@@ -2110,7 +2097,7 @@ map* syn_func(map* syn,int with_body=0){
 		assert(param_name==="..." || param_type)
 		assert(param_name)
 		params[param_name]={type: param_type, default: param_default}
-	char* name=syn[len-params_at-4]
+	name=syn[len-params_at-4].is_str()
 	type=syn.vec_sub(1,len-params_at-6)
 	decltype=type.toks_c()
 	type.each v3,,i3
@@ -2132,7 +2119,7 @@ map* syn_funcs(map* mp,int with_body=0){
 map* file_vec(char* in) => return in.fox_read_file().str_vec()
 map* file_map(char* in) => return in.fox_read_file().str_map()
 map* map_keys(map* mp){
-	map* ret=[]
+	ret=[]
 	mp.each ,k => ret[]=k
 	return ret
 }
@@ -2244,7 +2231,7 @@ map* map_assign(map* exp1,map* exp2){
 map* call_count(map* toks,map* counter,char* infunc){
 	if !toks => return counter
 	for i=0; i<toks->len; i+=2
-		char* name=toks.syn_is_call(i)
+		name=toks.syn_is_call(i)
 		if name!==infunc
 			counter[name]=(counter[name].is_int()+1).int_var()
 		if toks[i+1].is_map()
@@ -2298,12 +2285,12 @@ map* auto_types(map* toks,char* context=:c,int is_script=0,map* env={},map* fns=
 		return toks
 	else if context===:syn
 		if toks.is_var_decl()
-			char* type=toks.syn_var_type()
-			char* name=toks.syn_var_name()
+			type=toks.syn_var_type()
+			name=toks.syn_var_name()
 			env[name]=type
 			toks.auto_types(:expr,is_script,env,fns,func,toks.syn_assign_val())
 		else if toks.is_flow()
-			char* type=toks.syn_flow_name()
+			type=toks.syn_flow_name()
 			if type===:for
 				env=env.map_dup()
 				toks.syn_flow_condition()[1].auto_types(:syn,is_script,env,fns)
@@ -2326,8 +2313,8 @@ map* auto_types(map* toks,char* context=:c,int is_script=0,map* env={},map* fns=
 				toks.vec_compact().vec_del(toks.next_tok(0,"=")-1,2).vec_compact()
 				toks.map_assign(val).auto_types(:expr,is_script,env,fns,func)
 				return toks
-			char* name=toks.syn_var_name()
-			char* type=toks.syn_var_type()
+			name=toks.syn_var_name()
+			type=toks.syn_var_type()
 			if *name!='_' && !env[name] && !type.str_len()
 				type=toks.expr_type(toks.syn_assign_val(),0,env,fns)
 				if type
@@ -2346,7 +2333,7 @@ map* auto_types(map* toks,char* context=:c,int is_script=0,map* env={},map* fns=
 			if toks[i+1].is_map()
 				toks[i+1].auto_types(:expr,is_script,env,fns,func)
 			else if toks.syn_is_call(i)
-				char* name=toks.syn_is_call(i)
+				name=toks.syn_is_call(i)
 				if name===:args_map
 					subs="xmap("
 					func.params.each ,k2,i2
@@ -2354,7 +2341,7 @@ map* auto_types(map* toks,char* context=:c,int is_script=0,map* env={},map* fns=
 					mp4="$subs End)".x_map().colon_str().vec_del(0).vec_compact()
 					toks.vec_splice(i+1,7,mp4)
 				else
-					map* params=toks.syn_func_param(i)
+					params=toks.syn_func_param(i)
 					map* fn=fns[name]
 					if !fn => fn=funcs()[name]
 					if fn => params=params.param_c(env,fns,fn)
@@ -2420,7 +2407,7 @@ int expr_tail(map* toks,int idx=0,char* expr="."){
 	presid="= += -= /= *= %= ^= .= ? : && || == === !== != >= <= > < .. + - / * ++ -- ! -> ."
 	expr_presid=expr.is_word(presid)
 	while idx<toks.map_len()
-		char* v=toks[idx]
+		v=toks[idx].is_str()
 		if v.is_name() && (toks[idx+2]===")"||toks[idx+2]==="]")
 			idx+=8
 		else if v==="("||v==="["
@@ -2439,7 +2426,7 @@ int expr_head(map* toks,int idx=0,char* expr="."){
 	presid="= += -= /= *= %= ^= .= ? : && || == === !== != >= <= > < .. + - / * ++ -- ! -> ."
 	expr_presid=expr.is_word(presid)
 	while idx>0
-		char* v=toks[idx]
+		v=toks[idx].is_str()
 		if (v===")"||v==="]") && toks[idx-6].is_name()
 			idx-=8
 		else if v===")"||v==="]"
@@ -2461,7 +2448,7 @@ map* wrap_call(map* tok,char* func){
 }
 map* type_convert(map* tok,char* outtype,map* env,map* fs,map* fn){
 	if !outtype => return tok
-	char* intype=tok.expr_type(0,0,env,fs)	
+	intype=tok.expr_type(0,0,env,fs)	
 	if !intype => return tok
 	if intype===outtype => return tok
 	if intype===:int
@@ -2476,25 +2463,25 @@ map* type_convert(map* tok,char* outtype,map* env,map* fs,map* fn){
 		if outtype===:int => return tok.wrap_call(:stoi)
 		else if outtype==="char**"
 //			"converting $intype -> $outtype ($(tok.toks_c())) func: $(fn.func_cdecl())".px()
-			return tok.vec_splice(1,0,xvec("&",NULL))
+			return tok.vec_splice(1,0,["&",NULL])
 	else if intype==="char**"
-		if outtype==="char*" => return tok.vec_splice(1,0,xvec("*",NULL))
+		if outtype==="char*" => return tok.vec_splice(1,0,["*",NULL])
 	return tok
 }
 map* param_c(map* params,map* env,map* fs,map* fn){
 //	assert(params)
 	assert(fn)
 	if !params => return NULL
-	map* xparam=params.toks_split(",")
-	map* cparam=[]
-	map* sig=fn.params
+	xparam=params.toks_split(",")
+	cparam=[]
+	sig=fn.params
 	sig.each p,name,i
 		if name==="..."
 			for int idx=i; idx<xparam->len; idx++
 				if xparam[idx][1]===:End => break
 				cparam[]=xparam[idx].type_convert(p.type,env,fs,fn)
 			if cparam[cparam.map_len()-1][1].neq(:End)
-				char* endmark=cparam.map_len() ? " End" : :End
+				endmark=cparam.map_len() ? " End" : :End
 				cparam[]=endmark.x_map()
 			break
 		else if xparam[i].map_len()<2
@@ -2515,7 +2502,7 @@ char* ast_c(map* ast){
 	if !ast => return NULL
 	if ast.is_str() => return (char*)ast
 	if ast.is_vec()
-		char* ret=NULL
+		ret=''
 		ast.each v,,i
 			ret.=v.ast_c()
 //		if ret.str_len() && ast[0].tag==="," => ret=ret.sub_str(0,ret.str_len()-ast[0].tag.str_len())
@@ -2554,8 +2541,8 @@ map* toks_ast(map* toks,int* idx=NULL,char* upto=";"){
 	map* ret=NULL
 	int upto_no=upto.is_word(operators)
 	while *idx < toks->len
-		char* space=toks[*idx]
-		char* v=toks[*idx+1]
+		space=toks[*idx].is_str()
+		v=toks[*idx+1].is_str()
 		assert(!v || v.is_str())
 		if !v
 			if space
@@ -2642,7 +2629,7 @@ map* syn_func_body(map* syn){
 	return syn[syn.next_tok(0,"{")+2]
 }
 map* syn_remove_default(map* syn){
-	map* params=syn.syn_func_param()
+	params=syn.syn_func_param()
 	if(!params) return syn
 	indel=0
 	hasdel=0
@@ -2666,14 +2653,14 @@ map* syn_remove_default(map* syn){
 char* expr_type(map* toks,int idx=0,int upto=0,map* env={:_globals : "map*"},map* fs=NULL){
 	void* v=toks[idx+1]
 	if v.is_map() => return v.expr_type(0,upto,env,fs)
-	char* w=v.is_str()
+	w=v.is_str()
 	if !w => return NULL
 	assert(w.is_str() && w.str_len())
 	if toks.next_tok(idx,"?",upto)
 		return toks.expr_type(toks.next_tok(idx,"?")+1,upto,env,fs)
 //	else if toks.next_tok(idx,"/",upto) => return :int
 	else if toks[idx+3]==="("
-		char* name=toks[idx+1]
+		name=toks[idx+1].is_str()
 		if fs[name] => return fs[name].type
 		return funcs()[name].type
 	else if w.is_word("++ --") => return toks.expr_type(idx+2,upto,env,fs)
@@ -2782,20 +2769,20 @@ char* c_x(char* in) => return in.x_map().map_tox().toks_c()
 
 char* x_c(char* in) => return in.x_toks().toks_c()
 char* func_ccall(map* fn){
-	char* ret=NULL
+	ret=''
 	fn.params.each v,k,i
 		char* def=v.default
 		v=v.type
 		v=v.drop_left(:const\ )
 		v=v.drop_left(:unsigned\ )
-		char* pre=""
-		char* post=""
+		pre=''
+		post=''
 		if v==="char*" => post=".is_str()"
 		else if v==="map*" => post=".is_map()"
 		else if v.is_word("int long size_t char time_t") || v==="long long" => post=".to_int()"
 		else if v.is_word("double float") => post=".to_double()"
 		else if k==="..."
-			char* mtype=NULL
+			mtype=''
 			if fn.type.str_end("*") => mtype=:ptr
 			else if fn.type===:int => mtype=:int
 			else if fn.type===:double => mtype=:double
@@ -2814,36 +2801,36 @@ char* map_ccode(void* mp){
 	if mp.is_int() => return mp.is_int().int_str()
 	if mp.ptr_type()==Map
 		if(!mp.map_len()) return "new_map()"
-		char* ret="xmap("
+		ret="xmap("
 		mp.each v,k,i
 			ret.="$(k.str_quote()),$(v.map_ccode()),"
 		return ret.."End)"
 	if mp.ptr_type()==Vector
 		if(!mp.map_len()) return "new_vec()"
-		char* ret="xvec("
+		ret="xvec("
 		mp.each v1,,i1
 			ret.="$(v1.map_ccode()),"
 		return ret.."End)"
 	return "Unknown type of variable $(mp.to_str()) [$(mp.ptr_name())]".fox_error()	
 }
 char* callfunc_c(map* funcs){
-	char* ret="function calls\n"
+	ret="function calls\n"
 	funcs.each v,k,i2
 		if k===:args_map => continue
-		char* str_params=v.func_ccall()
+		str_params=v.func_ccall()
 		if(!str_params)
 			continue
-		char* post=""
-		char* isvoid="return "
-		char* isvoid2=""
-		char* ftype=v.type
+		post=''
+		isvoid="return "
+		isvoid2=''
+		ftype=v.type
 		if ftype.is_word("int long long size_t time_t char") => post=".int_var()"
 		else if ftype.is_word("double float") => post=".double_var()"
 		else if ftype===:void
 			isvoid=""
 			isvoid2=" return NULL;"
 		else if(!ftype.is_word("void* map* char*")) continue
-		char* exp="$str_params$post".x_c()
+		exp="$str_params$post".x_c()
 		ret.="\t\tcase %p: %s%s%s break;\n".mstr(v.name.str_hash(),isvoid,exp,isvoid2)
 	return ret
 }
@@ -2979,12 +2966,12 @@ char* foxh(){
 char* write_foxh(char* outfile="fox.h"){
 	return (foxh()..source_funcs().funcs_cdecl(0)).write_file(outfile)
 }
-char* fox_phpc(char* infile,char* outfile=NULL){
-	map* fns=infile.file_funcs()
+char* fox_phpc(char* infile=NULL,char* outfile=NULL){
+	fns=infile ? infile.file_funcs() : source_funcs()
 	temp=infile.str_split("/")
 	temp=temp[temp.map_len()-1].str_split(".")
 	name=temp[0]
-	char* ret=".end
+	ret=---
 	#ifdef HAVE_CONFIG_H
 	#include "config.h"
 	#endif
@@ -2998,11 +2985,11 @@ char* fox_phpc(char* infile,char* outfile=NULL){
 	map* zval_map(zval* z);
 	void* call_php(map* params,char* func);
 
-	.end";
-	reg=""
+	---
+	reg=''
 	fns.each v,,i
 		if !v.type.is_word("void* map* int char*") => continue
-//		if v.name.is_word("invoke reflect") => continue
+		if v.name.is_word("main") => continue
 		decls=""
 		format=""
 		post=""
@@ -3011,7 +2998,7 @@ char* fox_phpc(char* infile,char* outfile=NULL){
 		hasdefault=0
 		skip=0
 		foxname=v.name
-//		if !foxname.str_start(:fox_) => foxname="fox_$(v.name)"
+		if !infile && !foxname.str_start(:fox_) => foxname="fox_$(v.name)"
 		v.params.each ,name,i2
 			if name==="..." => skip=1; break
 			map* v2=v.params[name]
@@ -3536,7 +3523,7 @@ char* read_line(FILE* fp){
 	char buff[1024]
 	char* buf=buff
 	size_t max=1024
-	char* ret=NULL
+	ret=''
 	while getline(&buf,&max,fp)>0
 		ret.=buf
 		if(buf.strchr('\n')) return ret
@@ -3556,13 +3543,13 @@ char* skip_quote(char* str){
 }
 char* str_toupper(char* str){
 	if(!str) return NULL
-	char* ret=str
+	ret=str
 	for(;*str;str++) *str=toupper(*str)
 	return ret
 }
 char* str_tolower(char* str){
 	if(!str) return NULL
-	char* ret=str
+	ret=str
 	for(;*str;str++) *str=tolower(*str)
 	return ret
 }
@@ -3585,7 +3572,7 @@ char hex_char(char* in){
 	return (char)temp.strtol(NULL,16)
 }
 char* rand_str(int len=8){
-	char* ret=NULL
+	ret=''
 	while ret.str_len()<len => ret.=rand()
 	return ret.sub_str(0,len)
 }
@@ -3610,8 +3597,8 @@ map* command_line(char* in,int argc,char** argv){
 				"Invalid number of arguments".px()
 				"Usage: fox $v".px()
 				return NULL
-			map* ret=xvec(argv[1].str_trim("-"))
-			for int i=2;i<argc;i++ => ret.xadd(argv[i])
+			map* ret=[argv[1].str_trim("-")]
+			for int i=2;i<argc;i++ => ret[]=argv[i]
 			return ret
 	"Unrecognized argument".px()
 	in.px()
@@ -3629,11 +3616,11 @@ map* cmdline_params(map* args,char* func){
 	ret={}
 	int curr=1
 	int variadic=params.map_key(params.map_len()-1)==="..." ? params.map_len() : 0
-	char* named_param=NULL
+	named_param=''
 	args.each v,k,i
 		if v==="-nogc" => _nogc=1; continue
 		if v.str_start("-") && v.str_len()>1
-			char* val=NULL
+			val=''
 			if named_param
 				ret[named_param]=1
 			if v.str_start("--")
@@ -3840,7 +3827,7 @@ char* tutorial(){
 
 	### Execute a file from CL
 	```
-	./fox ./tests.fox
+	./fox example/script.fox
 	```
 
 	### Compile
@@ -3939,8 +3926,8 @@ char* tutorial(){
 	
 	### Populate Map
 	```
-	mp=xmap(:name,:Sanjir)[:age]=int_var(21)
-	mp=xmap(:name,:Sanjir,:age,int_var(21))
+	mp={name: :Sanjir}[:age]=21
+	mp={name: :Sanjir,age: 21}
 	mp="
 		name=Sanjir
 		age=#21
@@ -3948,9 +3935,9 @@ char* tutorial(){
 	mp="name=Sanjir,age=#21".str_map()
 	```
 
-	### Populate Vector
+	### Initialize Vector
 	```
-	mp=xvec(:Habib,:Anas,:Ayman)
+	mp=[:Habib,:Anas,:Ayman]
 	mp="
 		Habib
 		Anas
@@ -4130,7 +4117,7 @@ map* funcs(){
 }
 void* run(char* in){
 	int halt=0
-	return in.x_toks(1).fox_eval(xmap(:args,_globals.args),&halt)
+	return in.x_toks(1).fox_eval({args: _globals.args},&halt)
 }
 void* fox_eval(map* mp,map* env,int* halt){
 	if !mp => return NULL
@@ -4394,16 +4381,16 @@ map* toks_macros(map* mp){
 				params[]=v[1]
 			upto=9
 			for ;upto<toks->len; upto+=2 => if toks[upto-1].is_str().str_has("\n") => break
-			ret[toks[1]]= xmap(:name, toks[1], :params, params, :body, toks.vec_sub(8,upto-9))
+			ret[toks[1]]= {name: toks[1], params: params, body: toks.vec_sub(8,upto-9)}
 	return ret
 }
 int is_inline_vector(map* toks,int idx){
 	if !toks[idx].is_word("[ { ") => return 0
-	char* pre=toks[idx-2].is_str()
+	pre=toks[idx-2].is_str()
 	if pre.is_word(") ]") => return 0
 	if pre.is_code() && !pre.is_word(:return) => return 0
 	if pre==="="
-		char* type=toks.old_decl_type(idx-4)
+		type=toks.old_decl_type(idx-4)
 		if type && !type.is_word("map* void*") => return 0
 	return toks[idx]==="[" ? Vector : Map
 }
@@ -4444,28 +4431,6 @@ map* string_operators(map* toks){
 			i=head
 	return toks
 }
-//int is_inline_xml(map* toks,int idx){
-//	if !toks[idx]==="<" => return 0
-//	char* pre=toks[idx-2].is_str()
-//	if pre.is_word(") ]") => return 0
-//	if pre.is_code() && !pre.is_word(:return) => return 0
-//	if pre==="="
-//		char* type=toks.old_decl_type(idx-4)
-//		if type && !type.is_word("map* void*") => return 0
-//	return 1
-//}
-//map* inline_xml(map* toks){
-//	if !toks => return toks
-//	toks.each val,,idx=1 step 2
-//		if val.is_map() => val.inline_xml(); continue
-//		if !toks.is_inline_xml(idx) => continue
-//		i=idx
-//		toks.each ,,idx2=idx step 2
-//			if 
-//		if !toks[i] => continue
-//		rep={
-//
-//}
 map* inline_vectors(map* toks){
 	if !toks.map_len() => return toks
 	for int idx=1;idx<=toks->len;idx+=2
@@ -4483,7 +4448,7 @@ map* inline_vectors(map* toks){
 		funcname=:xmap
 		if type==Vector => funcname=:xvec
 		if body->len<2 => funcname= type==Vector ? :new_vec : :new_map
-		toks.vec_splice(idx,0,xvec(funcname,NULL))
+		toks.vec_splice(idx,0,[funcname,NULL])
 		skip=0
 		for int idx2=1;idx2<=body->len;idx2+=2
 			if body[idx2]==="?" => skip++
@@ -4499,7 +4464,7 @@ map* inline_vectors(map* toks){
 		if body[body->len-body->len%2-1]===";"
 			body.vec_del(body->len-body->len%2-2,2).vec_compact()
 		idx+=6
-		if toks.requires_semicolon(idx+1) => toks.vec_splice(idx+2-1,0,xvec(NULL,";"))
+		if toks.requires_semicolon(idx+1) => toks.vec_splice(idx+2-1,0,[NULL,";"])
 	return toks
 }
 int msleep(int msecs){
@@ -4541,13 +4506,6 @@ char* ptr_id(void* ptr){
 char* today() => return time_str().substr(0,10)
 char* now() => return time_str().substr(11,8)
 char* datetime() => return time_str()
-void test_loop(){
-	mp=[:one,:two,:three]
-	for(int next1=next(mp, -1);has_id(mp,next1);next1+=1){
-		char* val=mp[next1]
-		val.px()	
-	}
-}
 int crash(){
 	char** hello=NULL
 	return **hello
@@ -4556,7 +4514,7 @@ int str_ascii(char* in){
 	return in[0]
 }
 map* sql_tokenizer(char** line){
-	char* str=*line
+	str=*line
 	map* mp=[]
 	if !*str => return NULL
 	char term=closing_paren(*str)
@@ -4579,7 +4537,7 @@ map* sql_tokenizer(char** line){
 	return mp
 }
 map* prop_tokenizer(char** line){
-	char* str=*line
+	str=*line
 	map* mp=[]
 	if !*str => return NULL
 	char term=closing_paren(*str)
@@ -4608,19 +4566,19 @@ void benchmark_gc(){
 	ret.map_len().dx()
 	mem_usage().dx()
 }
-char* str_echo(char* str) => return str
-map* map_echo(map* in) => return in
+char* ping(char* str="pong") => return str
+map* ping_map(map* in) => return in
 char* str_join(char* str1,char* joiner,char* str2){
 	if !str1.str_len() => return str2
 	if !str2.str_len() => return str1
-	char* ret=NULL
+	ret=''
 	ret.=str1
 	ret.=joiner
 	ret.=str2
 	return ret
 }
 map* read_paren(map* mp,char** line,map*(*func)(char**)){
-	char* str=*line
+	str=*line
 	mp[]=char_str(*str)
 	mp[]=line.func()
 	mp[]=closing_paren(*str).char_str()
@@ -4628,7 +4586,7 @@ map* read_paren(map* mp,char** line,map*(*func)(char**)){
 }
 map* set_map(void* val,map* mp,int idx) => return set(mp,idx,val)
 char* var_bits(void* var){
-	char* ret=71.new_str()
+	ret=71.new_str()
 	unsigned char *ptr = (unsigned char*)&var
 	for idx=64,i=0;idx--;i++
 		if i && !(i%8) => ret[i+i/8-1]='-'

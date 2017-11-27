@@ -105,7 +105,7 @@ vals={a: b, c: d}
 
 ### Execute a file from CL
 ```
-./fox ./tests.fox
+./fox example/script.fox
 ```
 
 ### Compile
@@ -204,8 +204,8 @@ map* mp=[]
 
 ### Populate Map
 ```
-mp=xmap(:name,:Sanjir)[:age]=int_var(21)
-mp=xmap(:name,:Sanjir,:age,int_var(21))
+mp={name: :Sanjir}[:age]=21
+mp={name: :Sanjir,age: 21}
 mp="
 	name=Sanjir
 	age=#21
@@ -213,9 +213,9 @@ mp="
 mp="name=Sanjir,age=#21".str_map()
 ```
 
-### Populate Vector
+### Initialize Vector
 ```
-mp=xvec(:Habib,:Anas,:Ayman)
+mp=[:Habib,:Anas,:Ayman]
 mp="
 	Habib
 	Anas

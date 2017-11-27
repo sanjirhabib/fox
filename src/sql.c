@@ -36,7 +36,7 @@ char* join_clause(char* pre,map* mp,char* clause,char* by,char* sub1,char* sub2,
 		if(!sub1){ ret2=to_str(map_id(mp1,idx2),"",0); };
 		if(!sub2){ ret2=sql_map_join(map_id(mp1,idx2),sub1); }
 		else{
-			map* mp2=map_id(mp1,idx2);
+			void* mp2=map_id(mp1,idx2);
 			char* ret3=NULL;
 			map* map_1=map_id(mp1,idx2); for(int idx4=next(map_1,-1,NULL,NULL); has_id(map_1,idx4); idx4++){ void* v4=map_id(map_1,idx4); char* k4=map_key(map_1, idx4);
 				if(is_str(k4)){ ret3=str_join(ret3,sub1,sql_map_join(map_key_val(mp2,idx4),sub2)); };
@@ -66,9 +66,9 @@ map* de_select(map* cls){
 };
 map* de_from(map* cls){
 	map* ret=new_map();
-	map* last_join_type=NULL;
+	void* last_join_type=NULL;
 	map* map_1=map_split(map_val(cls,"from"),"join",0); for(int idx=next(map_1,-1,NULL,NULL); has_id(map_1,idx); idx++){ void* v=map_id(map_1,idx);
-		map* join_type=NULL;
+		void* join_type=NULL;
 		map* words=v;
 		for(int idx1=next(words,-1,NULL,NULL); has_id(words,idx1); idx1++){ void* v1=map_id(words,idx1);
 			if(is_word(v1,"full inner left right cross outer")){
@@ -102,22 +102,22 @@ map* parse_where(map* cls){
 	return wheres;
 };
 map* de_where(map* cls){
-	map* mp=map_val(cls,"where");
+	void* mp=map_val(cls,"where");
 	if(!mp){ return cls; };
 	return add(cls,"where",parse_where(mp));
 };
 map* de_having(map* cls){
-	map* mp=map_val(cls,"having");
+	void* mp=map_val(cls,"having");
 	if(!mp){ return cls; };
 	return add(cls,"having",parse_where(mp));
 };
 map* de_order(map* cls){
-	map* mp=map_val(cls,"order");
+	void* mp=map_val(cls,"order");
 	if(!mp){ return cls; };
 	if(str_eq(map_id(mp,0),"by")){ vec_compact(vec_del(mp,1-1,1)); };
 	map* ret=new_map();
 	map* map_1=map_split(mp,",",0); for(int idx=next(map_1,-1,NULL,NULL); has_id(map_1,idx); idx++){ void* val=map_id(map_1,idx);
-		map* mp1=val;
+		void* mp1=val;
 		char* col=sql_str(map_id(mp1,0));
 		char* ord=sql_str(map_id(mp1,1));
 		int iord=1;
@@ -128,14 +128,14 @@ map* de_order(map* cls){
 	return cls;
 };
 map* de_group(map* cls){
-	map* mp=map_val(cls,"group");
+	void* mp=map_val(cls,"group");
 	if(!mp){ return cls; };
 	if(str_eq(map_id(mp,0),"by")){ vec_compact(vec_del(mp,1-1,1)); };
 	add(cls,"group",map_split(mp,",",0));
 	return cls;
 };
 map* de_limit(map* cls){
-	map* mp=map_val(cls,"limit");
+	void* mp=map_val(cls,"limit");
 	if(!mp){ return cls; };
 	mp=map_split(mp,",",2);
 	int offset=stoi(sql_str(map_id(mp,0)));
@@ -222,7 +222,7 @@ map* sql_order(char* sql){
 	map* mp=sql_map(sql);
 	map* ret=new_map();
 	map* map_1=map_val(map_id(mp,mp->len-1),"order"); for(int idx=next(map_1,-1,NULL,NULL); has_id(map_1,idx); idx++){ void* val=map_id(map_1,idx);
-		map* mp1=val;
+		void* mp1=val;
 		char* col=sql_str(map_id(mp1,0));
 		char* ord=sql_str(map_id(mp1,1));
 		int iord=1;
@@ -249,7 +249,7 @@ map* sql_col(char* sql,char* db,map* exp){
 		if(ret && !str_eq(sql_str(ret),name)){ return sql_col(sql,db,ret); };
 		fox_error(xstr("Field ", name, " not found in query.", End),0); };
 	if(exp->len==3 && str_eq(is_str(map_id(exp,1)),".")){
-		map* ret=map_val(sql_select_cols(map_val(sql_tables(sql,db),map_id(exp,0)),db,NULL),map_id(exp,2));
+		ret=map_val(sql_select_cols(map_val(sql_tables(sql,db),map_id(exp,0)),db,NULL),map_id(exp,2));
 		if(!ret){ fox_error(xstr("Field ", sql_str(exp), " not found in ", sql, End),0); };
 		return ret; };
 	if(exp->len>1){
@@ -716,7 +716,7 @@ char* lite_create_col(map* col){
 	"	daymonth=varchar\n"
 	"	month=varchar"
 	"",map_val(col,"type"));
-	char* name=map_val(col,"name");
+	void* name=map_val(col,"name");
 	if(str_eq(type,"varchar")){ return xstr(name, " varchar(",int_str( size), ") collate nocase not null default ''", End); };
 	if(str_eq(type,"number")){ return xstr(name, " integer not null default 0", End); };
 	if(str_eq(type,"float")){ return xstr(name, " real not null default 0", End); };
@@ -1521,11 +1521,11 @@ char* crud_list(char* sql,char* db,int limit,char* crud){
 	return render_table(sql_rows(sql_add_limit(sql,limit,0),db,NULL),cols_list(sql_select_cols(sql,db,NULL),crud,12),sql,crud);
 };
 char* confirm(char* prompt,char* option1,char* option2,char* title,map* data){
-	char* clicked=button_clicked(xmap(option1,NULL,option2,NULL, End));
+	char* clicked=button_clicked(xmap((option1), NULL, (option2), NULL, End));
 	if(clicked){ return clicked; };
 	call_func(xmap(
-		"body",render_template(xmap("prompt",prompt,"option1",option1,"option2",option2,"title",title,"data",data, End),"confirm"),
-		"title",title,
+		"body", render_template(xmap("prompt",prompt,"option1",option1,"option2",option2,"title",title,"data",data, End),"confirm"),
+		"title", title,
 		"width",int_var( 2
 	), End),"page",NULL);
 	return NULL;		
@@ -1540,19 +1540,19 @@ char* crud_delete(char* sql,char* db,char* back){
 };
 char* edit_schema(char* sql,char* db,map* cols,char* back){
 	char* tbl=sql_table(sql);
-	map* errs=process_post(xmap("save",xmap(NULL,"save_schema","db",db,"tbl",tbl,"back",back, End), End));
-	map* vals=sql_id("_schema",db,xmap("type","db","name",tbl, End));
-	return cols_html(tbl_cols("_schema",db),xmap("save","Save",back,"Cancel", End),"Edit Schema",vals,errs);
+	map* errs=process_post(xmap("save", xmap((NULL), "save_schema", "db", db, "tbl", tbl, "back", back, End), End));
+	map* vals=sql_id("_schema",db,xmap("type", "db","name", tbl, End));
+	return cols_html(tbl_cols("_schema",db),xmap("save", "Save", (back), "Cancel", End),"Edit Schema",vals,errs);
 };
 char* crud_add(char* sql,char* db,map* cols,char* back){
-	map* errs=process_post(xmap("save",xmap(NULL,"crud_save","db",db,"sql",sql,"back",back,"cols",cols, End), End));
+	map* errs=process_post(xmap("save", xmap((NULL), "crud_save", "db", db, "sql", sql, "back", back, "cols", cols, End), End));
 	map* vals=new_map();
-	return cols_html(tbl_cols(sql_table(sql),db),xmap("save","Save",back,"Cancel", End),"Add New",vals,errs);
+	return cols_html(tbl_cols(sql_table(sql),db),xmap("save", "Save",(back), "Cancel", End),"Add New",vals,errs);
 };
 char* crud_edit(char* sql,char* db,map* cols,char* back){
-	map* errs=process_post(xmap("save",xmap(NULL,"crud_save","db",db,"sql",sql,"back",back,"cols",cols, End), End));
+	map* errs=process_post(xmap("save", xmap((NULL), "crud_save", "db", db, "sql", sql, "back", back, "cols", cols, End), End));
 	map* vals=sql_id(sql,db,get_ids(sql,db));
-	return cols_html(tbl_cols(sql_table(sql),db),xmap("save","Save",back,"Cancel", End),"Edit Record",vals,errs);
+	return cols_html(tbl_cols(sql_table(sql),db),xmap("save", "Save", (back), "Cancel", End),"Edit Record",vals,errs);
 };
 char* render_table(map* rows,map* cols,char* sql,char* crud){
 	for(int i=next(cols,-1,NULL,NULL); has_id(cols,i); i++){ void* v=map_id(cols,i); char* k=map_key(cols, i);
@@ -1585,25 +1585,24 @@ char* render_table(map* rows,map* cols,char* sql,char* crud){
 			add(actions,"Add New","add/");	
 			add(actions,"Edit Schema","schema/"); };
 		crud=render_template(actions,"button-dropdown"); };
-	return render(rows, str_subst(map_val(map_val(_globals,"html"),"table"),xmap("td",td,"th",th,"sql",sql,"actions",crud, End)) );
+	return render(rows, str_subst(map_val(map_val(_globals,"html"),"table"),xmap("td", td, "th", th, "sql", sql, "actions", crud, End)) );
 };
 char* cols_html(map* cols,map* buttons,char* title,map* vals,map* errs){
 	cols=cols_ctrls(cols,vals,errs);
 	for(int i=next(cols,-1,NULL,NULL); has_id(cols,i); i++){ void* v=map_id(cols,i); char* k=map_key(cols, i);
 		add(v,"html",render_template(v,map_val(v,"ctrl")));
 		add(v,"html",render_template(v,"label")); };
-	char* body=render_template(xmap("cols",render(cols,""
+	char* body=render_template(xmap("cols", render(cols,""
 			"--body\n"
 			"#{html}"
 			""),
-		"title",title, End),"group");
-
+		"title", title, End),"group");
 	return render_template(xmap(
-		"msg", map_len(errs) ? "Please correct these errors" : "",
-		"state", map_len(errs) ? "fox_error" : "help",
-		"body", body,
-		"button",buttons_html(buttons),
-		"method","post"
+		"msg",  map_len(errs) ? "Please correct these errors" : "",
+		"state",  map_len(errs) ? "fox_error" : "help",
+		"body",  body,
+		"button", buttons_html(buttons),
+		"method", "post"
 	, End),"form");
 };
 char* rename_sql(char* from,char* into){
@@ -1611,7 +1610,7 @@ char* rename_sql(char* from,char* into){
 };
 map* save_schema(char* db,char* tbl,map* data){
 	if(!str_eq(tbl,map_val(data,"name"))){
-		if(has_table(db,map_val(data,"name"))){ return xmap("name","Table exists", End); }; };
+		if(has_table(db,map_val(data,"name"))){ return xmap("name", "Table exists", End); }; };
 //		from.rename_sql(into)
 //		xmap(:type,:db,:name,tbl).sql_delete(tbl,db)
 //		xmap(:type,:db,:name,tbl,:data,data).sql_insert(tbl,db)
@@ -1634,7 +1633,7 @@ map* cols_ctrls(map* cols,map* vals,map* errs){
 		"id", k,
 		"value", map_val(vals,k),
 		"placeholder", "",
-		"ctrl",maptype(ctrls,map_val(v,"type")),
+		"ctrl", maptype(ctrls,map_val(v,"type")),
 		"label", map_val(v,"label") ? map_val(v,"label") : str_title(k),
 		"msg", map_val(errs,k) ? map_val(errs,k) : map_val(v,"req") ? xstr("<strong>* </strong>",map_val(v,"help"), End) : map_val(v,"help"),
 		"state", map_val(errs,k) ? "has-fox_error" : "",
@@ -2200,7 +2199,7 @@ char* str_url(char* in){
 	for(;*in;in++){
 		if(!is_alphanum(*in,NULL) && !strchr("-.[]*$%{}()@!~",*in)){ bad=1; break; }; };
 	if(!bad){ return head; };
-	char* ret=fox_alloc(str_len(head)*3+1,String);		
+	char* ret=new_str(str_len(head)*3);		
 	int off=0;
 	in=head;
 	for(;*in;in++){
@@ -2221,7 +2220,7 @@ char* url_str(char* in){
 		if(*in=='+'){ fix=1; }
 		else if(*in=='%'){ fix=1; len-=2; }; };
 	if(!fix){ return str; };
-	char* ret=fox_alloc(str_len(str)+len+1,String);
+	char* ret=new_str(str_len(str)+len);
 	int i=0;
 	for(in=str;*in;in++,i++){
 		if(*in=='+'){ ret[i]=' '; }
@@ -2259,7 +2258,7 @@ char*	sess_id(){ return map_val(_globals,"sessid"); };
 char*	sess_file(){ return sess_id() ? xstr("/tmp/sess.", sess_id(), End) : NULL; };
 char*	sess_newid(){ return rand_str(24); };
 void cookie_set(char* name,char* value,char* path,char* expire){
-	char* xexpire="";
+	char* xexpire=NULL;
 	if(expire){ xexpire=xstr("; expires=", expire, End); };
 	char* ss=xstr(name, "=", value, "; path=", path, xexpire, End);
 	add(add_key(_globals,"res",Map),"cookie",ss);
@@ -2300,7 +2299,7 @@ map* post_data(){
 	if(!str_eq(map_id(mime,0),"multipart/form-data")){
 		return amps_map(map_val(map_val(_globals,"req"),"post")); };
 	map* ret=new_map();
-	char* seperator=map_val(mime,"boundary");
+	void* seperator=map_val(mime,"boundary");
 	map* map_1=str_split(map_val(map_val(_globals,"req"),"post"),seperator,0); for(int i=next(map_1,-1,NULL,NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i);
 		map* mp3=str_split(v,"\r\n\r\n",2);
 		if(map_len(mp3)!=2){ continue; };
@@ -2446,10 +2445,10 @@ char* page(void* body,char* title,int width,void* link,char* theme,char* pg,map*
 	link=str_map(link,Map);
 	body=data_exec(body,env);
 	return http_out(render(xmap(
-		"title",str_eval(title,env),
-		"body",body,
-		"width",int_var(width),
-		"link",links_ul(link,"nav nav nav-sidebar")
+		"title", str_eval(title,env),
+		"body", body,
+		"width",int_var( width),
+		"link", links_ul(link,"nav nav nav-sidebar")
 	, End),map_val(map_val(_globals,"html"),pg)),"200 OK","text/html; charset=utf-8",NULL);
 };
 char* map_template(map* mp,char* template){ return render(mp,xstr("--body\n",template, End)); };

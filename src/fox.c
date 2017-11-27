@@ -32,6 +32,7 @@ Generational GC
 #endif
 
 
+char* strstr(const char* str1,const char* str2);
 int chdir(const char* path);
 void* invoke(map* v,char* name);
 map* reflect();
@@ -51,7 +52,7 @@ int make(map* files,char* outdir){
 	return req ? compile(files,outdir,"fox","",0,0) : 0;
 };
 int foxc(char* file){
-	char* optimize="-g -O0";
+	char* optimize="-g -Os";
 	char* in=xstr(file,".fox", End);
 	fox_c(in,xstr(file,".c", End));
 	fox_h(in,xstr(file,".h", End),0);
@@ -68,7 +69,7 @@ int compile(map* files,char* outdir,char* outfile,char* options,int release,int 
 			fox_error("mv fox failed",0); }; };
 	char* output=NULL;
 	char* infiles=map_join(out_c," ");
-	char* optimize="-g -O0";
+	char* optimize="-g -Os";
 	if(release){ optimize="-O3"; };
 	int ret=exec(
 		px(
@@ -232,7 +233,6 @@ char* fox_read_file(char* filename,int error_on_fail){
 	fseek(fp,0,SEEK_END);
 	size=ftell(fp);
 	char* ret=new_blob(size);
-//	char* ret=(size+1).fox_alloc(String)
 	fseek(fp,0,SEEK_SET);
 	read=fread(ret,1,size,fp);
 	fclose(fp);
@@ -297,7 +297,7 @@ char* str_escape(char* head){
 	char* ret=new_str(str_len(head)+extra);
 	str=head;
 	int i=0;
-	char* fox_at;
+	char* fox_at=NULL;
 	while((c=*str++)){
 		if(!(fox_at=strchr(quotable,c))){ ret[i++]=c; continue; };
 		ret[i++]='\\';
@@ -561,7 +561,7 @@ void* marked_str(char* str,char* name){
 	if(str[0]==':'){
 		str++;
 		char* thealpha=read_alpha(&str);
-		return map_merge(xmap("type",thealpha,"name",name, End),xjson_map(str+1,Index)); };
+		return map_merge(xmap("type", thealpha,"name", name, End),xjson_map(str+1,Index)); };
 	return str;
 };
 map* map_add_pair(map* mp,void* name,void* value,int type){
@@ -578,7 +578,7 @@ map* map_add_pair(map* mp,void* name,void* value,int type){
 			char* str=value;
 			str++;
 			char* thealpha=read_alpha(&str);
-			value=map_merge(xmap("type",thealpha,"name",name, End),xjson_map(str+1,Index)); };
+			value=map_merge(xmap("type", thealpha,"name", name, End),xjson_map(str+1,Index)); };
 	};
 	if(str_eq(value,"null")){ value=NULL; }
 	else if(is_numeric(value)){ value=int_var(to_int(value)); }
@@ -1170,7 +1170,7 @@ map* dir_files(char* path){
 	if(!d){ return NULL; };
 	map* ret=new_vec();
 	struct dirent *dir;
-	char* padd="";
+	char* padd=NULL;
 	if(!str_eq(path,".")){
 		padd=path;
 		if(fox_at(padd,-1)!='/'){ padd=xcat(padd,"/", End); };
@@ -1860,7 +1860,7 @@ map* add_curly(map* mp,int recursive){
 				break; }; };
 		if(curr_indent) {curr_indent--;};
 		char* space=" ";
-		char* blankline=map_id(mp,upto);
+		char* blankline=is_str(map_id(mp,upto));
 		char* tail=NULL;
 		if(blankline){
 			map* lns=str_split(blankline,"\n",3);
@@ -2072,19 +2072,6 @@ map* map_tox(map* mp){
 		idx=func_dot(mp,idx-1); };
 	return mp;
 };
-int stm_end(map* mp,int idx,char* words,int including){
-	idx++;
-	assert(idx<mp->len);
-	int from=idx;
-	while(idx<mp->len){
-		if(is_word(map_id(mp,idx),words)){
-			if(including){
-				while(is_word(map_id(mp,idx),words)){ idx+=2; }; };
-			break; };
-		idx+=2; };
-	if(idx>from){ idx-=2; };
-	return idx;
-};
 int stm_start(map* mp,int idx,char* terms){
 	idx-=2;
 	while(idx>0){
@@ -2110,7 +2097,7 @@ map* syn_func(map* syn,int with_body){
 		assert(str_eq(param_name,"...") || param_type);
 		assert(param_name);
 		add(params,param_name,xmap("type", param_type, "default", param_default, End)); };
-	char* name=map_id(syn,len-params_at-4);
+	char* name=is_str(map_id(syn,len-params_at-4));
 	map* type=vec_sub(syn,1,len-params_at-6);
 	char* decltype=toks_c(type);
 	for(int i3=next(type,-1,NULL,NULL); has_id(type,i3); i3++){ void* v3=map_id(type,i3);
@@ -2420,7 +2407,7 @@ int expr_tail(map* toks,int idx,char* expr){
 	char* presid="= += -= /= *= %= ^= .= ? : && || == === !== != >= <= > < .. + - / * ++ -- ! -> .";
 	int expr_presid=is_word(expr,presid);
 	while(idx<map_len(toks)){
-		char* v=map_id(toks,idx);
+		char* v=is_str(map_id(toks,idx));
 		if(is_name(v) && (str_eq(map_id(toks,idx+2),")")||str_eq(map_id(toks,idx+2),"]"))){
 			idx+=8;
 		}else if(str_eq(v,"(")||str_eq(v,"[")){
@@ -2439,7 +2426,7 @@ int expr_head(map* toks,int idx,char* expr){
 	char* presid="= += -= /= *= %= ^= .= ? : && || == === !== != >= <= > < .. + - / * ++ -- ! -> .";
 	int expr_presid=is_word(expr,presid);
 	while(idx>0){
-		char* v=map_id(toks,idx);
+		char* v=is_str(map_id(toks,idx));
 		if((str_eq(v,")")||str_eq(v,"]")) && is_name(map_id(toks,idx-6))){
 			idx-=8;
 		}else if(str_eq(v,")")||str_eq(v,"]")){
@@ -2487,7 +2474,7 @@ map* param_c(map* params,map* env,map* fs,map* fn){
 	if(!params){ return NULL; };
 	map* xparam=toks_split(params,",",0);
 	map* cparam=new_vec();
-	map* sig=map_val(fn,"params");
+	void* sig=map_val(fn,"params");
 	for(int i=next(sig,-1,NULL,NULL); has_id(sig,i); i++){ void* p=map_id(sig,i); char* name=map_key(sig, i);
 		if(str_eq(name,"...")){
 			for(int idx=i; idx<xparam->len; idx++){
@@ -2554,8 +2541,8 @@ map* toks_ast(map* toks,int* idx,char* upto){
 	map* ret=NULL;
 	int upto_no=is_word(upto,operators);
 	while(*idx < toks->len){
-		char* space=map_id(toks,*idx);
-		char* v=map_id(toks,*idx+1);
+		char* space=is_str(map_id(toks,*idx));
+		char* v=is_str(map_id(toks,*idx+1));
 		assert(!v || is_str(v));
 		if(!v){
 			if(space){
@@ -2673,7 +2660,7 @@ char* expr_type(map* toks,int idx,int upto,map* env,map* fs){
 		return expr_type(toks,next_tok(toks,idx,"?",0)+1,upto,env,fs);
 	}
 	else if(str_eq(map_id(toks,idx+3),"(")){
-		char* name=map_id(toks,idx+1);
+		char* name=is_str(map_id(toks,idx+1));
 		if(map_val(fs,name)){ return map_val(map_val(fs,name),"type"); };
 		return map_val(map_val(funcs(),name),"type");
 	}else if(is_word(w,"++ --")){ return expr_type(toks,idx+2,upto,env,fs); }
@@ -2788,8 +2775,8 @@ char* func_ccall(map* fn){
 		v=map_val(v,"type");
 		v=drop_left(v,"const ");
 		v=drop_left(v,"unsigned ");
-		char* pre="";
-		char* post="";
+		char* pre=NULL;
+		char* post=NULL;
 		if(str_eq(v,"char*")){ post=".is_str()"; }
 		else if(str_eq(v,"map*")){ post=".is_map()"; }
 		else if(is_word(v,"int long size_t char time_t") || str_eq(v,"long long")){ post=".to_int()"; }
@@ -2833,10 +2820,10 @@ char* callfunc_c(map* funcs){
 		char* str_params=func_ccall(v);
 		if(!str_params){
 			continue; };
-		char* post="";
+		char* post=NULL;
 		char* isvoid="return ";
-		char* isvoid2="";
-		char* ftype=map_val(v,"type");
+		char* isvoid2=NULL;
+		void* ftype=map_val(v,"type");
 		if(is_word(ftype,"int long long size_t time_t char")){ post=".int_var()"; }
 		else if(is_word(ftype,"double float")){ post=".double_var()"; }
 		else if(str_eq(ftype,"void")){
@@ -2980,7 +2967,7 @@ char* write_foxh(char* outfile){
 	return write_file((xstr(foxh(),funcs_cdecl(source_funcs(),0), End)),outfile,0);
 };
 char* fox_phpc(char* infile,char* outfile){
-	map* fns=file_funcs(infile);
+	map* fns=infile ? file_funcs(infile) : source_funcs();
 	map* temp=str_split(infile,"/",0);
 	temp=str_split(map_id(temp,map_len(temp)-1),".",0);
 	void* name=map_id(temp,0);
@@ -2999,10 +2986,10 @@ char* fox_phpc(char* infile,char* outfile){
 	"void* call_php(map* params,char* func);\n", 
 	"", 
 	"", End);
-	char* reg="";
+	char* reg=NULL;
 	for(int i=next(fns,-1,NULL,NULL); has_id(fns,i); i++){ void* v=map_id(fns,i);
 		if(!is_word(map_val(v,"type"),"void* map* int char*")){ continue; };
-//		if v.name.is_word("invoke reflect") => continue
+		if(is_word(map_val(v,"name"),"main")){ continue; };
 		char* decls="";
 		char* format="";
 		char* post="";
@@ -3011,7 +2998,7 @@ char* fox_phpc(char* infile,char* outfile){
 		int hasdefault=0;
 		int skip=0;
 		void* foxname=map_val(v,"name");
-//		if !foxname.str_start(:fox_) => foxname="fox_$(v.name)"
+		if(!infile && !str_start(foxname,"fox_")){ foxname=xstr("fox_", map_val(v,"name"), End); };
 		map* map_1=map_val(v,"params"); for(int i2=next(map_1,-1,NULL,NULL); has_id(map_1,i2); i2++){ char* name=map_key(map_1, i2);
 			if(str_eq(name,"...")){ skip=1; break; };
 			map* v2=map_val(map_val(v,"params"),name);
@@ -3611,7 +3598,7 @@ map* command_line(char* in,int argc,char** argv){
 				px(xstr("Usage: fox ", v, End),1);
 				return NULL; };
 			map* ret=xvec(str_trim(argv[1],"-"), End);
-			for(int i=2;i<argc;i++){ xadd(ret,argv[i], End); };
+			for(int i=2;i<argc;i++){ vec_add(ret,argv[i]); };
 			return ret; }; };
 	px("Unrecognized argument",1);
 	px(in,1);
@@ -3840,7 +3827,7 @@ char* tutorial(){
 	"\n"
 	"### Execute a file from CL\n"
 	"```\n"
-	"./fox ./tests.fox\n"
+	"./fox example/script.fox\n"
 	"```\n"
 	"\n"
 	"### Compile\n"
@@ -3939,8 +3926,8 @@ char* tutorial(){
 	"\n"
 	"### Populate Map\n"
 	"```\n"
-	"mp=xmap(:name,:Sanjir)[:age]=int_var(21)\n"
-	"mp=xmap(:name,:Sanjir,:age,int_var(21))\n"
+	"mp={name: :Sanjir}[:age]=21\n"
+	"mp={name: :Sanjir,age: 21}\n"
 	"mp=\"\n"
 	"	name=Sanjir\n"
 	"	age=#21\n"
@@ -3948,9 +3935,9 @@ char* tutorial(){
 	"mp=\"name=Sanjir,age=#21\".str_map()\n"
 	"```\n"
 	"\n"
-	"### Populate Vector\n"
+	"### Initialize Vector\n"
 	"```\n"
-	"mp=xvec(:Habib,:Anas,:Ayman)\n"
+	"mp=[:Habib,:Anas,:Ayman]\n"
 	"mp=\"\n"
 	"	Habib\n"
 	"	Anas\n"
@@ -4130,7 +4117,7 @@ map* funcs(){
 };
 void* run(char* in){
 	int halt=0;
-	return fox_eval(x_toks(in,1),xmap("args",map_val(_globals,"args"), End),&halt);
+	return fox_eval(x_toks(in,1),xmap("args", map_val(_globals,"args"), End),&halt);
 };
 void* fox_eval(map* mp,map* env,int* halt){
 	if(!mp){ return NULL; };
@@ -4444,28 +4431,6 @@ map* string_operators(map* toks){
 			i=head; }; };
 	return toks;
 };
-//int is_inline_xml(map* toks,int idx){
-//	if !toks[idx]==="<" => return 0
-//	char* pre=toks[idx-2].is_str()
-//	if pre.is_word(") ]") => return 0
-//	if pre.is_code() && !pre.is_word(:return) => return 0
-//	if pre==="="
-//		char* type=toks.old_decl_type(idx-4)
-//		if type && !type.is_word("map* void*") => return 0
-//	return 1
-//}
-//map* inline_xml(map* toks){
-//	if !toks => return toks
-//	toks.each val,,idx=1 step 2
-//		if val.is_map() => val.inline_xml(); continue
-//		if !toks.is_inline_xml(idx) => continue
-//		i=idx
-//		toks.each ,,idx2=idx step 2
-//			if 
-//		if !toks[i] => continue
-//		rep={
-//
-//}
 map* inline_vectors(map* toks){
 	if(!map_len(toks)){ return toks; };
 	for(int idx=1;idx<=toks->len;idx+=2){
@@ -4541,13 +4506,6 @@ char* ptr_id(void* ptr){
 char* today(){ return substr(time_str(0),0,10); };
 char* now(){ return substr(time_str(0),11,8); };
 char* datetime(){ return time_str(0); };
-void test_loop(){
-	map* mp=xvec("one","two","three", End);
-	for(int next1=next(mp, -1,NULL,NULL);has_id(mp,next1);next1+=1){
-		char* val=map_id(mp,next1);
-		px(val,1);	
-	};
-};
 int crash(){
 	char** hello=NULL;
 	return **hello;
@@ -4608,8 +4566,8 @@ void benchmark_gc(){
 	dx(int_var(map_len(ret)),NULL,0);
 	dx(mem_usage(),NULL,0);
 };
-char* str_echo(char* str){ return str; };
-map* map_echo(map* in){ return in; };
+char* ping(char* str){ return str; };
+map* ping_map(map* in){ return in; };
 char* str_join(char* str1,char* joiner,char* str2){
 	if(!str_len(str1)){ return str2; };
 	if(!str_len(str2)){ return str1; };
