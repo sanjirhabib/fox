@@ -3760,6 +3760,7 @@ char* tutorial(){
 	"Fox language. Transcompiles source into into human readable C.\n"
 	"Maintaining your original format, comment and indention and line number.\n"
 	"Builtin Fox & C interpreter. Bootstrapped compiler.\n"
+	"\n"
 	"Source in Fox:\n"
 	"```\n"
 	"#include <fox.h>\n"
