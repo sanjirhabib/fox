@@ -1,7 +1,10 @@
-#include <fox.h>
+#include "hello.h"
 
-int main(int argc,char** argv){
-	gc_start()
+main(){
+	"
+	Total $(args.map_len()) command line arguments
+	those are $args
+	".px()	
 
 	name=:Habib
 	msg="hello, $name!"
@@ -10,7 +13,7 @@ int main(int argc,char** argv){
 	myvector=[:hello, :world]
 	myvector.px()
 
-	mymap={name: :Habib, age: 23}.px()
+	mymap={name: :Habib, age: 23}
 	mymap.name=:Ibrahim
 	mymap.px()
 

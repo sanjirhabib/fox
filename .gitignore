@@ -8,3 +8,6 @@ speed/*.fib
 .*
 project/*
 fox
+speed/fib.dSYM
+test
+test.*

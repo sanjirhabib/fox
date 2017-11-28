@@ -1847,6 +1847,13 @@ map* force_curly(map* mp){
 		idx=oldidx
 	return mp
 }
+map* expand_main(map* mp){
+	for int idx=1;idx<=mp->len;idx+=2
+		if mp[idx]===:main && mp[idx+2]==="(" && mp[idx+8]==="{" && !mp[idx+4].map_len() && mp[idx-2]!==:int
+			mp[idx+10].vec_splice(0,0," gc_start(); map* args=argv_map(argv, argc);".x_map())
+			mp.vec_splice(idx,7,"int main(int argc, char** argv, char** env)".x_map().vec_del(0,1)).vec_compact()
+	return mp
+}
 map* add_curly(map* mp,int recursive=1){
 	for(int idx=1;idx<=mp->len;idx+=2)
 		if(mp[idx]==="=>")
@@ -2225,6 +2232,7 @@ map* x_toks(char* in,int is_script=0){
 		.add_curly()
 		.force_curly()
 		.add_semicolon()
+		.expand_main()
 		.dot_func()
 		.dot_each()
 		.toks_syn()
@@ -2804,7 +2812,9 @@ int is_func_decl(map* syn){
 	if syn[idx+7]==="{" && syn[idx+13]===";" => return 1
 	return 0
 }
-char* fox_h(char* infile,char* outfile=NULL,int with_foxh=0) => return ((with_foxh ? foxh() : "")..infile.file_funcs().funcs_cdecl(0)).write_file(outfile)
+char* fox_h(char* infile,char* outfile=NULL){
+	return ("#include <fox.h>\n"..infile.file_funcs().funcs_cdecl(0)).write_file(outfile)
+}
 char* fox_c(char* infile, char* outfile=NULL) => return infile.fox_read_file().x_c().write_file(outfile)
 map* x_map(char* in) => return c_tokenizer(&in,'\0')
 char* c_x(char* in) => return in.x_map().map_tox().toks_c()
@@ -3765,10 +3775,13 @@ char* tutorial(){
 
 	Source in Fox:
 	```
-	#include <fox.h>
+	#include "hello.h"
 
-	int main(int argc,char** argv){
-		gc_start()
+	main(){
+		"
+		Total $(args.map_len()) command line arguments
+		those are $args
+		".px()	
 
 		name=:Habib
 		msg="hello, $name!"
@@ -3777,7 +3790,7 @@ char* tutorial(){
 		myvector=[:hello, :world]
 		myvector.px()
 
-		mymap={name: :Habib, age: 23}.px()
+		mymap={name: :Habib, age: 23}
 		mymap.name=:Ibrahim
 		mymap.px()
 
@@ -3791,13 +3804,17 @@ char* tutorial(){
 
 		return 0
 	}
+
 	```
 	Generated C code:
 	```
-	#include <fox.h>
+	#include "hello.h"
 
-	int main(int argc,char** argv){
-		gc_start();
+	int main(int argc, char** argv, char** env){ gc_start(); map* args=argv_map(argv, argc);
+		px(xstr("", 
+		"Total ",int_str( map_len(args)), " command line arguments\n", 
+		"those are ", args, 
+		"", End),1);	
 
 		char* name="Habib";
 		char* msg=xstr("hello, ", name, "!", End);
@@ -3806,7 +3823,7 @@ char* tutorial(){
 		map* myvector=xvec("hello", "world", End);
 		px(myvector,1);
 
-		void* mymap=px(xmap("name", "Habib", "age",int_var( 23), End),1);
+		map* mymap=xmap("name", "Habib", "age",int_var( 23), End);
 		add(mymap,"name","Ibrahim");
 		px(mymap,1);
 
@@ -3829,6 +3846,8 @@ char* tutorial(){
 	gcc -g -Os hello.c -o hello -std=gnu99 -Wno-logical-op-parentheses -lm -lfox 2>&1
 
 	$ ./hello
+	Total 1 command line arguments were passed
+	and those are ["./hello"]
 	hello, Habib!
 	["hello", "world"]
 	{"name":"Habib", "age":23}

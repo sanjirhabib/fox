@@ -5,10 +5,13 @@ Builtin Fox & C interpreter. Bootstrapped compiler.
 
 Source in Fox:
 ```
-#include <fox.h>
+#include "hello.h"
 
-int main(int argc,char** argv){
-	gc_start()
+main(){
+	"
+	Total $(args.map_len()) command line arguments
+	those are $args
+	".px()	
 
 	name=:Habib
 	msg="hello, $name!"
@@ -17,7 +20,7 @@ int main(int argc,char** argv){
 	myvector=[:hello, :world]
 	myvector.px()
 
-	mymap={name: :Habib, age: 23}.px()
+	mymap={name: :Habib, age: 23}
 	mymap.name=:Ibrahim
 	mymap.px()
 
@@ -31,13 +34,17 @@ int main(int argc,char** argv){
 
 	return 0
 }
+
 ```
 Generated C code:
 ```
-#include <fox.h>
+#include "hello.h"
 
-int main(int argc,char** argv){
-	gc_start();
+int main(int argc, char** argv, char** env){ gc_start(); map* args=argv_map(argv, argc);
+	px(xstr("", 
+	"Total ",int_str( map_len(args)), " command line arguments\n", 
+	"those are ", args, 
+	"", End),1);	
 
 	char* name="Habib";
 	char* msg=xstr("hello, ", name, "!", End);
@@ -46,7 +53,7 @@ int main(int argc,char** argv){
 	map* myvector=xvec("hello", "world", End);
 	px(myvector,1);
 
-	void* mymap=px(xmap("name", "Habib", "age",int_var( 23), End),1);
+	map* mymap=xmap("name", "Habib", "age",int_var( 23), End);
 	add(mymap,"name","Ibrahim");
 	px(mymap,1);
 
@@ -69,6 +76,8 @@ $ fox cc hello.fox
 gcc -g -Os hello.c -o hello -std=gnu99 -Wno-logical-op-parentheses -lm -lfox 2>&1
 
 $ ./hello
+Total 1 command line arguments were passed
+and those are ["./hello"]
 hello, Habib!
 ["hello", "world"]
 {"name":"Habib", "age":23}

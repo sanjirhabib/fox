@@ -56,7 +56,7 @@ int cc(char* file,int keepfiles){
 	file=file_rename(file,NULL,".fox",NULL,NULL,NULL);
 	char* in=xstr(file,".fox", End);
 	fox_c(in,xstr(file,".c", End));
-	fox_h(in,xstr(file,".h", End),0);
+	fox_h(in,xstr(file,".h", End));
 	int ret=exec(
 		px(
 		xstr("gcc ", optimize, " ", file, ".c -o ", file, " -std=gnu99 -Wno-logical-op-parentheses -lm -lfox 2>&1", End),1),NULL);
@@ -1847,6 +1847,13 @@ map* force_curly(map* mp){
 		idx=oldidx; };
 	return mp;
 };
+map* expand_main(map* mp){
+	for(int idx=1;idx<=mp->len;idx+=2){
+		if(str_eq(map_id(mp,idx),"main") && str_eq(map_id(mp,idx+2),"(") && str_eq(map_id(mp,idx+8),"{") && !map_len(map_id(mp,idx+4)) && !str_eq(map_id(mp,idx-2),"int")){
+			vec_splice(map_id(mp,idx+10),0,0,x_map(" gc_start(); map* args=argv_map(argv, argc);"));
+			vec_compact(vec_splice(mp,idx,7,vec_del(x_map("int main(int argc, char** argv, char** env)"),0,1))); }; };
+	return mp;
+};
 map* add_curly(map* mp,int recursive){
 	for(int idx=1;idx<=mp->len;idx+=2){
 		if(str_eq(map_id(mp,idx),"=>")){
@@ -2226,13 +2233,14 @@ map* x_toks(char* in,int is_script){
 		toks_syn(
 		dot_each(
 		dot_func(
+		expand_main(
 		add_semicolon(
 		force_curly(
 		add_curly(
 		str_dollars(
 		dot_key(
 		colon_str(
-		x_map(in)))),1)),1))),1)))),"c", is_script,new_map(),new_map(),NULL,0));
+		x_map(in)))),1)),1)))),1)))),"c", is_script,new_map(),new_map(),NULL,0));
 };
 map* func_params(map* func){ return toks_split(func_param(func),",",0); };
 map* func_param(map* func){ return map_id(func,next_tok(func,0,"(",0)+2); };
@@ -2804,7 +2812,9 @@ int is_func_decl(map* syn){
 	if(str_eq(map_id(syn,idx+7),"{") && str_eq(map_id(syn,idx+13),";")){ return 1; };
 	return 0;
 };
-char* fox_h(char* infile,char* outfile,int with_foxh){ return write_file((xstr((with_foxh ? foxh() : ""),funcs_cdecl(file_funcs(infile),0), End)),outfile,0); };
+char* fox_h(char* infile,char* outfile){
+	return write_file((xstr("#include <fox.h>\n",funcs_cdecl(file_funcs(infile),0), End)),outfile,0);
+};
 char* fox_c(char* infile, char* outfile){ return write_file(x_c(fox_read_file(infile,1)),outfile,0); };
 map* x_map(char* in){ return c_tokenizer(&in,'\0'); };
 char* c_x(char* in){ return toks_c(map_tox(x_map(in))); };
@@ -3765,10 +3775,13 @@ char* tutorial(){
 	"\n"
 	"Source in Fox:\n"
 	"```\n"
-	"#include <fox.h>\n"
+	"#include \"hello.h\"\n"
 	"\n"
-	"int main(int argc,char** argv){\n"
-	"	gc_start()\n"
+	"main(){\n"
+	"	\"\n"
+	"	Total $(args.map_len()) command line arguments\n"
+	"	those are $args\n"
+	"	\".px()	\n"
 	"\n"
 	"	name=:Habib\n"
 	"	msg=\"hello, $name!\"\n"
@@ -3777,7 +3790,7 @@ char* tutorial(){
 	"	myvector=[:hello, :world]\n"
 	"	myvector.px()\n"
 	"\n"
-	"	mymap={name: :Habib, age: 23}.px()\n"
+	"	mymap={name: :Habib, age: 23}\n"
 	"	mymap.name=:Ibrahim\n"
 	"	mymap.px()\n"
 	"\n"
@@ -3791,13 +3804,17 @@ char* tutorial(){
 	"\n"
 	"	return 0\n"
 	"}\n"
+	"\n"
 	"```\n"
 	"Generated C code:\n"
 	"```\n"
-	"#include <fox.h>\n"
+	"#include \"hello.h\"\n"
 	"\n"
-	"int main(int argc,char** argv){\n"
-	"	gc_start();\n"
+	"int main(int argc, char** argv, char** env){ gc_start(); map* args=argv_map(argv, argc);\n"
+	"	px(xstr(\"\", \n"
+	"	\"Total \",int_str( map_len(args)), \" command line arguments\\n\", \n"
+	"	\"those are \", args, \n"
+	"	\"\", End),1);	\n"
 	"\n"
 	"	char* name=\"Habib\";\n"
 	"	char* msg=xstr(\"hello, \", name, \"!\", End);\n"
@@ -3806,7 +3823,7 @@ char* tutorial(){
 	"	map* myvector=xvec(\"hello\", \"world\", End);\n"
 	"	px(myvector,1);\n"
 	"\n"
-	"	void* mymap=px(xmap(\"name\", \"Habib\", \"age\",int_var( 23), End),1);\n"
+	"	map* mymap=xmap(\"name\", \"Habib\", \"age\",int_var( 23), End);\n"
 	"	add(mymap,\"name\",\"Ibrahim\");\n"
 	"	px(mymap,1);\n"
 	"\n"
@@ -3829,6 +3846,8 @@ char* tutorial(){
 	"gcc -g -Os hello.c -o hello -std=gnu99 -Wno-logical-op-parentheses -lm -lfox 2>&1\n"
 	"\n"
 	"$ ./hello\n"
+	"Total 1 command line arguments were passed\n"
+	"and those are [\"./hello\"]\n"
 	"hello, Habib!\n"
 	"[\"hello\", \"world\"]\n"
 	"{\"name\":\"Habib\", \"age\":23}\n"
