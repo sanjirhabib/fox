@@ -1708,7 +1708,7 @@ char* date_show(char* in){
 		return xstr(vals[1].to_int().month_name(), "-", vals[0])
 	if len==10
 		vals=in.str_split("-")
-		return "$(vals[2].to_int().to_str())/$(vals[1].to_int().to_str())/$(vals[0])"
+		return "$(vals[2].to_int().int_str())/$(vals[1].to_int().int_str())/$(vals[0])"
 	if len==19
 		vals=in.str_split(" ")
 		return "$(vals[0].date_show()) $(vals[1].date_show())"
@@ -1793,16 +1793,16 @@ int cmp_ptr(const void* ptr1,const void* ptr2){
 }
 int cmp_cons_reverse(const void* ptr1, const void* ptr2) => return ptr2.cmp_cons(ptr1)
 int cmp_cons(const void* ptr1, const void* ptr2){
-	return ((cons*)ptr1)->val.cmp_ptr(((cons*)ptr2)->val)
+	return ((Mapcell*)ptr1)->val.cmp_ptr(((Mapcell*)ptr2)->val)
 }
 map* map_sort(map* mp,int reverse=0){
 	if !mp => return mp
 	if reverse
 		if mp.is_vec() => mp.qsort(mp->len,sizeof(void*),cmp_ptr_reverse); return mp
-		mp->pairs.qsort(mp->len,sizeof(cons),cmp_cons_reverse)	
+		mp->pairs.qsort(mp->len,sizeof(Mapcell),cmp_cons_reverse)	
 	else
 		if mp.is_vec() => mp.qsort(mp->len,sizeof(void*),cmp_ptr); return mp
-		mp->pairs.qsort(mp->len,sizeof(cons),cmp_cons)	
+		mp->pairs.qsort(mp->len,sizeof(Mapcell),cmp_cons)	
 	mp.map_reindex()
 	return mp
 }

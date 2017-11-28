@@ -31,19 +31,19 @@
 #include <sqlite3.h>
 
 enum Types {
-	Null,Skip,Int,Double,String,Blob,Map,Vector,Index,Keys,Cell,Cell2,Tail
+	Null,Int,Double,String,Blob,Map,Vector,Index,Keys,Cell,Cell2,Tail
 };
-typedef struct cons {
+typedef struct Mapcell {
 	short nextid;
 	int hkey;
 	char* id;
 	void* val;
-} cons;
+} Mapcell;
 typedef struct map {
 	int len;
 	char type;
 	union {
-		struct cons* pairs;
+		struct Mapcell* pairs;
 		void** vars;
 	};
 } map;
@@ -67,11 +67,9 @@ typedef struct mempage {
 	int blocks;
 	int free;
 	char* types;
-//	struct mempage* next;
 	char* page;
 	map chains;
 	int abandoned;
-//	char type;
 } mempage;
 struct gcdata {
 	int total_pages;
@@ -84,20 +82,18 @@ struct gcdata {
 	mempage* pages;
 	int gcruns;
 	int gcwaste;
+	int inalloc;
+	int gctime;
+	int gcmax;
+	struct timeval run_time;
+	struct timeval time;
+	size_t clockstart;
+	int total_time;
 };
 extern struct gcdata _gcdata;
-extern struct timeval _run_time;
-extern struct timeval _time;
 extern map* _globals;
-extern int _gc;
-extern int _nogc;
-extern int _inalloc;
-extern size_t _clockstart;
 
 extern int _printed;
-extern int _total_time;
-extern int _gc_time;
-extern int _gc_max;
 extern int _is_web;
 
 extern char* skip;
@@ -109,7 +105,6 @@ int rand();
 void* px(void* str, int newline);
 void xexit(int val);
 void* fox_error(char* msg, int dump);
-map* args(int argc, char** argv);
 int mem_total();
 int mem_free();
 void fox_signal_handler(int sig);
@@ -159,7 +154,7 @@ map* is_vec(void* v);
 map* is_hash(void* v);
 map* is_map(void* v);
 double to_double(void* v);
-int to_int(void* v);
+long long to_int(void* v);
 int next(map* mp, int idx, char** key, void** val);
 int stoi(char* str);
 map* globals();
@@ -168,7 +163,7 @@ mempage* ptr_page(void* ptr);
 void* block_ptr(int block, mempage* pg);
 int ptr_block(void* ptr, mempage* pg);
 int ptr_type(void* ptr);
-int cell2_mark(cons* pairs, int size);
+int cell2_mark(Mapcell* pairs, int size);
 int cell_mark(void** pairs, int size);
 int gc_mark(void* ptr);
 int sweep_page(mempage* pg);
@@ -224,6 +219,7 @@ void* ptr_head(void* ptr);
 int block_head(int no, mempage* pg);
 void init_rand();
 void* map_val(map* mp, char* key);
+map* argv_map(char** argv, int argc);
 char* strstr(const char* str1, const char* str2);
 int chdir(const char* path);
 void* invoke(map* v, char* name);
@@ -232,14 +228,16 @@ int max_mem();
 int curr_mem();
 char* version();
 map* args_map();
+map* args(int argc, char** argv);
 void* call_php(map* params, char* func);
 int make(map* files, char* outdir);
-int foxc(char* file);
+int cc(char* file);
 int compile(map* files, char* outdir, char* outfile, char* options, int release, int exe);
 char* file_dir(char* file);
 char* file_rename(char* file, char* dir, char* delext, char* addext, char* prefix, char* postfix);
 char* sane_dir(char* dir);
 map* build(map* files, char* outdir);
+char* write_configm4(char* name, char* outfile);
 char* mem_usage();
 char* int_kb(size_t i, char* unit);
 char* int_human(int i, char* unit, char* zero);

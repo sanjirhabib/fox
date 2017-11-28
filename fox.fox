@@ -51,14 +51,17 @@ int make(map* files=source_files(),char* outdir="c"){
 	files.each v1 => if v1.file_time()>".version.txt".file_time() => req=1; break
 	return req ? files.compile(outdir) : 0
 }
-int foxc(char* file){
+int cc(char* file){
 	optimize="-g -Os"
+	file=file.file_rename(,".fox")
 	in=file..".fox"
 	in.fox_c(file..".c")
 	in.fox_h(file..".h")
 	ret="gcc $(optimize) $(file).c -o $(file) -std=gnu99 -Wno-logical-op-parentheses -lm -lfox 2>&1"
 		.px()
 		.exec()
+	(file..".c").remove()	
+	(file..".h").remove()	
 	return ret
 }
 int compile(map* files=source_files(),char* outdir="c",char* outfile=:fox,char* options="",int release=0,int exe=0){
@@ -112,6 +115,45 @@ map* build(map* files=source_files(),char* outdir="c"){
 	mem_usage().px()
 	return ret
 }
+char* write_configm4(char* name=:fox, char* outfile=NULL){
+	NAME=name.str_dup().str_upper()
+	return ---
+	PHP_ARG_WITH($name, for $name support,
+	Make sure that the comment is aligned:
+	[  --with-$name             Include $name support])
+	if test "$$PHP_$NAME" != "no"; then
+
+	$(NAME)_DIR="/usr/local"
+
+	if test -z "$("$"..NAME)_DIR"; then
+	  AC_MSG_RESULT([not found])
+	  AC_MSG_ERROR([Please reinstall the $name distribution])
+	fi
+
+	# --with-$name -> add include path
+	PHP_ADD_INCLUDE($("$"..NAME)_DIR/include)
+
+	# --with-$name -> check for lib and symbol presence
+	LIBNAME=fox # you may want to change this
+	LIBSYMBOL=init_gc # you most likely want to change this 
+
+	PHP_CHECK_LIBRARY($$LIBNAME,$$LIBSYMBOL,
+	[
+	  PHP_ADD_LIBRARY_WITH_PATH($$LIBNAME, $("$"..NAME)_DIR/lib, $(NAME)_SHARED_LIBADD)
+	  AC_DEFINE(HAVE_$(NAME)LIB,1,[ ])
+	],[
+	  AC_MSG_ERROR([wrong fox lib version or lib not found])
+	],[
+	  -L$("$"..NAME)_DIR/$$PHP_LIBDIR -lm
+	])
+
+	PHP_SUBST($(NAME)_SHARED_LIBADD)
+
+	  PHP_NEW_EXTENSION($name, $name.c $(name)php.c, $$ext_shared,, -DZEND_ENABLE_STATIC_TSRMLS_CACHE=1)
+	fi
+
+	---.write_file(outfile)
+}
 char* mem_usage(){
 	runtime=run_time()
 	totaltime=total_time()
@@ -129,7 +171,7 @@ char* mem_usage(){
 		codetime,
 		runtime,
 		gctime*100/(codetime+gctime),
-		_gc_max/1000
+		_gcdata.gcmax/1000
 	)
 }
 char* int_kb(size_t i,char* unit=:B){
@@ -748,8 +790,8 @@ void rewrite_ptrs(mempage* old){
 				size1/=sizeof(void*)
 				for(i=0;i<size1;i++) old.rewrite_ptr((void**)&(vars[i]))
 			else if type==Cell2
-				cons* pairs=(cons*)data
-				size1/=cons.sizeof()
+				Mapcell* pairs=(Mapcell*)data
+				size1/=Mapcell.sizeof()
 				for i=0;i<size1;i++
 					old.rewrite_ptr((void**)&(pairs[i].val))
 					old.rewrite_ptr((void**)&(pairs[i].id))
@@ -763,7 +805,6 @@ void rewrite_ptrs(mempage* old){
 	memset(old->types,0,old->blocks)
 }
 int copy_page(mempage* from,mempage* to){
-	if _gc => "\nCopying mempage %d=>%d".printf(from->no,to->no)
 	for i1=0;i1<from->blocks;i1++
 		char type1=from->types[i1]
 		type1 &= (31)
@@ -952,8 +993,8 @@ map* map_dup(map* mp){
 	ret={}
 	if !mp.map_len() => return ret
 	assert(mp.ptr_type()==Map)
-	ret->pairs=fox_alloc(mp.map_size()*cons.sizeof(),Cell2)
-	memcpy(ret->pairs,mp->pairs,mp.map_size()*cons.sizeof())
+	ret->pairs=fox_alloc(mp.map_size()*Mapcell.sizeof(),Cell2)
+	memcpy(ret->pairs,mp->pairs,mp.map_size()*Mapcell.sizeof())
 	ret->len=mp->len
 	return ret
 }
@@ -1690,7 +1731,7 @@ map* dot_each(map* mp){
 				next1=incs[0].toks_c()
 				if incs["="]
 					start=incs["="].toks_c().str_trim()
-					if start.is_numeric() => start=(start.to_int()-1).to_str()
+					if start.is_numeric() => start=(start.to_int()-1).int_str()
 					else start.="-1"
 					if incs.to
 						upto=" $next1<="..incs.to.toks_c().str_trim().." &&"
@@ -2820,9 +2861,9 @@ char* callfunc_c(map* funcs){
 		str_params=v.func_ccall()
 		if(!str_params)
 			continue
-		post=''
+		post=""
 		isvoid="return "
-		isvoid2=''
+		isvoid2=""
 		ftype=v.type
 		if ftype.is_word("int long long size_t time_t char") => post=".int_var()"
 		else if ftype.is_word("double float") => post=".double_var()"
@@ -2886,19 +2927,19 @@ char* foxh(){
 	#include <sqlite3.h>
 
 	enum Types {
-		Null,Skip,Int,Double,String,Blob,Map,Vector,Index,Keys,Cell,Cell2,Tail
+		Null,Int,Double,String,Blob,Map,Vector,Index,Keys,Cell,Cell2,Tail
 	};
-	typedef struct cons {
+	typedef struct Mapcell {
 		short nextid;
 		int hkey;
 		char* id;
 		void* val;
-	} cons;
+	} Mapcell;
 	typedef struct map {
 		int len;
 		char type;
 		union {
-			struct cons* pairs;
+			struct Mapcell* pairs;
 			void** vars;
 		};
 	} map;
@@ -2922,11 +2963,9 @@ char* foxh(){
 		int blocks;
 		int free;
 		char* types;
-	//	struct mempage* next;
 		char* page;
 		map chains;
 		int abandoned;
-	//	char type;
 	} mempage;
 	struct gcdata {
 		int total_pages;
@@ -2939,20 +2978,18 @@ char* foxh(){
 		mempage* pages;
 		int gcruns;
 		int gcwaste;
+		int inalloc;
+		int gctime;
+		int gcmax;
+		struct timeval run_time;
+		struct timeval time;
+		size_t clockstart;
+		int total_time;
 	};
 	extern struct gcdata _gcdata;
-	extern struct timeval _run_time;
-	extern struct timeval _time;
 	extern map* _globals;
-	extern int _gc;
-	extern int _nogc;
-	extern int _inalloc;
-	extern size_t _clockstart;
 
 	extern int _printed;
-	extern int _total_time;
-	extern int _gc_time;
-	extern int _gc_max;
 	extern int _is_web;
 
 	extern char* skip;
@@ -3618,7 +3655,6 @@ map* cmdline_params(map* args,char* func){
 	int variadic=params.map_key(params.map_len()-1)==="..." ? params.map_len() : 0
 	named_param=''
 	args.each v,k,i
-		if v==="-nogc" => _nogc=1; continue
 		if v.str_start("-") && v.str_len()>1
 			val=''
 			if named_param
@@ -4071,7 +4107,7 @@ char* h(char* in){
 	})
 }
 char* type_name(int type){
-	char* names[]={:Free,:Skip,:Int,:Double,:String,:Blob,:Map,:Vector,:Index,:Keys,:Cell,:Cell2}
+	char* names[]={:Free,:Int,:Double,:String,:Blob,:Map,:Vector,:Index,:Keys,:Cell,:Cell2}
 	return names[type]
 }
 char* ptr_name(void* var) => return var.ptr_type().type_name()

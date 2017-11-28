@@ -1,0 +1,13 @@
+#include <fox.h>
+#include "fib.h"
+
+int main(int argc,char** argv){
+	gc_start()
+	args=argv.argv_map(argc)
+	args[1].to_int().myfib().px()
+	return 0
+}
+int myfib(int in){
+	if in < 2 => return in
+	return myfib(in-1)+myfib(in-2)
+}

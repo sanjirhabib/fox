@@ -2377,7 +2377,7 @@ expr_type/272
 	_globals->pairs
 	----.x_toks().expr_type()
 ---
-struct cons*
+struct Mapcell*
 
 
 expr_type/273

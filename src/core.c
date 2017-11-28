@@ -6,18 +6,11 @@
 #define MIN_CHAIN 1
 
 struct gcdata _gcdata={0};
-struct timeval _run_time={0};
-struct timeval _time={0};
 map* _globals=NULL;
-int _gc=0;
-int _nogc=0;
-int _inalloc=0;
 size_t _clockstart=0;
 
 int _printed=0;
 int _total_time=0;
-int _gc_time=0;
-int _gc_max=0;
 
 char* skip=NULL;
 
@@ -25,7 +18,6 @@ int rand();
 void* px(void* str,int newline);
 void xexit(int val);
 void* fox_error(char* msg,int dump);
-map* args(int argc, char** argv);
 
 int mem_total(){
 	int ret=0;
@@ -374,8 +366,11 @@ double to_double(void* v){
 		return ret; };
 	return is_double(v);
 };
-int to_int(void* v){
-	if(is_str(v)){ return stoi(v); };
+long long to_int(void* v){
+	if(is_str(v)){
+		long long ret=0;
+		sscanf(v,"%lld",&ret);
+		return ret; };
 	return is_int(v);
 };
 int next(map* mp,int idx,char** key,void** val){
@@ -425,7 +420,7 @@ int ptr_type(void* ptr){
 //	if pg->type => return pg->type
 	return pg->types[ptr_block(ptr,pg)] & 31;
 };
-int cell2_mark(cons* pairs,int size){
+int cell2_mark(Mapcell* pairs,int size){
 	for(int i=0;i<size;i++){
 		if(!is_num(pairs[i].id)){ gc_mark(pairs[i].id); };
 		gc_mark(pairs[i].val);
@@ -449,9 +444,9 @@ int gc_mark(void* ptr){
 	for(int i=0; i<len; i++){ pg->types[head+i] |= (1<<7); };
 	ptr=block_ptr(head,pg);
 	if(type==Cell){ cell_mark((void**)ptr,mem_size(ptr)/sizeof(void*)); }
-	else if(type==Cell2){ cell2_mark((cons*)ptr,mem_size(ptr)/sizeof(cons)); }
-	else if(type==Map){ gc_mark(((map*)ptr)->pairs); } //((map*)ptr)->len)
-	else if(type==Vector){ gc_mark(((map*)ptr)->vars); } //((map*)ptr)->len)
+	else if(type==Cell2){ cell2_mark((Mapcell*)ptr,mem_size(ptr)/sizeof(Mapcell)); }
+	else if(type==Map){ gc_mark(((map*)ptr)->pairs); }
+	else if(type==Vector){ gc_mark(((map*)ptr)->vars); }
 	else if(type==Index||type==Keys){ assert(0); };
 	return 1;
 };
@@ -519,7 +514,6 @@ struct mempage* new_page(int block_size,int blocks){
 	index_free_space(ret);
 	_gcdata.curr_mem+=size+blocks*sizeof(char);
 	_gcdata.max_mem=max(_gcdata.max_mem,_gcdata.curr_mem);
-	if(_gc){ printf("\nnew_page: %d#%d * %d = %d KB",ret->no,blocks,block_size,size/1024); };
 	return ret;
 };
 int comp_iptr(const void* sp1,const void* sp2){
@@ -676,7 +670,6 @@ map* root_ptrs(){
 	return &ret;
 };
 int fox_gc(){
-	if(_nogc){ return 0; };
 	int pre_usage=mem_used(0,0);
 	// commenting off setjmp() doesn't make any diff even in -O3
 	jmp_buf regs={0};
@@ -687,25 +680,21 @@ int fox_gc(){
 	_gcdata.gcruns++;
 	int percent=pre_usage ? freed*100/pre_usage : 100;
 	if(percent <=5){ _gcdata.gcwaste++; };
-	if(_gc){ printf("\nGC: %d, root_size=%d, freed=%d%% %d KB + %d KB = %d KB",_gcdata.gcruns,roots->len,freed*100/pre_usage,mem_free()/1024,mem_used(0,0)/1024,mem_total()/1024); };
 	return percent;
 };
 int gc_runs(){ return _gcdata.gcruns; };
-int gc_time(){ return _gc_time/1000; };
+int gc_time(){ return _gcdata.gctime/1000; };
 int gc_end(){
-	_globals=NULL; _gc=0; _nogc=0; _inalloc=0; _clockstart=0;
+	_globals=NULL; _clockstart=0;
 	mempage* pg=_gcdata.pages;
 	each_mem(pg,i){
 		free(pg->page);
 	};
 	free(_gcdata.pages);
 	memset(&_gcdata,0,sizeof(_gcdata));
-	memset(&_run_time,0,sizeof(_run_time));
-	memset(&_time,0,sizeof(_time));
 	return 0;
 };
 mempage* free_page(mempage* pg){
-	if(_gc){ printf("\nfree_page: %d# %d blocks * %d = %d KB",pg->no,pg->blocks,pg->block_size,pg->block_size*pg->blocks/1024); };
 	int idx=pg->idx;
 	free(pg->page);
 	_gcdata.pages=data_delete(_gcdata.pages,pg->idx,sizeof(mempage),_gcdata.total_pages);
@@ -781,17 +770,17 @@ void* fox_realloc(void* ptr,size_t size,int type){
 };
 void* fox_alloc(size_t size,int type){
 	if(!_gcdata.stack_head){ printf("GC not started!!!"); exit(-1); };
-	if(_inalloc){ printf("fox_error!!! Recursive fox_alloc() call"); exit(-1); };
-	_inalloc=1;
+	if(_gcdata.inalloc){ printf("fox_error!!! Recursive fox_alloc() call"); exit(-1); };
+	_gcdata.inalloc=1;
 	assert(size<MAXMEM);
 	struct timeval gc_start=microtime();
 	void* ret=_xalloc(size,type);
 	if(!ret){ printf("%ld byte allocation failed.",size); exit(-1); };
-	int _time=elapsed(gc_start);
-	_gc_time+=_time;
-	_gc_max=max(_gc_max,_time);
+	int time=elapsed(gc_start);
+	_gcdata.gctime+=time;
+	_gcdata.gcmax=max(_gcdata.gcmax,time);
 	assert(!((char*)ret)[size-1]);
-	_inalloc=0;
+	_gcdata.inalloc=0;
 	return ret;
 };
 void* new_alloc(size_t size,int type){
@@ -819,12 +808,12 @@ int block_size(int size){
 	if(size <= 256*256){ return 256*16; };
 	return 0;
 };
-void start_time(){ _time=microtime(); };
-void end_time(){ _total_time+=elapsed(_time); };
-int run_time(){ return elapsed(_run_time)/1000; };
+void start_time(){ _gcdata.time=microtime(); };
+void end_time(){ _total_time+=elapsed(_gcdata.time); };
+int run_time(){ return elapsed(_gcdata.run_time)/1000; };
 int total_time(){ return _total_time/1000; };
 void time_max(){
-	int curr=elapsed(_time);
+	int curr=elapsed(_gcdata.time);
 	_total_time=max(_total_time,curr);
 };
 struct timeval microtime(){
@@ -869,8 +858,8 @@ map* map_add(map* mp,char* key,void* v){
 	};
 	int reindex=0;
 	if(mp->len>=map_size(mp)){
-		mp->pairs=map_size(mp) ? fox_realloc((char*)mp->pairs,2*map_size(mp)*sizeof(cons),Cell2)
-			: fox_alloc(2*sizeof(cons),Cell2);
+		mp->pairs=map_size(mp) ? fox_realloc((char*)mp->pairs,2*map_size(mp)*sizeof(Mapcell),Cell2)
+			: fox_alloc(2*sizeof(Mapcell),Cell2);
 		reindex=1;
 	};
 	mp->pairs[mp->len].val=v;
@@ -921,7 +910,7 @@ map* ptrs_vec(void** ptrs,int len){
 };
 int init_gc(void** sp){
 	_clockstart=clock_cycles();
-	_run_time=microtime();
+	_gcdata.run_time=microtime();
 	_gcdata.stack_head=sp;
 	*sp=_globals=new_map();
 	signal(SIGSEGV,fox_signal_handler);
@@ -956,10 +945,16 @@ int block_head(int no,mempage* pg){
 	while(pg->types[no] & (1<<6)){ assert(no>0); no--; };
 	return no;
 };
-void init_rand(){ srand(time(NULL)*2817635252+_run_time.tv_usec); };
+void init_rand(){ srand(time(NULL)*2817635252+_gcdata.run_time.tv_usec); };
 void* map_val(map* mp,char* key){
 	if(!mp||!key){ return NULL; };
 	assert(ptr_type(mp)==Map);
 	int i=map_has_key(mp,key);
 	return i ? mp->pairs[i-1].val : NULL;
+};
+map* argv_map(char** argv,int argc){
+	map* ret=new_vec();
+	ret->len=argc;
+	ret->vars=(void**)argv;
+	return ret;
 };

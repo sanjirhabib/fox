@@ -1,6 +1,6 @@
 CC=gcc
 INSTALL_DIR?=/usr/local
-CFLAGS=-Iinclude -std=gnu99 -Wno-logical-op-parentheses -Os
+CFLAGS=-Iinclude -std=gnu99 -Wno-logical-op-parentheses -Os -Wno-int-conversion
 FOXS=fox.fox core.fox http.fox cmd.fox main.fox
 LIBS=-lm -lfox -lsqlite3
 HEADERS=fox.h http.h regexp.h sql.h

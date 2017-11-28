@@ -51,14 +51,17 @@ int make(map* files,char* outdir){
 	for(int next1=next(files,-1,NULL,NULL); has_id(files,next1); next1++){ void* v1=map_id(files,next1); if(file_time(v1)>file_time(".version.txt")){ req=1; break; }; };
 	return req ? compile(files,outdir,"fox","",0,0) : 0;
 };
-int foxc(char* file){
+int cc(char* file){
 	char* optimize="-g -Os";
+	file=file_rename(file,NULL,".fox",NULL,NULL,NULL);
 	char* in=xstr(file,".fox", End);
 	fox_c(in,xstr(file,".c", End));
 	fox_h(in,xstr(file,".h", End),0);
 	int ret=exec(
 		px(
 		xstr("gcc ", optimize, " ", file, ".c -o ", file, " -std=gnu99 -Wno-logical-op-parentheses -lm -lfox 2>&1", End),1),NULL);
+	remove((xstr(file,".c", End)));	
+	remove((xstr(file,".h", End)));	
 	return ret;
 };
 int compile(map* files,char* outdir,char* outfile,char* options,int release,int exe){
@@ -112,6 +115,45 @@ map* build(map* files,char* outdir){
 	px(mem_usage(),1);
 	return ret;
 };
+char* write_configm4(char* name, char* outfile){
+	char* NAME=str_upper(str_dup(name));
+	return write_file(xstr("", 
+	"PHP_ARG_WITH(", name, ", for ", name, " support,\n", 
+	"Make sure that the comment is aligned:\n", 
+	"[  --with-", name, "             Include ", name, " support])\n", 
+	"if test \"$PHP_", NAME, "\" != \"no\"; then\n", 
+	"\n", 
+	NAME, "_DIR=\"/usr/local\"\n", 
+	"\n", 
+	"if test -z \"", xstr("$",NAME, End), "_DIR\"; then\n", 
+	"  AC_MSG_RESULT([not found])\n", 
+	"  AC_MSG_ERROR([Please reinstall the ", name, " distribution])\n", 
+	"fi\n", 
+	"\n", 
+	"# --with-", name, " -> add include path\n", 
+	"PHP_ADD_INCLUDE(", xstr("$",NAME, End), "_DIR/include)\n", 
+	"\n", 
+	"# --with-", name, " -> check for lib and symbol presence\n", 
+	"LIBNAME=fox # you may want to change this\n", 
+	"LIBSYMBOL=init_gc # you most likely want to change this \n", 
+	"\n", 
+	"PHP_CHECK_LIBRARY($LIBNAME,$LIBSYMBOL,\n", 
+	"[\n", 
+	"  PHP_ADD_LIBRARY_WITH_PATH($LIBNAME, ", xstr("$",NAME, End), "_DIR/lib, ", NAME, "_SHARED_LIBADD)\n", 
+	"  AC_DEFINE(HAVE_", NAME, "LIB,1,[ ])\n", 
+	"],[\n", 
+	"  AC_MSG_ERROR([wrong fox lib version or lib not found])\n", 
+	"],[\n", 
+	"  -L", xstr("$",NAME, End), "_DIR/$PHP_LIBDIR -lm\n", 
+	"])\n", 
+	"\n", 
+	"PHP_SUBST(", NAME, "_SHARED_LIBADD)\n", 
+	"\n", 
+	"  PHP_NEW_EXTENSION(", name, ", ", name, ".c ", name, "php.c, $ext_shared,, -DZEND_ENABLE_STATIC_TSRMLS_CACHE=1)\n", 
+	"fi\n", 
+	"", 
+	"", End),outfile,0);
+};
 char* mem_usage(){
 	int runtime=run_time();
 	int totaltime=total_time();
@@ -129,7 +171,7 @@ char* mem_usage(){
 		codetime,
 		runtime,
 		gctime*100/(codetime+gctime),
-		_gc_max/1000
+		_gcdata.gcmax/1000
 	, End);
 };
 char* int_kb(size_t i,char* unit){
@@ -748,8 +790,8 @@ void rewrite_ptrs(mempage* old){
 				size1/=sizeof(void*);
 				for(i=0;i<size1;i++) {rewrite_ptr(old,(void**)&(vars[i]));};
 			}else if(type==Cell2){
-				cons* pairs=(cons*)data;
-				size1/=sizeof(cons);
+				Mapcell* pairs=(Mapcell*)data;
+				size1/=sizeof(Mapcell);
 				for(i=0;i<size1;i++){
 					rewrite_ptr(old,(void**)&(pairs[i].val));
 					rewrite_ptr(old,(void**)&(pairs[i].id)); }; };
@@ -763,7 +805,6 @@ void rewrite_ptrs(mempage* old){
 	memset(old->types,0,old->blocks);
 };
 int copy_page(mempage* from,mempage* to){
-	if(_gc){ printf("\nCopying mempage %d=>%d",from->no,to->no); };
 	for(int i1=0;i1<from->blocks;i1++){
 		char type1=from->types[i1];
 		type1 &= (31);
@@ -952,8 +993,8 @@ map* map_dup(map* mp){
 	map* ret=new_map();
 	if(!map_len(mp)){ return ret; };
 	assert(ptr_type(mp)==Map);
-	ret->pairs=fox_alloc(map_size(mp)*sizeof(cons),Cell2);
-	memcpy(ret->pairs,mp->pairs,map_size(mp)*sizeof(cons));
+	ret->pairs=fox_alloc(map_size(mp)*sizeof(Mapcell),Cell2);
+	memcpy(ret->pairs,mp->pairs,map_size(mp)*sizeof(Mapcell));
 	ret->len=mp->len;
 	return ret;
 };
@@ -1690,7 +1731,7 @@ map* dot_each(map* mp){
 				next1=toks_c(map_id(incs,0));
 				if(map_val(incs,"=")){
 					start=str_trim(toks_c(map_val(incs,"="))," \t\n\r");
-					if(is_numeric(start)){ start=to_str(int_var((to_int(start)-1)),"",0); }
+					if(is_numeric(start)){ start=int_str((to_int(start)-1)); }
 					else {start=xcat(start,"-1", End);};
 					if(map_val(incs,"to")){
 						upto=xstr(xstr(" ", next1, "<=", End),str_trim(toks_c(map_val(incs,"to"))," \t\n\r")," &&", End); };
@@ -2820,9 +2861,9 @@ char* callfunc_c(map* funcs){
 		char* str_params=func_ccall(v);
 		if(!str_params){
 			continue; };
-		char* post=NULL;
+		char* post="";
 		char* isvoid="return ";
-		char* isvoid2=NULL;
+		char* isvoid2="";
 		void* ftype=map_val(v,"type");
 		if(is_word(ftype,"int long long size_t time_t char")){ post=".int_var()"; }
 		else if(is_word(ftype,"double float")){ post=".double_var()"; }
@@ -2886,19 +2927,19 @@ char* foxh(){
 	"#include <sqlite3.h>\n"
 	"\n"
 	"enum Types {\n"
-	"	Null,Skip,Int,Double,String,Blob,Map,Vector,Index,Keys,Cell,Cell2,Tail\n"
+	"	Null,Int,Double,String,Blob,Map,Vector,Index,Keys,Cell,Cell2,Tail\n"
 	"};\n"
-	"typedef struct cons {\n"
+	"typedef struct Mapcell {\n"
 	"	short nextid;\n"
 	"	int hkey;\n"
 	"	char* id;\n"
 	"	void* val;\n"
-	"} cons;\n"
+	"} Mapcell;\n"
 	"typedef struct map {\n"
 	"	int len;\n"
 	"	char type;\n"
 	"	union {\n"
-	"		struct cons* pairs;\n"
+	"		struct Mapcell* pairs;\n"
 	"		void** vars;\n"
 	"	};\n"
 	"} map;\n"
@@ -2922,11 +2963,9 @@ char* foxh(){
 	"	int blocks;\n"
 	"	int free;\n"
 	"	char* types;\n"
-	"//	struct mempage* next;\n"
 	"	char* page;\n"
 	"	map chains;\n"
 	"	int abandoned;\n"
-	"//	char type;\n"
 	"} mempage;\n"
 	"struct gcdata {\n"
 	"	int total_pages;\n"
@@ -2939,20 +2978,18 @@ char* foxh(){
 	"	mempage* pages;\n"
 	"	int gcruns;\n"
 	"	int gcwaste;\n"
+	"	int inalloc;\n"
+	"	int gctime;\n"
+	"	int gcmax;\n"
+	"	struct timeval run_time;\n"
+	"	struct timeval time;\n"
+	"	size_t clockstart;\n"
+	"	int total_time;\n"
 	"};\n"
 	"extern struct gcdata _gcdata;\n"
-	"extern struct timeval _run_time;\n"
-	"extern struct timeval _time;\n"
 	"extern map* _globals;\n"
-	"extern int _gc;\n"
-	"extern int _nogc;\n"
-	"extern int _inalloc;\n"
-	"extern size_t _clockstart;\n"
 	"\n"
 	"extern int _printed;\n"
-	"extern int _total_time;\n"
-	"extern int _gc_time;\n"
-	"extern int _gc_max;\n"
 	"extern int _is_web;\n"
 	"\n"
 	"extern char* skip;\n"
@@ -3618,7 +3655,6 @@ map* cmdline_params(map* args,char* func){
 	int variadic=str_eq(map_key(params,map_len(params)-1),"...") ? map_len(params) : 0;
 	char* named_param=NULL;
 	for(int i=next(args,-1,NULL,NULL); has_id(args,i); i++){ void* v=map_id(args,i); char* k=map_key(args, i);
-		if(str_eq(v,"-nogc")){ _nogc=1; continue; };
 		if(str_start(v,"-") && str_len(v)>1){
 			char* val=NULL;
 			if(named_param){
@@ -4071,7 +4107,7 @@ char* h(char* in){
 	, End),NULL);
 };
 char* type_name(int type){
-	char* names[]={"Free","Skip","Int","Double","String","Blob","Map","Vector","Index","Keys","Cell","Cell2"};
+	char* names[]={"Free","Int","Double","String","Blob","Map","Vector","Index","Keys","Cell","Cell2"};
 	return names[type];
 };
 char* ptr_name(void* var){ return type_name(ptr_type(var)); };

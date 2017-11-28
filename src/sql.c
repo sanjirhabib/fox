@@ -702,7 +702,7 @@ int type_size(char* type){
 	"",type));
 };
 char* lite_create_col(map* col){
-	int size=to_int(map_val(col,"size"));
+	long long size=to_int(map_val(col,"size"));
 	if(!size){ size=type_size(map_val(col,"type")); };
 	char* type=maptype(""
 	"	text=varchar\n"
@@ -717,7 +717,7 @@ char* lite_create_col(map* col){
 	"	month=varchar"
 	"",map_val(col,"type"));
 	void* name=map_val(col,"name");
-	if(str_eq(type,"varchar")){ return xstr(name, " varchar(",int_str( size), ") collate nocase not null default ''", End); };
+	if(str_eq(type,"varchar")){ return xstr(name, " varchar(", size, ") collate nocase not null default ''", End); };
 	if(str_eq(type,"number")){ return xstr(name, " integer not null default 0", End); };
 	if(str_eq(type,"float")){ return xstr(name, " real not null default 0", End); };
 	if(str_eq(type,"clob")){ return xstr(name, " clob not null default ''", End); };
@@ -1203,7 +1203,7 @@ char* str_show(char* value,char* type,map* op,int width){
 	if(str_eq(type,"password")){ return "****"; };
 	if(str_eq(type,"email")){ return xstr("<a href='mailto:",str_html(value),"'>",str_html(value),"</a>", End); };
 	if(str_eq(type,"guid")){ return str_html("<ID>"); };
-	if(str_eq(type,"mins")){ int n=to_int(value); return mstr("%d:%02d",n/60,n%60, End); };
+	if(str_eq(type,"mins")){ long long n=to_int(value); return mstr("%d:%02d",n/60,n%60, End); };
 	if(str_eq(type,"duration")){ return "Duration/Pending"; };
 	if(str_eq(type,"date")){ return date_show(value); };
 	if(str_eq(type,"quarter")){ return "Pending-Qurter"; };
@@ -1708,16 +1708,16 @@ char* date_show(char* in){
 		return xstr(month_name(to_int(map_id(vals,1))), "-", map_id(vals,0), End); };
 	if(len==10){
 		map* vals=str_split(in,"-",0);
-		return xstr(to_str(int_var(to_int(map_id(vals,2))),"",0), "/", to_str(int_var(to_int(map_id(vals,1))),"",0), "/", map_id(vals,0), End); };
+		return xstr(int_str(to_int(map_id(vals,2))), "/", int_str(to_int(map_id(vals,1))), "/", map_id(vals,0), End); };
 	if(len==19){
 		map* vals=str_split(in," ",0);
 		return xstr(date_show(map_id(vals,0)), " ", date_show(map_id(vals,1)), End); };
 	if(len==5 || len==8){
 		map* vals=str_split(in,":",0);
-		int h=to_int(map_id(vals,0));
+		long long h=to_int(map_id(vals,0));
 		if(!h){ h=12; }
 		else if(h>12){ h-=12; };
-		return xstr(int_str(h), ":", map_id(vals,1), " ", to_int(map_id(vals,0))>=12 ? "pm" : "am", End); };
+		return xstr(h, ":", map_id(vals,1), " ", to_int(map_id(vals,0))>=12 ? "pm" : "am", End); };
 	return in;
 };
 void* crud(char* sql,char* db,map* cols,char* crud,int limit,void* link,char* rest,char* table){
@@ -1793,16 +1793,16 @@ int cmp_ptr(const void* ptr1,const void* ptr2){
 };
 int cmp_cons_reverse(const void* ptr1, const void* ptr2){ return cmp_cons(ptr2,ptr1); };
 int cmp_cons(const void* ptr1, const void* ptr2){
-	return cmp_ptr(((cons*)ptr1)->val,((cons*)ptr2)->val);
+	return cmp_ptr(((Mapcell*)ptr1)->val,((Mapcell*)ptr2)->val);
 };
 map* map_sort(map* mp,int reverse){
 	if(!mp){ return mp; };
 	if(reverse){
 		if(is_vec(mp)){ qsort(mp,mp->len,sizeof(void*),cmp_ptr_reverse); return mp; };
-		qsort(mp->pairs,mp->len,sizeof(cons),cmp_cons_reverse);	
+		qsort(mp->pairs,mp->len,sizeof(Mapcell),cmp_cons_reverse);	
 	}else{
 		if(is_vec(mp)){ qsort(mp,mp->len,sizeof(void*),cmp_ptr); return mp; };
-		qsort(mp->pairs,mp->len,sizeof(cons),cmp_cons); };	
+		qsort(mp->pairs,mp->len,sizeof(Mapcell),cmp_cons); };	
 	map_reindex(mp);
 	return mp;
 };

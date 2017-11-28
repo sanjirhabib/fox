@@ -10,6 +10,6 @@ func fib(n uint) uint {
 	}
 }
 func main() {
-	n := uint(32)
+	n := uint(42)
 	fmt.Println(fib(n))
 }
