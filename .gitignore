@@ -11,3 +11,5 @@ fox
 speed/fib.dSYM
 test
 test.*
+**/*.dSYM
+www/cgi
