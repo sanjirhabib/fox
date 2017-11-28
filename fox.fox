@@ -97,11 +97,11 @@ char* file_rename(char* file,char* dir=NULL,char* delext=NULL,char* addext=NULL,
 	ret=file
 	if olddir => ret=ret.sub_str(olddir.str_len())
 	if delext && ret.str_end(delext) => ret=ret.sub_str(0,-delext.str_len())
-	if prefix => ret=xstr(prefix,ret)
+	if prefix => ret=prefix..ret
 	if postfix => ret.=postfix
 	if addext => ret.=addext
 	if dir => olddir=dir
-	return xstr(olddir.sane_dir(),ret)
+	return olddir.sane_dir()..ret
 }
 char* sane_dir(char* dir) => return dir ? dir.rtrim("/").."/" : NULL
 map* build(map* files=source_files(),char* outdir="c"){
@@ -2541,117 +2541,6 @@ map* param_c(map* params,map* env,map* fs,map* fn){
 			cparam[]=p.default.x_toks()[1].vec_del(-2,0).vec_compact() //x_map().colon_str().dot_key().str_dollars()
 		else cparam[]=xparam[i].type_convert(p.type,env,fs,fn)
 	ret=cparam.toks_join(",")
-	return ret
-}
-char* file_ast(char* in){
-	toks=in.fox_read_file().x_toks()
-	toks.toks_c().write_file("good.txt")
-	ret=toks.block_ast().dx()
-	ret.ast_c().write_file("bad.txt")
-	return ret
-}
-char* ast_c(map* ast){
-	if !ast => return NULL
-	if ast.is_str() => return (char*)ast
-	if ast.is_vec()
-		ret=''
-		ast.each v,,i
-			ret.=v.ast_c()
-//		if ret.str_len() && ast[0].tag==="," => ret=ret.sub_str(0,ret.str_len()-ast[0].tag.str_len())
-		return ret
-	if ast.tag.is_word("TNumber TString TName TChar")
-		return xstr(ast.left.ast_c(), ast.space, ast.right, ast.tail_space)
-	else if ast.tag===:TCall
-		return xstr(ast.left, ast.space, "(", ast.left_space, ast.right.ast_c(), ast.right_space, ")", ast.tail_space)
-	else if ast.tag.is_word("( [ {")
-		return xstr(ast.left.ast_c(), ast.space[0], ast.tag, ast.space[1], ast.right.ast_c(), ast.space[2], ast.tag.fox_at(0).closing_paren().char_str(), ast.tail_space)
-	else if ast.tag===:if
-		ret=xstr(ast.space[0], :if, ast.space[1], "(", ast.space[2], ast.left[0].ast_c(), ast.space[3], ")", ast.space[4], "{", ast.space[5], ast.right[0].ast_c(), ast.space[6], "}")
-		ast.left.each v,,i
-			ret.=xstr(ast.space[0], :if, ast.space[1], "(", ast.space[2], ast.left[0].ast_c(), ast.space[3], ")", ast.space[4], "{", ast.space[5], ast.right[0].ast_c(), ast.space[6], "}")
-	else if ast.tag.is_word("if while for switch")
-		return xstr(ast.space[0], ast.tag, ast.space[1], "(", ast.space[2], ast.left.ast_c(), ast.space[3], ")", ast.space[4], "{", ast.space[5], ast.right.ast_c(), ast.space[6], "}")
-	else if ast.tag===";" && (!ast.left || ast.left.tag===:TSpace)
-		return ast.left.space
-	return xstr(ast.left.ast_c(), ast.space, ast.tag, ast.right.ast_c(), ast.tail_space)
-}
-map* block_ast(map* toks,char* seperator=";"){
-	ret=[]
-	for int idx=0; idx<toks->len; idx+=2
-		if toks[idx+1].is_map()
-			ret.vec_merge(toks[idx+1].block_ast(seperator))
-			continue
-		temp=toks.toks_ast(&idx,seperator)
-		ret[]={tag: seperator, left: temp}
-		if toks[idx] => ret[ret.map_len()-1].space=toks[idx]
-	return ret
-}
-map* toks_ast(map* toks,int* idx=NULL,char* upto=";"){
-	int idx2=0
-	if !idx => idx=&idx2
-	operators="++ -- -> . ~ ! * / % + - << >> < <= > >= == === .= .. !== != & ^ @ # $ | && || ? : = += -= *= /= %= <<= >>= &= ^= |= \\ => ** *** **** ^^ ... , ] ) } ;"
-	map* ret=NULL
-	int upto_no=upto.is_word(operators)
-	while *idx < toks->len
-		space=toks[*idx].is_str()
-		v=toks[*idx+1].is_str()
-		assert(!v || v.is_str())
-		if !v
-			if space
-				if ret => ret.tail_space=space
-				else ret={tag: :TSpace, space: space}
-		else if v.is_numeric()
-			ret={tag: :TNumber, right: v, left: ret}
-		else if v===:if
-		// if:1 (:3 __:5 ):7 {:9 __:11 }:13
-		// else:15 if:17 (:19 __:21 ):23 {:25 __:27 }:29
-		// else:31 if:33 (:35 __:37 ):39 {:41 __:43 }:45
-		// else:47 {:49 __:51 }:53
-			ret={tag: :if, left: [toks[*idx+5].toks_ast()], right: [toks[*idx+11].block_ast(";")]}
-			for int i2=0; i2<14; i2+=2 => ret.space[]=toks[*idx+i2]
-			*idx+=12
-			while toks[*idx+3]===:else
-				*idx+=4
-				if toks[*idx+1]===:if
-					ret.left[]=toks[*idx+5].toks_ast()
-					ret.right[]=toks[*idx+11].block_ast(";")
-					*idx+=12
-				else
-					ret.right[]=toks[*idx+3].block_ast(";")
-					*idx+=6
-		else if v.is_word("while for switch")
-		// do:1 {:3 __:5 }:7 while:9 (:11 __:13 ):15
-		// if:1 (:3 __:5 ):7 {:9 __:11 }:13
-		// else:15 if:17 (:19 __:21 ):23 {:25 __:27 }:29
-		// else:31 if:33 (:35 __:37 ):39 {:41 __:43 }:45
-		// else:47 {:49 __:51 }:53
-			ret={tag: v, left: toks[*idx+5].toks_ast(), right: toks[*idx+11].block_ast(";")}
-			for int i2=0; i2<14; i2+=2 => ret.space[]=toks[*idx+i2]
-			*idx+=12
-		else if v.is_code()
-			ret={tag: :TName, right: v, left: ret}
-		else if v.is_word("[ ( {")
-			if v==="{"
-				ret={tag: v, left: ret, right: toks[*idx+3].block_ast(";")}
-			else if v==="("
-				ret={tag: v, left: ret, right: toks[*idx+3].toks_ast()}
-			else if v==="["
-				ret={tag: v, left: ret, right: toks[*idx+3].block_ast(NULL)}
-			for int i2=0; i2<6; i2+=2 => ret.space[]=toks[*idx+i2]
-			*idx+=4
-		else if *v=='"'
-			ret={tag: :TString, left: ret, right: v}
-		else if *v=='\''
-			ret={tag: :TChar, left: ret, right: v}
-		else if upto_no && v.is_word(operators)>=upto_no
-			return ret
-		else if v.is_word(operators)
-			*idx+=2
-			ret={tag: v, left: ret, right: toks.toks_ast(idx,v)}
-			*idx-=2
-		else "fox_error $v".fox_error()
-		if !ret.space && space => ret.space=space
-		*idx+=2
 	return ret
 }
 map* syn_expand_macro(map* syn,int idx){

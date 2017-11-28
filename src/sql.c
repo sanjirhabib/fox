@@ -1867,7 +1867,7 @@ map* sync_sqls(map* newt,map* oldt){
 	map* ret=new_vec();
 	vec_add(ret,drop_sql("_syncing"));
 	vec_add(ret,create_sql(newt,"_syncing"));
-	vec_add(ret,xstr("insert into _syncing (",map_join(map_keys(match),", "),") select ",map_join(match,", ")," from ",map_val(oldt,"name"), End));
+	vec_add(ret,xstr("insert into _syncing (",map_join(map_keys(match),".. "),") select ",map_join(match,".. ")," from ",map_val(oldt,"name"), End));
 	vec_add(ret,drop_sql(map_val(oldt,"name")));
 	vec_add(ret,rename_sql("_syncing",map_val(newt,"name")));
 	return ret;	

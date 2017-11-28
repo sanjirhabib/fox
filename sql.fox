@@ -1435,14 +1435,14 @@ map* cols_list(map* cols,char* crud=NULL,int max=12){
 		if aligns.maptype(v.type)===:right
 			ret[k].css[:text\-align]=:right
 		if v.link
-			ret[k].html=xstr("<a href='",v.link,"'>",ret[k].html,"</a>")
+			ret[k].html="<a href='"..v.link.."'>"..ret[k].html.."</a>"
 	if crud
 		actions={}
 		if crud===:crud => crud="add edit delete"
 		if :edit.is_word(crud)
-			actions.Edit=xstr("edit/?id=#{row.",cols.cols_pkeys().map_join("}-#{row."),"}")
+			actions.Edit="edit/?id=#{row."..cols.cols_pkeys().map_join("}-#{row.").."}"
 		if :delete.is_word(crud)
-			actions.Delete=xstr("delete/?id=#{row.",cols.cols_pkeys().map_join("}-#{row."),"}")
+			actions.Delete="delete/?id=#{row."..cols.cols_pkeys().map_join("}-#{row.").."}"
 		ret.action={title::Actions, html: actions.render_template("button-dropdown")}
 
 	return ret
@@ -1706,7 +1706,7 @@ char* date_show(char* in){
 	if len==4 => return in
 	if len==7
 		vals=in.str_split("-")
-		return xstr(vals[1].to_int().month_name(), "-", vals[0])
+		return vals[1].to_int().month_name().. "-".. vals[0]
 	if len==10
 		vals=in.str_split("-")
 		return "$(vals[2].to_int().int_str())/$(vals[1].to_int().int_str())/$(vals[0])"
@@ -1867,7 +1867,7 @@ map* sync_sqls(map* newt,map* oldt){
 	ret=[]
 	ret[]=:_syncing.drop_sql()
 	ret[]=newt.create_sql(:_syncing)
-	ret[]=xstr("insert into _syncing (",match.map_keys().map_join(", "),") select ",match.map_join(", ")," from ",oldt.name)
+	ret[]="insert into _syncing ("..match.map_keys().map_join(".. ")..") select "..match.map_join(".. ").." from "..oldt.name
 	ret[]=oldt.name.drop_sql()
 	ret[]=:_syncing.rename_sql(newt.name)
 	return ret	
