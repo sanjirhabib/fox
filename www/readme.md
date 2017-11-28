@@ -34,7 +34,7 @@ main(){
 ```
 Compile it
 ```
-fox cgi index.cgi
+fox cgi index.fox
 ```
 Will create a file called ./cgi in the folder.
 Check if you can run it from browser.
