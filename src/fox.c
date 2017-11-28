@@ -3703,6 +3703,7 @@ int test_add(int a,int b){ return a+b; };
 map* test_map(map* out){ return out; };
 
 int run_cmdline(map* args){
+	add(add_key(_globals,"cache",Map),"reflect",reflect());
 	if(args->len==1){
 		px(version(),1);
 		px(""

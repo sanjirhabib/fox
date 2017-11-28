@@ -1,5 +1,11 @@
+#include <fox.h>
+#include "fib.h"
+
+main(){
+	gc_start()
+	42.fib().px()
+}
 int fib(int num){
 	if num < 2 => return num
 	return fib(num-2)+fib(num-1)
 }
-32.fib().px()

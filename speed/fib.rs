@@ -1,5 +1,5 @@
 fn main() {
-	print!("{} ", fib(40));
+	print!("{} ", fib(42));
 }
 fn fib(number: u32) -> u32 {
 	if number == 0 {

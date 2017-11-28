@@ -3703,6 +3703,7 @@ int test_add(int a,int b) => return a+b
 map* test_map(map* out) => return out
 
 int run_cmdline(map* args){
+	_globals.cache.reflect=reflect()
 	if args->len==1
 		version().px();
 		---
