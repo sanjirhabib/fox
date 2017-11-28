@@ -2,11 +2,25 @@
 
 int main(int argc,char** argv){
 	gc_start()
-	"hello, world".px()
-	[:hello, :world].px()
-	data={name: :Habib, age: 23}.px()
-	data.name=:Ibrahim
-	data.px()
-	[:hi,:there].each v => v.px()
+
+	name=:Habib
+	msg="hello, $name!"
+	msg.px()
+
+	myvector=[:hello, :world]
+	myvector.px()
+
+	mymap={name: :Habib, age: 23}.px()
+	mymap.name=:Ibrahim
+	mymap.px()
+
+	---
+	Drawing a box, $name!
+	|---------|
+	|         |
+	|         |
+	|---------|
+	---.px()
+
 	return 0
 }

@@ -51,7 +51,7 @@ int make(map* files,char* outdir){
 	for(int next1=next(files,-1,NULL,NULL); has_id(files,next1); next1++){ void* v1=map_id(files,next1); if(file_time(v1)>file_time(".version.txt")){ req=1; break; }; };
 	return req ? compile(files,outdir,"fox","",0,0) : 0;
 };
-int cc(char* file){
+int cc(char* file,int keepfiles){
 	char* optimize="-g -Os";
 	file=file_rename(file,NULL,".fox",NULL,NULL,NULL);
 	char* in=xstr(file,".fox", End);
@@ -60,8 +60,9 @@ int cc(char* file){
 	int ret=exec(
 		px(
 		xstr("gcc ", optimize, " ", file, ".c -o ", file, " -std=gnu99 -Wno-logical-op-parentheses -lm -lfox 2>&1", End),1),NULL);
-	remove((xstr(file,".c", End)));	
-	remove((xstr(file,".h", End)));	
+	if(!keepfiles){
+		remove((xstr(file,".c", End)));	
+		remove((xstr(file,".h", End))); };	
 	return ret;
 };
 int compile(map* files,char* outdir,char* outfile,char* options,int release,int exe){
@@ -3767,11 +3768,26 @@ char* tutorial(){
 	"\n"
 	"int main(int argc,char** argv){\n"
 	"	gc_start()\n"
-	"	\"hello, world\".px()\n"
-	"	[:hello, :world].px()\n"
-	"	data={name: :Habib, age: 23}.px()\n"
-	"	data.name=:Ibrahim\n"
-	"	data.px()\n"
+	"\n"
+	"	name=:Habib\n"
+	"	msg=\"hello, $name!\"\n"
+	"	msg.px()\n"
+	"\n"
+	"	myvector=[:hello, :world]\n"
+	"	myvector.px()\n"
+	"\n"
+	"	mymap={name: :Habib, age: 23}.px()\n"
+	"	mymap.name=:Ibrahim\n"
+	"	mymap.px()\n"
+	"\n"
+	"	---\n"
+	"	Drawing a box, $name!\n"
+	"	|---------|\n"
+	"	|         |\n"
+	"	|         |\n"
+	"	|---------|\n"
+	"	---.px()\n"
+	"\n"
 	"	return 0\n"
 	"}\n"
 	"```\n"
@@ -3781,11 +3797,26 @@ char* tutorial(){
 	"\n"
 	"int main(int argc,char** argv){\n"
 	"	gc_start();\n"
-	"	px(\"hello, world\",1);\n"
-	"	px(xvec(\"hello\", \"world\", End),1);\n"
-	"	void* data=px(xmap(\"name\", \"Habib\", \"age\",int_var( 23), End),1);\n"
-	"	add(data,\"name\",\"Ibrahim\");\n"
-	"	px(data,1);\n"
+	"\n"
+	"	char* name=\"Habib\";\n"
+	"	char* msg=xstr(\"hello, \", name, \"!\", End);\n"
+	"	px(msg,1);\n"
+	"\n"
+	"	map* myvector=xvec(\"hello\", \"world\", End);\n"
+	"	px(myvector,1);\n"
+	"\n"
+	"	void* mymap=px(xmap(\"name\", \"Habib\", \"age\",int_var( 23), End),1);\n"
+	"	add(mymap,\"name\",\"Ibrahim\");\n"
+	"	px(mymap,1);\n"
+	"\n"
+	"	px(xstr(\"\", \n"
+	"	\"Drawing a box, \", name, \"!\\n\", \n"
+	"	\"|---------|\\n\", \n"
+	"	\"|         |\\n\", \n"
+	"	\"|         |\\n\", \n"
+	"	\"|---------|\", \n"
+	"	\"\", End),1);\n"
+	"\n"
 	"	return 0;\n"
 	"};\n"
 	"```\n"

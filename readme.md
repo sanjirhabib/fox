@@ -9,11 +9,26 @@ Source in Fox:
 
 int main(int argc,char** argv){
 	gc_start()
-	"hello, world".px()
-	[:hello, :world].px()
-	data={name: :Habib, age: 23}.px()
-	data.name=:Ibrahim
-	data.px()
+
+	name=:Habib
+	msg="hello, $name!"
+	msg.px()
+
+	myvector=[:hello, :world]
+	myvector.px()
+
+	mymap={name: :Habib, age: 23}.px()
+	mymap.name=:Ibrahim
+	mymap.px()
+
+	---
+	Drawing a box, $name!
+	|---------|
+	|         |
+	|         |
+	|---------|
+	---.px()
+
 	return 0
 }
 ```
@@ -23,11 +38,26 @@ Generated C code:
 
 int main(int argc,char** argv){
 	gc_start();
-	px("hello, world",1);
-	px(xvec("hello", "world", End),1);
-	void* data=px(xmap("name", "Habib", "age",int_var( 23), End),1);
-	add(data,"name","Ibrahim");
-	px(data,1);
+
+	char* name="Habib";
+	char* msg=xstr("hello, ", name, "!", End);
+	px(msg,1);
+
+	map* myvector=xvec("hello", "world", End);
+	px(myvector,1);
+
+	void* mymap=px(xmap("name", "Habib", "age",int_var( 23), End),1);
+	add(mymap,"name","Ibrahim");
+	px(mymap,1);
+
+	px(xstr("", 
+	"Drawing a box, ", name, "!\n", 
+	"|---------|\n", 
+	"|         |\n", 
+	"|         |\n", 
+	"|---------|", 
+	"", End),1);
+
 	return 0;
 };
 ```

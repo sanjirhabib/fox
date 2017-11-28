@@ -231,7 +231,7 @@ map* args_map();
 map* args(int argc, char** argv);
 void* call_php(map* params, char* func);
 int make(map* files, char* outdir);
-int cc(char* file);
+int cc(char* file, int keepfiles);
 int compile(map* files, char* outdir, char* outfile, char* options, int release, int exe);
 char* file_dir(char* file);
 char* file_rename(char* file, char* dir, char* delext, char* addext, char* prefix, char* postfix);

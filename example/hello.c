@@ -2,11 +2,25 @@
 
 int main(int argc,char** argv){
 	gc_start();
-	px("hello, world",1);
-	px(xvec("hello", "world", End),1);
-	void* data=px(xmap("name", "Habib", "age",int_var( 23), End),1);
-	add(data,"name","Ibrahim");
-	px(data,1);
-	map* map_1=xvec("hi","there", End); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* v=map_id(map_1,next1); px(v,1); };
+
+	char* name="Habib";
+	char* msg=xstr("hello, ", name, "!", End);
+	px(msg,1);
+
+	map* myvector=xvec("hello", "world", End);
+	px(myvector,1);
+
+	void* mymap=px(xmap("name", "Habib", "age",int_var( 23), End),1);
+	add(mymap,"name","Ibrahim");
+	px(mymap,1);
+
+	px(xstr("", 
+	"Drawing a box, ", name, "!\n", 
+	"|---------|\n", 
+	"|         |\n", 
+	"|         |\n", 
+	"|---------|", 
+	"", End),1);
+
 	return 0;
 };
