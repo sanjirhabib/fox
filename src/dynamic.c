@@ -3,7 +3,7 @@
 #include "fox.h"
 
 char* version(){
-	return mstr("Fox: build: 5069, date: 2017-11-28 23:00:22 [%s old]",time_ago("2017-11-28 23:00:22"), End);
+	return mstr("Fox: build: 5070, date: 2017-11-28 23:17:15 [%s old]",time_ago("2017-11-28 23:17:15"), End);
 };
 void* invoke(map* v,char* name){
 	unsigned long long idn=str_hash((unsigned char*)name);
