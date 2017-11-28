@@ -1,8 +1,35 @@
 # Fox Language
 Fox language. Transcompiles source into into human readable C.
-Generated code maintains your original format, comment and indention.
-Generated code have exactly the same number of lines as original source.
-Builtin Fox & C interpreter. Compiler is bootstrapped.
+Maintaining your original format, comment and indention and line number.
+Builtin Fox & C interpreter. Bootstrapped compiler.
+Source in Fox:
+```
+#include <fox.h>
+
+int main(int argc,char** argv){
+	gc_start()
+	"hello, world".px()
+	[:hello, :world].px()
+	data={name: :Habib, age: 23}.px()
+	data.name=:Ibrahim
+	data.px()
+	return 0
+}
+```
+Generated C code:
+```
+#include <fox.h>
+
+int main(int argc,char** argv){
+	gc_start();
+	px("hello, world",1);
+	px(xvec("hello", "world", End),1);
+	void* data=px(xmap("name", "Habib", "age",int_var( 23), End),1);
+	add(data,"name","Ibrahim");
+	px(data,1);
+	return 0;
+};
+```
 
 ## Features
 
@@ -10,11 +37,30 @@ Builtin Fox & C interpreter. Compiler is bootstrapped.
 1K lines for the runtime. The compiler with interpreter is 4K lines. Creates small 30KB binary for staticaly linked hello world app.
 
 ### GCed
-Tracing GC. 50ms max delay in average use cases.
+Mark and sweep tracing GC. 50ms max delay in average use cases.
 
 ### Minimal boiler code
 Primitive types are not boxed. Use C native int, double, float, char* as usual. Variants are void*.
 It isn't until you wish to use vectors and maps when you need structures.
+Vector and map structure
+```
+typedef struct map {
+	int len;
+	char type;
+	union {
+		struct Mapcell* pairs;
+		void** vars;
+	};
+} map;
+
+typedef struct Mapcell {
+	short nextid;
+	int hkey;
+	char* id;
+	void* val;
+} Mapcell;
+
+```
 
 ### Inline maps and vectors. Inline JSON.
 ```
