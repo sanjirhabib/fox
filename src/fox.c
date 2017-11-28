@@ -50,19 +50,20 @@ int make(map* files,char* outdir){
 	for(int next1=next(files,-1,NULL,NULL); has_id(files,next1); next1++){ void* v1=map_id(files,next1); if(file_time(v1)>file_time(".version.txt")){ req=1; break; }; };
 	return req ? compile(files,outdir,"fox","",0,0) : 0;
 };
-int cgi(char* file,char* libs,int keepfiles){ return cc(file,libs,keepfiles); };
-int cc(char* file,char* libs,int keepfiles){
+int cgi(char* infile, char* outfile, char* libs,int keepfiles){ return cc(infile,outfile,libs,keepfiles); };
+int cc(char* infile, char* outfile, char* libs, int keepfiles){
 	char* optimize="-g -Os";
-	file=file_rename(file,NULL,".fox",NULL,NULL,NULL);
-	char* in=xstr(file,".fox", End);
-	fox_c(in,xstr(file,".c", End));
-	fox_h(in,xstr(file,".h", End));
+	infile=file_rename(infile,NULL,".fox",NULL,NULL,NULL);
+	if(!outfile){ outfile=infile; };
+	char* in=xstr(infile,".fox", End);
+	fox_c(in,xstr(infile,".c", End));
+	fox_h(in,xstr(infile,".h", End));
 	int ret=exec(
 		px(
-		xstr("gcc ", optimize, " ", file, ".c -o ", file, " ", libs, " -std=gnu99 -Wno-logical-op-parentheses -lm 2>&1", End),1),NULL);
+		xstr("gcc ", optimize, " ", infile, ".c -o ", outfile, " ", libs, " -std=gnu99 -Wno-logical-op-parentheses -lm 2>&1", End),1),NULL);
 	if(!keepfiles){
-		remove((xstr(file,".c", End)));	
-		remove((xstr(file,".h", End))); };	
+		remove((xstr(infile,".c", End)));	
+		remove((xstr(infile,".h", End))); };	
 	return ret;
 };
 int compile(map* files,char* outdir,char* outfile,char* options,int release,int exe){

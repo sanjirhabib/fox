@@ -2237,7 +2237,7 @@ map* amps_map(char* in){
 	return ret;
 };
 map* parse_url(char* path){
-	map* ret=xmap("full", path, End);
+	map* ret=xmap("url", path, End);
 	map* two=str_split(path,"?",2);
 	add(ret,"path",map_id(two,0));
 	add(ret,"param",map_id(two,1));
@@ -2511,6 +2511,9 @@ map* read_http(){
 		add(ret,"method","get");
 		add(ret,"remote",map_val(env,"REMOTE_ADDR"));
 		add(ret,"paths",str_split(str_trim(map_val(ret,"path"),"/"),"/",0));
+		add(ret,"host",map_val(env,"HTTP_HOST"));
+		add(ret,"protocol",map_val(env,"REQUEST_SCHEME"));
+		add(ret,"port",map_val(env,"SERVER_PORT"));
 		return ret;
 	};
 	while((line=read_line(stdin))){

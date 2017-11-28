@@ -2,6 +2,9 @@ vi http.conf
 	LoadModule cgi_module libexec/mod_cgi.so
 	<Directory "/web">
 		SetHandler cgi-script
+	<IfModule dir_module>
+	    DirectoryIndex index.php index.html cgi                                                                      
+
 
 vi .htaccess
 	RewriteEngine On

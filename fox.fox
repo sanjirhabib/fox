@@ -50,19 +50,20 @@ int make(map* files=source_files(),char* outdir="c"){
 	files.each v1 => if v1.file_time()>".version.txt".file_time() => req=1; break
 	return req ? files.compile(outdir) : 0
 }
-int cgi(char* file,char* libs="-lfoxcgi",int keepfiles=0) => return file.cc(libs,keepfiles)
-int cc(char* file,char* libs="-lfox",int keepfiles=0){
+int cgi(char* infile, char* outfile=:cgi, char* libs="-lfoxcgi",int keepfiles=0) => return infile.cc(outfile,libs,keepfiles)
+int cc(char* infile, char* outfile=NULL, char* libs="-lfox", int keepfiles=0){
 	optimize="-g -Os"
-	file=file.file_rename(,".fox")
-	in=file..".fox"
-	in.fox_c(file..".c")
-	in.fox_h(file..".h")
-	ret="gcc $(optimize) $(file).c -o $file $(libs) -std=gnu99 -Wno-logical-op-parentheses -lm 2>&1"
+	infile=infile.file_rename(,".fox")
+	if !outfile => outfile=infile
+	in=infile..".fox"
+	in.fox_c(infile..".c")
+	in.fox_h(infile..".h")
+	ret="gcc $(optimize) $(infile).c -o $outfile $(libs) -std=gnu99 -Wno-logical-op-parentheses -lm 2>&1"
 		.px()
 		.exec()
 	if !keepfiles
-		(file..".c").remove()	
-		(file..".h").remove()	
+		(infile..".c").remove()	
+		(infile..".h").remove()	
 	return ret
 }
 int compile(map* files=source_files(),char* outdir="c",char* outfile=:fox,char* options="",int release=0,int exe=0){

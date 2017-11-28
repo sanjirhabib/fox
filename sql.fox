@@ -2237,7 +2237,7 @@ map* amps_map(char* in){
 	return ret
 }
 map* parse_url(char* path){
-	ret={full: path}
+	ret={url: path}
 	two=path.str_split("?",2)
 	ret.path=two[0]
 	ret.param=two[1]
@@ -2511,6 +2511,9 @@ map* read_http(){
 		ret.method=:get
 		ret.remote=env.REMOTE_ADDR
 		ret.paths=ret.path.str_trim("/").str_split("/")
+		ret.host=env.HTTP_HOST
+		ret.protocol=env.REQUEST_SCHEME
+		ret.port=env.SERVER_PORT
 		return ret
 
 	while((line=stdin.read_line()))

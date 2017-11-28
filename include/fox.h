@@ -13,6 +13,7 @@
 #include <time.h>
 #include <assert.h>
 #include <sys/time.h>
+#include <regex.h>
 #ifndef __MINGW32__
 #include <execinfo.h>
 #include <sys/wait.h>
@@ -230,8 +231,8 @@ char* version();
 map* args_map();
 void* call_php(map* params, char* func);
 int make(map* files, char* outdir);
-int cgi(char* file, char* libs, int keepfiles);
-int cc(char* file, char* libs, int keepfiles);
+int cgi(char* infile, char* outfile, char* libs, int keepfiles);
+int cc(char* infile, char* outfile, char* libs, int keepfiles);
 int compile(map* files, char* outdir, char* outfile, char* options, int release, int exe);
 char* file_dir(char* file);
 char* file_rename(char* file, char* dir, char* delext, char* addext, char* prefix, char* postfix);
