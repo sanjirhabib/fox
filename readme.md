@@ -61,6 +61,26 @@ int main(int argc,char** argv){
 	return 0;
 };
 ```
+Run and output
+```
+$ fox cc hello.fox
+-> hello.c
+-> hello.h
+gcc -g -Os hello.c -o hello -std=gnu99 -Wno-logical-op-parentheses -lm -lfox 2>&1
+
+$ ./hello
+hello, Habib!
+["hello", "world"]
+{"name":"Habib", "age":23}
+{"name":"Ibrahim", "age":23}
+Drawing a box, Habib!
+|---------|
+|         |
+|         |
+|---------|
+
+$
+```
 
 ## Features
 
