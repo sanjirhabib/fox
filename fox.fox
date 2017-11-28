@@ -40,7 +40,6 @@ int max_mem();
 int curr_mem();
 char* version();
 map* args_map();
-map* args(int argc, char** argv);
 void* px(void* str,int newline=1);
 void xexit(int val=0);
 void* fox_error(char* msg,int dump=0);
@@ -51,13 +50,14 @@ int make(map* files=source_files(),char* outdir="c"){
 	files.each v1 => if v1.file_time()>".version.txt".file_time() => req=1; break
 	return req ? files.compile(outdir) : 0
 }
-int cc(char* file,int keepfiles=0){
+int cgi(char* file,char* libs="-lfoxcgi",int keepfiles=0) => return file.cc(libs,keepfiles)
+int cc(char* file,char* libs="-lfox",int keepfiles=0){
 	optimize="-g -Os"
 	file=file.file_rename(,".fox")
 	in=file..".fox"
 	in.fox_c(file..".c")
 	in.fox_h(file..".h")
-	ret="gcc $(optimize) $(file).c -o $(file) -std=gnu99 -Wno-logical-op-parentheses -lm -lfox 2>&1"
+	ret="gcc $(optimize) $(file).c -o $file $(libs) -std=gnu99 -Wno-logical-op-parentheses -lm 2>&1"
 		.px()
 		.exec()
 	if !keepfiles
@@ -1789,8 +1789,9 @@ int requires_semicolon(map* mp,int idx){
 	post=mp[idx].is_str()
 	if pre==="}" && post.is_word(:else) => return 0
 	if post===")" => return 0
-	forbidden=";+=-/?:.&,|!%"
-	if (forbidden.strchr(pre.fox_at(-1))||post && forbidden.strchr(post[0])) && !pre.is_word("++ --") => return 0
+	if pre===";" || post===";" => return 0
+	forbidden="+=-/?:.&,|!%"
+	if (forbidden.strchr(pre.fox_at(-1))||post && forbidden.strchr(post[0])) && !pre.is_word("++ --") && !post.str_start("---") => return 0
 	return 1
 }
 map* add_semicolon(map* mp,int recurse=1){
@@ -2920,6 +2921,7 @@ char* foxh(){
 	#include <time.h>
 	#include <assert.h>
 	#include <sys/time.h>
+	#include <regex.h>
 	#ifndef __MINGW32__
 	#include <execinfo.h>
 	#include <sys/wait.h>
@@ -3910,10 +3912,10 @@ char* tutorial(){
 	Three dashes with variable substitution.
 	```
 	---
-	thee dash multiline comment
-	with substitution $variable. 
-	You can put code: $(1+1)
-	or call functions $(name.str_upper())
+	Thee dash multiline comment
+	With $variable. 
+	Put code like this: $(1+1)
+	Or call functions $(name.str_upper())
 	---
 	```
 	Or double quotes. Same as triple dashes.
@@ -3922,7 +3924,7 @@ char* tutorial(){
 	Escape dollar sign using double dollars, like $$this.
 	"
 	```
-	Or single quote. Without variable substitution.
+	Or single quote. No variable substitution.
 	```
 	'
 	Single quote, without variable substitution.
@@ -3930,7 +3932,7 @@ char* tutorial(){
 	'
 	```
 	You can add string terminators with single and double quote version
-	Or extend the tripple dashes with more dashes and a closing match.
+	Or extend the tripple dashes with more dashes and a matched closing.
 	```
 	".end1
 	Using an unique string terminator.

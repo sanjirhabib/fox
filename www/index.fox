@@ -1,0 +1,9 @@
+#include "index.h"
+main(){
+	header=read_http()
+	---
+	hello world
+	---.px()
+	header.px()
+	http_footer().px()
+}

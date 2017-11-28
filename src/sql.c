@@ -1,4 +1,5 @@
-#include "fox.h"
+#include <fox.h>
+#include <regex.h>
 
 int _is_web=0;
 
@@ -2161,18 +2162,18 @@ char* str_html(char* in){
 	return ret;
 };
 void header(char* str){ print(str,stdout); print("\r\n",stdout); };
+char* http_footer(){
+	return xstr("", 
+	"<div class=\"small lighten pull-right\" style=\"margin-top:4em;\">\n", 
+	"Run Time: ",int_str( run_time()), "ms=",int_str( gc_time()), "/",int_str( run_time()-total_time()-gc_time()), "/",int_str( total_time()), "</br>\n", 
+	"Malloc: ",int_str( total_kb()), "KB. Total: ",int_str( max_mem()/1024), "KB.</br>\n", 
+	"GC: ",int_str( gc_runs()), "runs.\n", 
+	"</div>", 
+	"", End);
+};
 char* http_out(char* str,char* status,char* mime,map* headers){
-	if(map_val(_globals,"out")){ return http_out(flush_out(),"200 OK","text/plain",NULL); };
-	if(str_eq(status,"200 OK") && str_eq(mime,"text/html; charset=utf-8")){
-		str=xcat(str,render(NULL,""
-			"\n"
-			"<div class=\"small lighten pull-right\" style=\"margin-top:4em;\">\n"
-			"Run Time: #{run_time()}ms=#{gc_time()}/#{run_time()-total_time()-gc_time()}/#{total_time()}</br>\n"
-			"Malloc: #{total_kb()}KB. Total: #{max_mem()/1024}KB.</br>\n"
-			"GC: #{gc_runs()}runs.\n"
-			"</div>"
-			""), End); };
-	header(xstr("HTTP/1.1 ", status, End));
+	if(!str){ str=map_val(_globals,"out"); };
+//	"HTTP/1.1 $status".header()
 	header(xstr("Content-Type: ", mime, End));
 	header(xstr("Content-Length: ",int_str( str_len(str)), End));
 	for(int i=next(headers,-1,NULL,NULL); has_id(headers,i); i++){ void* v=map_id(headers,i); header(v); };
@@ -2238,7 +2239,8 @@ map* amps_map(char* in){
 map* parse_url(char* path){
 	map* ret=xmap("full", path, End);
 	map* two=str_split(path,"?",2);
-	xadd(ret,"path",map_id(two,0),"param",map_id(two,1), End);
+	add(ret,"path",map_id(two,0));
+	add(ret,"param",map_id(two,1));
 	return add(ret,"params",amps_map(map_id(two,1)));
 };
 void load_theme(char* name){
@@ -2437,7 +2439,7 @@ char* dispatch(map* pages,char* path){
 char* inet(map* pages,char* path){
 	if(!path){
 		_is_web=1;
-		path=map_val(read_http_header(),"path"); };
+		path=map_val(read_http(),"path"); };
 	return dispatch(pages,path);
 };
 char* page(void* body,char* title,int width,void* link,char* theme,char* pg,map* process,map* env){
@@ -2499,10 +2501,18 @@ map* header_map(char* val){
 		add(ret,str_trim(map_id(pair,0)," \t\n\r"),str_unquote(str_trim(map_id(pair,1)," \t\n\r"))); };
 	return ret;
 };
-map* read_http_header(){
+map* read_http(){
 	map* ret=new_map();
 	char* line=NULL;
 	char* header=NULL;
+	map* env=env_vars();
+	if(str_eq(map_val(env,"REQUEST_METHOD"),"GET")){
+		ret=parse_url(map_val(env,"REQUEST_URI"));
+		add(ret,"method","get");
+		add(ret,"remote",map_val(env,"REMOTE_ADDR"));
+		add(ret,"paths",str_split(str_trim(map_val(ret,"path"),"/"),"/",0));
+		return ret;
+	};
 	while((line=read_line(stdin))){
 		header=xcat(header,line, End);
 		if(strchr("\r\n",line[0])){ break; };
@@ -2519,6 +2529,21 @@ map* read_http_header(){
 		add(ret,"post",read_stdin(size,NULL)); };
 	add(ret,"header",header);
 	add(_globals,"req",ret);
+	return ret;
+};
+map* regexp(char* in, char* pattern){
+	int status=0;
+	regex_t	re={0};
+	regmatch_t match={0};
+	if(regcomp(&re, pattern, REG_EXTENDED)){ return NULL; };
+	if(regexec(&re, in, 1, &match, 0)){ regfree(&re); return NULL; };
+	map* ret=xvec(px(sub_str(in,match.rm_so,match.rm_eo-match.rm_so),1), End);
+	while(1){
+		in+=match.rm_eo;
+		int err=regexec(&re, in, 1, &match, REG_NOTBOL);
+		if(err){ break; };
+		vec_add(ret,px(sub_str(in,match.rm_so,match.rm_eo-match.rm_so),1)); };
+	regfree(&re);
 	return ret;
 };
 #ifndef __MINGW32__

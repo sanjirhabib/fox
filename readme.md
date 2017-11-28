@@ -140,10 +140,10 @@ funcs()
 Three dashes with variable substitution.
 ```
 ---
-thee dash multiline comment
-with substitution $variable. 
-You can put code: $(1+1)
-or call functions $(name.str_upper())
+Thee dash multiline comment
+With $variable. 
+Put code like this: $(1+1)
+Or call functions $(name.str_upper())
 ---
 ```
 Or double quotes. Same as triple dashes.
@@ -152,7 +152,7 @@ Or double quotes. Same as triple dashes.
 Escape dollar sign using double dollars, like $$this.
 "
 ```
-Or single quote. Without variable substitution.
+Or single quote. No variable substitution.
 ```
 '
 Single quote, without variable substitution.
@@ -160,7 +160,7 @@ No $variable substitution will occure.
 '
 ```
 You can add string terminators with single and double quote version
-Or extend the tripple dashes with more dashes and a closing match.
+Or extend the tripple dashes with more dashes and a matched closing.
 ```
 ".end1
 Using an unique string terminator.

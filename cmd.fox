@@ -1,7 +1,6 @@
 #include <fox.h>
 
 __attribute__((destructor)) static void maindtor(void) => gc_end()
-map* args(int argc, char** argv) => return ptrs_vec((void**)argv,argc)
 void* px(void* str,int newline=1){
 	void* ret=str
 	str=str.to_str()

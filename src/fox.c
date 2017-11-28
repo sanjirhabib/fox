@@ -40,7 +40,6 @@ int max_mem();
 int curr_mem();
 char* version();
 map* args_map();
-map* args(int argc, char** argv);
 void* px(void* str,int newline);
 void xexit(int val);
 void* fox_error(char* msg,int dump);
@@ -51,7 +50,8 @@ int make(map* files,char* outdir){
 	for(int next1=next(files,-1,NULL,NULL); has_id(files,next1); next1++){ void* v1=map_id(files,next1); if(file_time(v1)>file_time(".version.txt")){ req=1; break; }; };
 	return req ? compile(files,outdir,"fox","",0,0) : 0;
 };
-int cc(char* file,int keepfiles){
+int cgi(char* file,char* libs,int keepfiles){ return cc(file,libs,keepfiles); };
+int cc(char* file,char* libs,int keepfiles){
 	char* optimize="-g -Os";
 	file=file_rename(file,NULL,".fox",NULL,NULL,NULL);
 	char* in=xstr(file,".fox", End);
@@ -59,7 +59,7 @@ int cc(char* file,int keepfiles){
 	fox_h(in,xstr(file,".h", End));
 	int ret=exec(
 		px(
-		xstr("gcc ", optimize, " ", file, ".c -o ", file, " -std=gnu99 -Wno-logical-op-parentheses -lm -lfox 2>&1", End),1),NULL);
+		xstr("gcc ", optimize, " ", file, ".c -o ", file, " ", libs, " -std=gnu99 -Wno-logical-op-parentheses -lm 2>&1", End),1),NULL);
 	if(!keepfiles){
 		remove((xstr(file,".c", End)));	
 		remove((xstr(file,".h", End))); };	
@@ -1789,8 +1789,9 @@ int requires_semicolon(map* mp,int idx){
 	char* post=is_str(map_id(mp,idx));
 	if(str_eq(pre,"}") && is_word(post,"else")){ return 0; };
 	if(str_eq(post,")")){ return 0; };
-	char* forbidden=";+=-/?:.&,|!%";
-	if((strchr(forbidden,fox_at(pre,-1))||post && strchr(forbidden,post[0])) && !is_word(pre,"++ --")){ return 0; };
+	if(str_eq(pre,";") || str_eq(post,";")){ return 0; };
+	char* forbidden="+=-/?:.&,|!%";
+	if((strchr(forbidden,fox_at(pre,-1))||post && strchr(forbidden,post[0])) && !is_word(pre,"++ --") && !str_start(post,"---")){ return 0; };
 	return 1;
 };
 map* add_semicolon(map* mp,int recurse){
@@ -2920,6 +2921,7 @@ char* foxh(){
 	"#include <time.h>\n"
 	"#include <assert.h>\n"
 	"#include <sys/time.h>\n"
+	"#include <regex.h>\n"
 	"#ifndef __MINGW32__\n"
 	"#include <execinfo.h>\n"
 	"#include <sys/wait.h>\n"
@@ -3910,10 +3912,10 @@ char* tutorial(){
 	"Three dashes with variable substitution.\n"
 	"```\n"
 	"---\n"
-	"thee dash multiline comment\n"
-	"with substitution $variable. \n"
-	"You can put code: $(1+1)\n"
-	"or call functions $(name.str_upper())\n"
+	"Thee dash multiline comment\n"
+	"With $variable. \n"
+	"Put code like this: $(1+1)\n"
+	"Or call functions $(name.str_upper())\n"
 	"---\n"
 	"```\n"
 	"Or double quotes. Same as triple dashes.\n"
@@ -3922,7 +3924,7 @@ char* tutorial(){
 	"Escape dollar sign using double dollars, like $$this.\n"
 	"\"\n"
 	"```\n"
-	"Or single quote. Without variable substitution.\n"
+	"Or single quote. No variable substitution.\n"
 	"```\n"
 	"'\n"
 	"Single quote, without variable substitution.\n"
@@ -3930,7 +3932,7 @@ char* tutorial(){
 	"'\n"
 	"```\n"
 	"You can add string terminators with single and double quote version\n"
-	"Or extend the tripple dashes with more dashes and a closing match.\n"
+	"Or extend the tripple dashes with more dashes and a matched closing.\n"
 	"```\n"
 	"\".end1\n"
 	"Using an unique string terminator.\n"

@@ -1,4 +1,5 @@
 #include <fox.h>
+__attribute__((destructor)) static void maindtor(void){ http_out(NULL,"200 OK","text/html; charset=utf-8",NULL); gc_end(); };
 void* px(void* str,int newline){
 	void* ret=str;
 	str=to_str(str,"",0);
@@ -20,3 +21,4 @@ void* fox_error(char* msg,int dump){
 	"", End),"500 Internal Server Error");
 	return NULL;
 };
+void* call_php(map* params,char* func){ return "DUMMY"; };

@@ -1,8 +1,5 @@
-#include <sqlite3.h>
 #include <fox.h>
-#include <foxcmd.h>
-#include <http.h>
-#include <sql.h>
+__attribute__((destructor)) static void maindtor(void) => http_out(); gc_end()
 void* px(void* str,int newline=1){
 	void* ret=str
 	str=str.to_str()
@@ -16,11 +13,12 @@ void xexit(int val=0){
 	exit(val)
 }
 void* fox_error(char* msg,int dump=0){
-	".end
+	---
 	$msg
 	System Stack Dump
 	$(stack_str().str_replace("\n","<br/>"))
 	Eval Stack Dump
-	.end".http_error("500 Internal Server Error")
+	---.http_error("500 Internal Server Error")
 	return NULL
 }
+void* call_php(map* params,char* func) => return "DUMMY"

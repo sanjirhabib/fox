@@ -1,4 +1,5 @@
-#include "fox.h"
+#include <fox.h>
+#include <regex.h>
 
 int _is_web=0;
 
@@ -2109,7 +2110,7 @@ map* compile_template(char* tem){
 	ret={}
 	blks.each v,,i
 		if i==0 && !v.str_start("--")
-			ret[:head]=v.str_vars()
+			ret.head=v.str_vars()
 			continue
 		ret1=v.str_split("\n",2)
 		name1=ret1[0].str_trim("-- ")
@@ -2161,18 +2162,18 @@ char* str_html(char* in){
 	return ret
 }
 void header(char* str) => str.print(); "\r\n".print()
+char* http_footer(){
+	return ---
+	<div class="small lighten pull-right" style="margin-top:4em;">
+	Run Time: $(run_time())ms=$(gc_time())/$(run_time()-total_time()-gc_time())/$(total_time())</br>
+	Malloc: $(total_kb())KB. Total: $(max_mem()/1024)KB.</br>
+	GC: $(gc_runs())runs.
+	</div>
+	---
+}
 char* http_out(char* str=NULL,char* status="200 OK",char* mime="text/html; charset=utf-8",map* headers=NULL){
-	if _globals.out => return flush_out().http_out(,"text/plain")
-	if status==="200 OK" && mime==="text/html; charset=utf-8"
-		str.=NULL.render(---
-
-			<div class="small lighten pull-right" style="margin-top:4em;">
-			Run Time: #{run_time()}ms=#{gc_time()}/#{run_time()-total_time()-gc_time()}/#{total_time()}</br>
-			Malloc: #{total_kb()}KB. Total: #{max_mem()/1024}KB.</br>
-			GC: #{gc_runs()}runs.
-			</div>
-			---)
-	"HTTP/1.1 $status".header()
+	if !str  => str=_globals.out
+//	"HTTP/1.1 $status".header()
 	"Content-Type: $mime".header()
 	"Content-Length: $(str.str_len())".header()
 	headers.each v,,i => v.header()
@@ -2238,8 +2239,9 @@ map* amps_map(char* in){
 map* parse_url(char* path){
 	ret={full: path}
 	two=path.str_split("?",2)
-	ret.xadd(:path,two[0],:param,two[1])
-	return ret[:params]=two[1].amps_map()
+	ret.path=two[0]
+	ret.param=two[1]
+	return ret.params=two[1].amps_map()
 }
 void load_theme(char* name=:dashboard){
 	if(!name.str_len()) return
@@ -2250,8 +2252,8 @@ void load_theme(char* name=:dashboard){
 void sess_load(){
 	char* sid=:cookie.header_vals().sessid
 	if(!sid) return
-	_globals[:sessid]=sid
-	_globals[:sess]="/tmp/sess.$sid".fox_read_file(0).xjson_map()
+	_globals.sessid=sid
+	_globals.sess="/tmp/sess.$sid".fox_read_file(0).xjson_map()
 }
 void	sess_add(char* name, char* value) => _globals.res.sess[name]=value
 char*	sess_id()		=> return _globals.sessid
@@ -2332,7 +2334,7 @@ char* process_logout(char* redirect="../login/"){
 }
 map* process_login(char* username,char* password){
 	sid=sess_newid()
-	_globals[:sessid]=sid
+	_globals.sessid=sid
 	:sessid.cookie_set(sid)
 	:user.sess_add(username.str_tolower())
 	:role.sess_add(:admin)
@@ -2382,7 +2384,7 @@ map* path_params(char* url,char* path){
 		urli++
 		if(v==="**")
 			if urlp->len>=urli
-				ret[:rest]=urlp.vec_sub(urli-1,0).map_join("/")
+				ret.rest=urlp.vec_sub(urli-1,0).map_join("/")
 			return ret
 		if(urlp->len<urli) return NULL
 		if(v==="*")
@@ -2409,7 +2411,7 @@ int path_matches(char* match,void* url){
 	return url.map_len()==paths.map_len()
 }
 char* pages_match(map* pages,char* path){
-	if !path.str_len() => return pages[:index] ? :index : NULL
+	if !path.str_len() => return pages.index ? :index : NULL
 	paths=path.str_trim("/").str_split("/")
 	pages.each ,k,i => if k.path_matches(paths) => return k
 	return NULL
@@ -2437,7 +2439,7 @@ char* dispatch(map* pages,char* path){
 char* inet(map* pages,char* path=NULL){
 	if !path
 		_is_web=1
-		path=read_http_header().path
+		path=read_http().path
 	return pages.dispatch(path)
 }
 char* page(void* body,char* title,int width=3,void* link=NULL,char* theme=:dashboard,char* pg=:page,map* process=NULL,map* env={}){
@@ -2499,26 +2501,49 @@ map* header_map(char* val){
 		ret[pair[0].str_trim()]=pair[1].str_trim().str_unquote()
 	return ret
 }
-map* read_http_header(){
+map* read_http(){
 	ret={}
 	line=''
 	header=''
+	env=env_vars()
+	if env.REQUEST_METHOD===:GET
+		ret=env.REQUEST_URI.parse_url()
+		ret.method=:get
+		ret.remote=env.REMOTE_ADDR
+		ret.paths=ret.path.str_trim("/").str_split("/")
+		return ret
+
 	while((line=stdin.read_line()))
 		header.=line
 		if "\r\n".strchr(line[0]) => break
 		if !ret->len
 			pair=line.str_trim().str_split(" ",3)
-			ret[:method]=pair[0]
-			ret[:path]=pair[1]
+			ret.method=pair[0]
+			ret.path=pair[1]
 			continue
 		line.header_val(ret)
 	if ret.method===:POST
 		int size=ret["content-length"].to_int()
 		if !size => "Content-Lenght was not provided".http_error("411 Length Required")
 		if size>2000000 => "Request should be with less than 2MB data".http_error("413 Request Entity Too Large")
-		ret[:post]=size.read_stdin()
-	ret[:header]=header
-	_globals[:req]=ret;
+		ret.post=size.read_stdin()
+	ret.header=header
+	_globals.req=ret;
+	return ret
+}
+map* regexp(char* in, char* pattern){
+	status=0
+	regex_t	re={0}
+	regmatch_t match={0}
+	if regcomp(&re, pattern, REG_EXTENDED) => return NULL
+	if regexec(&re, in, 1, &match, 0) => regfree(&re); return NULL
+	map* ret=[in.sub_str(match.rm_so,match.rm_eo-match.rm_so).px()]
+	while 1
+		in+=match.rm_eo
+		int err=regexec(&re, in, 1, &match, REG_NOTBOL)
+		if err => break
+		ret[]=in.sub_str(match.rm_so,match.rm_eo-match.rm_so).px()
+	regfree(&re);
 	return ret
 }
 #ifndef __MINGW32__

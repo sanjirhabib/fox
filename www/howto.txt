@@ -1,0 +1,15 @@
+vi http.conf
+	LoadModule cgi_module libexec/mod_cgi.so
+	<Directory "/web">
+		SetHandler cgi-script
+
+vi .htaccess
+	RewriteEngine On
+	RewriteCond %{REQUEST_FILENAME} !-f
+	RewriteCond %{REQUEST_FILENAME} !-d
+	RewriteRule ^(.+)$ index [L,QSA]
+	<FilesMatch "\.(db|txt|sql|fox)$">
+	Order allow,deny
+	Deny from all
+	</FilesMatch>
+
