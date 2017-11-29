@@ -2162,16 +2162,8 @@ char* str_html(char* in){
 	return ret
 }
 void header(char* str) => str.print(); "\r\n".print()
-char* http_footer(){
-	return ---
-	<div class="small lighten pull-right" style="margin-top:4em;">
-	Run Time: $(run_time())ms=$(gc_time())/$(run_time()-total_time()-gc_time())/$(total_time())</br>
-	Malloc: $(total_kb())KB. Total: $(max_mem()/1024)KB.</br>
-	GC: $(gc_runs())runs.
-	</div>
-	---
-}
 char* http_out(char* str=NULL,char* status="200 OK",char* mime="text/html; charset=utf-8",map* headers=NULL){
+	if !str && !_globals.out => return NULL
 	if !str  => str=_globals.out
 //	"HTTP/1.1 $status".header()
 	"Content-Type: $mime".header()
@@ -2439,7 +2431,7 @@ char* dispatch(map* pages,char* path){
 char* inet(map* pages,char* path=NULL){
 	if !path
 		_is_web=1
-		path=read_http().path
+		path=http_req().path
 	return pages.dispatch(path)
 }
 char* page(void* body,char* title,int width=3,void* link=NULL,char* theme=:dashboard,char* pg=:page,map* process=NULL,map* env={}){
@@ -2501,7 +2493,7 @@ map* header_map(char* val){
 		ret[pair[0].str_trim()]=pair[1].str_trim().str_unquote()
 	return ret
 }
-map* read_http(){
+map* http_req(){
 	ret={}
 	line=''
 	header=''
@@ -2511,10 +2503,20 @@ map* read_http(){
 		ret.method=:get
 		ret.remote=env.REMOTE_ADDR
 		ret.paths=ret.path.str_trim("/").str_split("/")
-		ret.host=env.HTTP_HOST
+		ret.server=env.HTTP_HOST
 		ret.protocol=env.REQUEST_SCHEME
 		ret.port=env.SERVER_PORT
 		return ret
+	if !env.REQUEST_METHOD
+		return {
+		path: "/",
+		paths: ["/"],
+		server: "localhost",
+		port: "80",
+		protocol: "http",
+		param: "",
+		params: []
+		}
 
 	while((line=stdin.read_line()))
 		header.=line

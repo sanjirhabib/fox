@@ -2162,16 +2162,8 @@ char* str_html(char* in){
 	return ret;
 };
 void header(char* str){ print(str,stdout); print("\r\n",stdout); };
-char* http_footer(){
-	return xstr("", 
-	"<div class=\"small lighten pull-right\" style=\"margin-top:4em;\">\n", 
-	"Run Time: ",int_str( run_time()), "ms=",int_str( gc_time()), "/",int_str( run_time()-total_time()-gc_time()), "/",int_str( total_time()), "</br>\n", 
-	"Malloc: ",int_str( total_kb()), "KB. Total: ",int_str( max_mem()/1024), "KB.</br>\n", 
-	"GC: ",int_str( gc_runs()), "runs.\n", 
-	"</div>", 
-	"", End);
-};
 char* http_out(char* str,char* status,char* mime,map* headers){
+	if(!str && !map_val(_globals,"out")){ return NULL; };
 	if(!str){ str=map_val(_globals,"out"); };
 //	"HTTP/1.1 $status".header()
 	header(xstr("Content-Type: ", mime, End));
@@ -2439,7 +2431,7 @@ char* dispatch(map* pages,char* path){
 char* inet(map* pages,char* path){
 	if(!path){
 		_is_web=1;
-		path=map_val(read_http(),"path"); };
+		path=map_val(http_req(),"path"); };
 	return dispatch(pages,path);
 };
 char* page(void* body,char* title,int width,void* link,char* theme,char* pg,map* process,map* env){
@@ -2501,7 +2493,7 @@ map* header_map(char* val){
 		add(ret,str_trim(map_id(pair,0)," \t\n\r"),str_unquote(str_trim(map_id(pair,1)," \t\n\r"))); };
 	return ret;
 };
-map* read_http(){
+map* http_req(){
 	map* ret=new_map();
 	char* line=NULL;
 	char* header=NULL;
@@ -2511,10 +2503,20 @@ map* read_http(){
 		add(ret,"method","get");
 		add(ret,"remote",map_val(env,"REMOTE_ADDR"));
 		add(ret,"paths",str_split(str_trim(map_val(ret,"path"),"/"),"/",0));
-		add(ret,"host",map_val(env,"HTTP_HOST"));
+		add(ret,"server",map_val(env,"HTTP_HOST"));
 		add(ret,"protocol",map_val(env,"REQUEST_SCHEME"));
 		add(ret,"port",map_val(env,"SERVER_PORT"));
-		return ret;
+		return ret; };
+	if(!map_val(env,"REQUEST_METHOD")){
+		return xmap(
+		"path", "/",
+		"paths", xvec("/", End),
+		"server", "localhost",
+		"port", "80",
+		"protocol", "http",
+		"param", "",
+		"params", new_vec()
+		, End);
 	};
 	while((line=read_line(stdin))){
 		header=xcat(header,line, End);

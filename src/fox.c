@@ -103,7 +103,7 @@ char* file_rename(char* file,char* dir,char* delext,char* addext,char* prefix,ch
 	if(dir){ olddir=dir; };
 	return xstr(sane_dir(olddir),ret, End);
 };
-char* sane_dir(char* dir){ return dir ? xstr(rtrim(dir,"/"),"/", End) : NULL; };
+char* sane_dir(char* dir){ return dir ? xstr(str_rtrim(dir,"/"),"/", End) : NULL; };
 map* build(map* files,char* outdir){
 	map* ret=new_vec();
 	for(int next1=next(files,-1,NULL,NULL); has_id(files,next1); next1++){ void* v2=map_id(files,next1);
@@ -357,10 +357,10 @@ char* str_end(char* str,char* end){
 };
 int str_start(char* str,char* start){ return str && start && is_str(str) && strncmp(str,start,strlen(start))==0; };
 char* str_chr(char* str,char c){ return !str||!c||!is_str(str) ? NULL : strchr(str,c); };
-char* ltrim(char* str,char* chars){
+char* str_ltrim(char* str,char* chars){
 	return str+lchars(str,chars);
 };
-char* rtrim(char* str,char* chars){
+char* str_rtrim(char* str,char* chars){
 	int r=rchars(str,chars);
 	if(!r){ return str; };
 	return substr(str,0,str_len(str)-r);
@@ -1423,7 +1423,7 @@ char* fox_read_oper(char** in,char term){
 	while(*str && is_oper(*str) && *str!=term) {str++;};
 	char* ret=substr(from,0,str-from);
 	int less=0;
-	while(strlen(ret) && !is_word(ret,"~ ! @ # $ % ^ & * - = + | < > ? / \\ } ] ) . != >= <= += -= /= *= || && << >> => ++ -- ** *** **** |= &= >>= <<= ^^ ... -> == === !== .= ..")){
+	while(strlen(ret) && !is_word(ret,"~ ! @ # $ % ^ & * - = + | < > ? / \\ } ] ) . != >= <= += -= /= *= || && << >> => ++ -- ** *** **** |= &= >>= <<= ^^ ... -> == === !== .= .. ||= &&=")){
 		ret[strlen(ret)-1]='\0';
 		less++; };
 	*in=str-1-less;
@@ -2475,7 +2475,7 @@ int expr_tail(map* toks,int idx,char* expr){
 };
 int expr_head(map* toks,int idx,char* expr){
 	idx++;
-	char* presid="= += -= /= *= %= ^= .= ? : && || == === !== != >= <= > < .. + - / * ++ -- ! -> .";
+	char* presid="= += -= /= *= %= ^= &&= ||= .= ? : && || == === !== != >= <= > < and or .. + - / * ++ -- ! -> .";
 	int expr_presid=is_word(expr,presid);
 	while(idx>0){
 		char* v=is_str(map_id(toks,idx));
@@ -3625,10 +3625,10 @@ int run_cmdline(map* args){
 	}else{
 		if(str_start(name,"--")){ name=sub_str(name,2,0); };
 		ret=invoke(cmdline_params(vec_sub(args,2,0),name),name); };
-	if(_printed){ return 0; };
+	if(_printed){ return is_i(ret) ? is_int(ret) : 0; };
 	if(is_map(ret)){ px(json(ret,1),1); return 0; };
 	if(is_str(ret) || is_num(ret)){ px(to_str(ret,"",0),1); };
-	return 0;
+	return is_i(ret) ? is_int(ret) : 0;
 };
 int utests(char* test,char* file){
 	map* mp=file_vec(file);
@@ -4445,7 +4445,7 @@ map* string_operators(map* toks){
 		if(is_map(map_id(toks,i+1))){
 			string_operators(map_id(toks,i+1));
 		}else if(str_eq(map_id(toks,i+1),".=")){
-			int head=expr_head(toks,i-2,"=");
+			int head=expr_head(toks,i-2,":");
 			int tail=expr_tail(toks,i+2,".=");
 			map* mid=vec_sub(toks,head+1,i-head-1);
 			vec_merge(vec_splice(mid,0,0,xvec(NULL, End)),xvec(NULL,",", End));
@@ -4457,6 +4457,34 @@ map* string_operators(map* toks){
 			vec_splice(toks,i+3,tail-i-3,mid);
 			set(toks,i+1,"=");
 			i=head;
+		}
+//			head=toks.expr_head(i-2,"<")
+//			tail=toks.expr_tail(i+2,"and")
+//			left=toks.vec_sub(head+1,i-head-1)
+//			right=toks.vec_sub(i+2,tail-i-2).string_operators()
+//			mid=["(",NULL,[NULL].vec_merge(left).vec_merge([toks[i],"?"," "]).vec_merge(left).vec_merge([" ",":"]).vec_merge(right),NULL,")"]
+//			toks.vec_splice(head+1,tail-head-1,mid)
+		else if(str_eq(map_id(toks,i+1),"or")){
+			int head=expr_head(toks,i-2,"<");
+			int tail=expr_tail(toks,i+2,"or");
+			map* left=vec_sub(toks,head+1,i-head-1);
+			map* right=string_operators(vec_sub(toks,i+2,tail-i-2));
+			map* mid=xvec("(",NULL,vec_merge(vec_merge(vec_merge(vec_merge(vec_merge(xvec(NULL, End),left),xvec(map_id(toks,i),"?"," ", End)),left),xvec(" ",":", End)),right),NULL,")", End);
+			vec_splice(toks,head+1,tail-head-1,mid);
+		}else if(str_eq(map_id(toks,i+1),"||=")){
+			int head=expr_head(toks,i-2,":");
+			int tail=expr_tail(toks,i+2,"||=");
+			map* left=vec_sub(toks,head+1,i-head-1);
+			map* right=vec_sub(toks,i+2,tail-i-2);
+			map* mid=xvec("if",NULL,"(",NULL,xvec(NULL,"!",NULL,"(",NULL,vec_merge(xvec(NULL, End),left),NULL,")", End),NULL,")",NULL,"{",map_id(toks,i),xvec(NULL,vec_merge(vec_merge(vec_merge(vec_merge(xvec(NULL, End),left),xvec(NULL,"=", End)),right),xvec(NULL,";", End)), End),NULL,"}", End);
+			vec_splice(toks,head+1,tail-head-1,mid);
+		}else if(str_eq(map_id(toks,i+1),"&&=")){
+			int head=expr_head(toks,i-2,":");
+			int tail=expr_tail(toks,i+2,"&&=");
+			map* left=vec_sub(toks,head+1,i-head-1);
+			map* right=vec_sub(toks,i+2,tail-i-2);
+			map* mid=xvec("if",NULL,"(",NULL,vec_merge(xvec(NULL, End),left),NULL,")",NULL,"{",map_id(toks,i),xvec(NULL,vec_merge(vec_merge(vec_merge(vec_merge(xvec(NULL, End),left),xvec(NULL,"=", End)),right),xvec(NULL,";", End)), End),NULL,"}", End);
+			vec_splice(toks,head+1,tail-head-1,mid);
 		}else if(str_eq(map_id(toks,i+1),"..")){
 			int head=expr_head(toks,i-2,"<");
 			int tail=expr_tail(toks,i+2,"<");

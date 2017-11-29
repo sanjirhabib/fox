@@ -26,6 +26,9 @@ lib/libfoxstatic.a: obj/dynamic.o obj/fox.o obj/memsize.o obj/sql.o obj/cmd.o ob
 	rm -f $@
 	ar rcs $@ $^
 
+src/sql.c: sql.fox
+	fox fox_c sql.fox src/sql.c
+
 include/fox.h: $(FOXS)
 	fox write_foxh include/fox.h
 

@@ -50,7 +50,7 @@ int make(map* files=source_files(),char* outdir="c"){
 	files.each v1 => if v1.file_time()>".version.txt".file_time() => req=1; break
 	return req ? files.compile(outdir) : 0
 }
-int cgi(char* infile, char* outfile=:cgi, char* libs="-lfoxcgi",int keepfiles=0) => return infile.cc(outfile,libs,keepfiles)
+int cgi(char* infile="main.fox", char* outfile="index.cgi", char* libs="-lfoxcgi",int keepfiles=0) => return infile.cc(outfile,libs,keepfiles)
 int cc(char* infile, char* outfile=NULL, char* libs="-lfox", int keepfiles=0){
 	optimize="-g -Os"
 	infile=infile.file_rename(,".fox")
@@ -103,7 +103,7 @@ char* file_rename(char* file,char* dir=NULL,char* delext=NULL,char* addext=NULL,
 	if dir => olddir=dir
 	return olddir.sane_dir()..ret
 }
-char* sane_dir(char* dir) => return dir ? dir.rtrim("/").."/" : NULL
+char* sane_dir(char* dir) => return dir ? dir.str_rtrim("/").."/" : NULL
 map* build(map* files=source_files(),char* outdir="c"){
 	ret=[]
 	files.each v2
@@ -357,10 +357,10 @@ char* str_end(char* str,char* end){
 }
 int str_start(char* str,char* start) => return str && start && str.is_str() && str.strncmp(start,start.strlen())==0
 char* str_chr(char* str,char c) => return !str||!c||!str.is_str() ? NULL : str.strchr(c)
-char* ltrim(char* str,char* chars=" \t\n\r"){
+char* str_ltrim(char* str,char* chars=" \t\n\r"){
 	return str+str.lchars(chars)
 }
-char* rtrim(char* str,char* chars=" \t\n\r"){
+char* str_rtrim(char* str,char* chars=" \t\n\r"){
 	r=str.rchars(chars)
 	if !r => return str
 	return str.substr(0,str.str_len()-r)
@@ -1423,7 +1423,7 @@ char* fox_read_oper(char** in,char term){
 	while(*str && is_oper(*str) && *str!=term) str++
 	ret=from.substr(0,str-from)
 	less=0
-	while ret.strlen() && !ret.is_word("~ ! @ # $ % ^ & * - = + | < > ? / \\ } ] ) . != >= <= += -= /= *= || && << >> => ++ -- ** *** **** |= &= >>= <<= ^^ ... -> == === !== .= ..")
+	while ret.strlen() && !ret.is_word("~ ! @ # $ % ^ & * - = + | < > ? / \\ } ] ) . != >= <= += -= /= *= || && << >> => ++ -- ** *** **** |= &= >>= <<= ^^ ... -> == === !== .= .. ||= &&=")
 		ret[ret.strlen()-1]='\0'
 		less++
 	*in=str-1-less
@@ -2475,7 +2475,7 @@ int expr_tail(map* toks,int idx=0,char* expr="."){
 }
 int expr_head(map* toks,int idx=0,char* expr="."){
 	idx++
-	presid="= += -= /= *= %= ^= .= ? : && || == === !== != >= <= > < .. + - / * ++ -- ! -> ."
+	presid="= += -= /= *= %= ^= &&= ||= .= ? : && || == === !== != >= <= > < and or .. + - / * ++ -- ! -> ."
 	expr_presid=expr.is_word(presid)
 	while idx>0
 		v=toks[idx].is_str()
@@ -3625,10 +3625,10 @@ int run_cmdline(map* args){
 	else
 		if name.str_start("--") => name=name.sub_str(2)
 		ret=args.vec_sub(2).cmdline_params(name).invoke(name)
-	if _printed => return 0
+	if _printed => return ret.is_i() ? ret.is_int() : 0
 	if ret.is_map() => ret.json(1).px(); return 0
 	if ret.is_str() || ret.is_num() => ret.to_str().px()
-	return 0
+	return ret.is_i() ? ret.is_int() : 0
 }
 int utests(char* test=NULL,char* file="utests.map"){
 	mp=file.file_vec()
@@ -4445,7 +4445,7 @@ map* string_operators(map* toks){
 		if toks[i+1].is_map()
 			toks[i+1].string_operators()
 		else if toks[i+1]==='.='
-			head=toks.expr_head(i-2,"=")
+			head=toks.expr_head(i-2,":")
 			tail=toks.expr_tail(i+2,'.=')
 			mid=toks.vec_sub(head+1,i-head-1)
 			mid.vec_splice(0,0,[NULL]).vec_merge([NULL,","])
@@ -4457,6 +4457,34 @@ map* string_operators(map* toks){
 			toks.vec_splice(i+3,tail-i-3,mid)
 			toks[i+1]="="
 			i=head
+//		else if toks[i+1]===:and
+//			head=toks.expr_head(i-2,"<")
+//			tail=toks.expr_tail(i+2,"and")
+//			left=toks.vec_sub(head+1,i-head-1)
+//			right=toks.vec_sub(i+2,tail-i-2).string_operators()
+//			mid=["(",NULL,[NULL].vec_merge(left).vec_merge([toks[i],"?"," "]).vec_merge(left).vec_merge([" ",":"]).vec_merge(right),NULL,")"]
+//			toks.vec_splice(head+1,tail-head-1,mid)
+		else if toks[i+1]===:or
+			head=toks.expr_head(i-2,"<")
+			tail=toks.expr_tail(i+2,"or")
+			left=toks.vec_sub(head+1,i-head-1)
+			right=toks.vec_sub(i+2,tail-i-2).string_operators()
+			mid=["(",NULL,[NULL].vec_merge(left).vec_merge([toks[i],"?"," "]).vec_merge(left).vec_merge([" ",":"]).vec_merge(right),NULL,")"]
+			toks.vec_splice(head+1,tail-head-1,mid)
+		else if toks[i+1]==="||="
+			head=toks.expr_head(i-2,":")
+			tail=toks.expr_tail(i+2,"||=")
+			left=toks.vec_sub(head+1,i-head-1)
+			right=toks.vec_sub(i+2,tail-i-2)
+			mid=["if",NULL,"(",NULL,[NULL,"!",NULL,"(",NULL,[NULL].vec_merge(left),NULL,")"],NULL,")",NULL,"{",toks[i],[NULL,[NULL].vec_merge(left).vec_merge([NULL,"="]).vec_merge(right).vec_merge([NULL,";"])],NULL,"}"]
+			toks.vec_splice(head+1,tail-head-1,mid)
+		else if toks[i+1]==="&&="
+			head=toks.expr_head(i-2,":")
+			tail=toks.expr_tail(i+2,"&&=")
+			left=toks.vec_sub(head+1,i-head-1)
+			right=toks.vec_sub(i+2,tail-i-2)
+			mid=["if",NULL,"(",NULL,[NULL].vec_merge(left),NULL,")",NULL,"{",toks[i],[NULL,[NULL].vec_merge(left).vec_merge([NULL,"="]).vec_merge(right).vec_merge([NULL,";"])],NULL,"}"]
+			toks.vec_splice(head+1,tail-head-1,mid)
 		else if toks[i+1]==='..'
 			head=toks.expr_head(i-2,"<")
 			tail=toks.expr_tail(i+2,"<")
