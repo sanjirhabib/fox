@@ -50,8 +50,8 @@ int make(map* files=source_files(),char* outdir="c"){
 	files.each v1 => if v1.file_time()>".version.txt".file_time() => req=1; break
 	return req ? files.compile(outdir) : 0
 }
-int cgi(char* infile="main.fox", char* outfile="index.cgi",int keepfiles=0) => return infile.cc(:cgi, outfile, keepfiles)
-int cc(char* infile, char* as="debug", char* outfile=NULL, int keepfiles=0){
+int cgi(char* infile="main.fox", char* outfile="index.cgi",int keepfiles=0) => return infile.cc(outfile, :cgi, keepfiles)
+int cc(char* infile, char* outfile=NULL, char* as="debug", int keepfiles=0){
 	infile=infile.file_rename(,".fox")
 	if !outfile => outfile=infile
 	in=infile..".fox"
@@ -60,8 +60,8 @@ int cc(char* infile, char* as="debug", char* outfile=NULL, int keepfiles=0){
 	switches={
 		debug: "-O0 -lfox"
 		speed: "-Os -lfox"
-		static: "-lfoxstatic -lsqlite3 -fdata-sections -ffunction-sections -Wl,-dead_strip"
-		cgi: "-ffoxcgi -lfox"
+		static: "-lfoxstatic -lfoxcmdstatic -lsqlite3 -fdata-sections -ffunction-sections -Wl,-dead_strip"
+		cgi: "-lfoxstatic -lfoxcgistatic -lsqlite3 -fdata-sections -ffunction-sections -Wl,-dead_strip"
 	}
 	libs = as ? switches[as] : ''
 	ret="gcc $(infile).c -o $outfile $(libs) -std=gnu99 -Wno-logical-op-parentheses -lm 2>&1"
@@ -1461,9 +1461,9 @@ char* read_newline(char** in){
 	*in=str-1
 	return from.substr(0,str-from)
 }
-char* read_space(char** in){
+char* read_space(char** in,char* spaces=" \t"){
 	str=*in
-	while(*str && " \t".strchr(*str)) str++
+	while(*str && spaces.strchr(*str)) str++
 	from=*in
 	*in=str-1
 	return from.substr(0,str-from)
@@ -1475,9 +1475,8 @@ map* read_data(char** in){
 		str+=str.line_len()
 		str+=str.str_level()
 	if *str => str+=2
-	*in=str
-	idx=0
-	return from.substr(2,str-from+2).x_map().parse_data(&idx)
+	*in=str-1
+	return from.substr(0,str-from).data_toks()
 }
 char* read_heredoc(char** in){
 	str=*in
@@ -1612,7 +1611,7 @@ map* c_tokenizer(char** line,char term){
 		else if "\n\r".strchr(*str) => read_newline(&str).add_ctok(mp,0)
 		else if "\"'".strchr(*str) => read_multistr(&str).add_ctok(mp,1)
 		else if str.str_start("{{")
-			if !mp->len%2 => mp[]=NULL
+			if !(mp->len%2) => mp[]=NULL
 			mp.vec_merge(read_data(&str))
 		else if str.str_start("---") => read_heredoc(&str).add_ctok(mp,1)
 		else if "\"'`".strchr(*str) => read_quote(&str).add_ctok(mp,1)
@@ -2525,8 +2524,10 @@ map* param_c(map* params,map* env,map* fs,map* fn){
 				if xparam[idx][1]===:End => break
 				cparam[]=xparam[idx].type_convert(p.type,env,fs,fn)
 			if cparam[cparam.map_len()-1][1].neq(:End)
-				endmark=cparam.map_len() ? " End" : :End
-				cparam[]=endmark.x_map()
+				if !cparam[cparam.map_len()-1][1] => cparam[cparam.map_len()-1][1]=:End
+				else
+					endmark=cparam.map_len() ? " End" : :End
+					cparam[]=endmark.x_map()
 			break
 		else if xparam[i].map_len()<2
 			if !p.default => break
@@ -4629,61 +4630,80 @@ char* rtrim_upto(char* in,char upto,int keep=1){
 	if !at => return in
 	return in.sub_str(0,at-in + (keep ? 1 : 0))
 }
-map* parse_data(map* toks,int* pidx){
-	idx=*pidx
-	level=toks[idx].tok_indent() or 1
-	ret=[]
-	while idx<toks.map_len() && (toks[idx].tok_indent() or 1)>=level
-		ret[]=toks[idx]
-		idx++
-		if toks[idx]==="="
-			head=toks.term_at(idx+1," \t\n\r")
-			ret.vec_copy(toks, idx+2, head-idx-2)
-			idx=head-1
-		else ret[]=toks[idx].quote_bare()
-		idx++
-		ret.vec_merge([NULL,","])
-		haseq=0
-		head=idx
-		nocomma=0
-		while idx<toks.map_len() && !(toks[idx].str_chr('\n') || toks[idx].str_chr('\r'))
-			if !haseq && toks[idx+1].str_chr('=') => haseq=1
-			idx+=2
-		if toks[head+1]==="="
-			toks[head+2].=toks[head]
-			ret.vec_copy(toks,head+2,idx-head-2)
-		else if haseq
-			1
-		else if idx-head==2
-			ret[]=toks[head]
-			ret[]=toks[head+1].quote_bare()
-		else if idx-head>2
-			ret[]=toks[head]
-			ret[]=[NULL].vec_merge(toks.vec_sub(head+1,idx-head-1)).toks_c().quote_bare()
-		if idx==head
-			if toks[idx].tok_indent()>level
-				ret[]=" "
-				ret.vec_merge(toks.parse_data(&idx)).vec_merge([NULL,","])
-			else ret.vec_merge([" ",:NULL,NULL,","])
-		else if idx<toks.map_len() && toks[idx].tok_indent()>=level
-			ret.vec_merge([NULL,","])
-	*pidx=idx
-	return [:xmap,NULL,"(",NULL,ret,NULL,")"]
+map* data_toks(char* in) => in=in.sub_str(2,-2); return [:xmap,NULL,"(",NULL,data_tokenizer(&in),NULL,")"]
+map* data_tokenizer(char** in,int level=0){
+	if !in||!*in||!**in => return NULL
+	str=*in
+	mp=[]
+	last=''
+	space1=''
+	space2=''
+	map* key=NULL
+	map* val=NULL
+	while *str
+		assert(last!=str)
+		last=str
+
+		temp=str
+		if str.str_start("//") => space1.=read_theline(&str); str++
+		else if " \t\n\r".str_chr(*str) => space1.=read_space(&str,"\t\n\r "); str++
+		clevel=0
+		for i=space1.str_len()-1; i>=0; i--
+			if " \t".str_chr(space1[i]) => clevel++
+		if clevel<level
+			str=temp
+			break
+
+		if "\"'`".str_chr(*str) => key=[read_quote(&str)]; str++
+		else if *str=='('
+			str++
+			key=["(",NULL,c_tokenizer(&str,')'),NULL,")"]
+			if *str => str++
+		else
+			key=read_upto(&str,"\n\r \t").data_quote()
+
+		if " \t".str_chr(*str) => space2=read_over(&str,"\t "); str++
+
+		if str.str_start("---") => val=[read_heredoc(&str)]; str++
+		else if !"\n\r".str_chr(*str) => val=read_theline(&str).data_quote(); str++
+		
+		if key && !val
+			temp=str
+			ret=data_tokenizer(&str,clevel+1)	
+			if ret.map_len()
+				val=["xmap",NULL,"(",NULL,ret,NULL,")"]
+			else
+				val=NULL
+	  			str=temp
+		if key || val
+			if mp.map_len()
+				mp[]=NULL
+				mp[]=","
+			mp[]=space1
+			mp.vec_merge(key or [:NULL])
+			mp[]=NULL
+			mp[]=","
+			mp[]=space2
+			mp.vec_merge(val or [:NULL])
+			space1=space2=NULL
+			key=val=NULL
+		else
+			space1.=space2
+			space2=NULL
+	*in=str
+	return mp
 }
-int term_at(map* toks,int from,char* terms){
-	nterm=terms.str_len()
-	idx=0
-	for idx=from; idx<toks.map_len(); idx+=2
-		for i=0; i<nterm; i++
-			if toks[idx].str_chr(terms[i]) => return idx
-	return idx
+char* read_over(char** in,char* chars=" \t"){
+	str=*in
+	while(*str && chars.str_chr(*str))
+		str++
+	from=*in
+	*in=str-1
+	return from.substr(0,str-from)
 }
-int vec_copy(map* ret,map* from,int idx,int len){
-	for i=idx; i<idx+len; i++ => ret[]=from[i]
-	return idx+len
-}
-char* quote_bare(char* in){
-	if !in => return in
-	if "\"':-".strchr(in[0]) => return in
-	return in.str_quote()
+map* data_quote(char* in){
+	if !in || !in.str_len() => return NULL
+	if "\"'`".str_chr(*in) => return [in]
+	if *in=='=' => return in.sub_str(1).x_map().vec_del(0,1).vec_compact()
+	return [in.str_quote()]
 }

@@ -2179,8 +2179,6 @@ char* str_html(char* in){
 };
 void header(char* str){ print(str,stdout); print("\r\n",stdout); };
 char* http_out(char* str,char* status,char* mime,map* headers){
-	if(!str && !map_val(_globals,"out")){ return NULL; };
-	if(!str){ str=map_val(_globals,"out"); };
 	header(xstr("Status: ", status, End));
 	header(xstr("Content-Type: ", mime, End));
 	header(xstr("Content-Length: ",int_str( str_len(str)), End));
@@ -2501,15 +2499,20 @@ map* http_req(){
 		, End));
 		return ret; };
 	if(!map_val(env,"REQUEST_METHOD")){
-		return xmap(
-			"path", "/",
-			"paths", xvec("/", End),
-			"server", "localhost",
-			"port", "80",
-			"protocol", "http",
-			"param", "",
-			"params", new_vec()
-		, End);
+		void* path=map_id(map_val(_globals,"args"),1);
+		char* home=xstr("file:/",cwd(),"/", End);
+		ret=parse_url((xstr(home,path, End)));
+		add(ret,"method","get");
+		add(ret,"remote","localhost");
+		add(ret,"server","localhost");
+		add(ret,"protocol","http");
+		add(ret,"port","80");
+		add(ret,"path",xmap(
+			"full", map_val(ret,"path"),
+			"home", home,
+			"next", (sub_str(map_val(ret,"path"),str_len(home),0) ? sub_str(map_val(ret,"path"),str_len(home),0) : "/")
+		, End));
+		return ret;
 	};
 	while((line=read_line(stdin))){
 		header=xcat(header,line, End);
@@ -2568,7 +2571,7 @@ map* sql_tokenizer(char** line){
 		else if(*str>='0' && *str<='9'){ vec_add(mp,read_num(&str)); }
 		else if(is_alpha(*str,NULL)){ vec_add(mp,read_alpha(&str)); }
 		else if(strchr("([{",*str)){ read_paren(mp,&str,sql_tokenizer); }
-		else if(strchr(" \t",*str)){ read_space(&str); }
+		else if(strchr(" \t",*str)){ read_space(&str," \t"); }
 		else if(strchr("\n\r",*str)){ read_newline(&str); }
 		else if(strchr(".,;",*str)){ vec_add(mp,substr(str,0,1)); };
 		str++;
@@ -2591,7 +2594,7 @@ map* prop_tokenizer(char** line){
 		else if(*str>='0' && *str<='9'){ vec_add(mp,read_num(&str)); }
 		else if(is_alpha(*str,NULL)){ vec_add(mp,read_alpha(&str)); }
 		else if(strchr("([{",*str)){ read_paren(mp,&str,sql_tokenizer); }
-		else if(strchr(" \t",*str)){ read_space(&str); }
+		else if(strchr(" \t",*str)){ read_space(&str," \t"); }
 		else if(strchr("\n\r",*str)){ read_newline(&str); }
 		else if(strchr(".,;",*str)){ vec_add(mp,substr(str,0,1)); };
 		str++;
@@ -2628,7 +2631,7 @@ map* tokenizer(char** line,char* comment){
 			temp[0]=signs[hit+3];
 			vec_add(mp,temp);
 		}
-		else if(strchr(" \t",*str)){ read_space(&str); }
+		else if(strchr(" \t",*str)){ read_space(&str," \t"); }
 		else if(strchr("\n\r",*str)){ read_newline(&str); }
 		else if(strchr(".,;",*str)){ vec_add(mp,substr(str,0,1)); };
 		str++;

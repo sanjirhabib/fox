@@ -947,8 +947,8 @@ int block_head(int no,mempage* pg){
 };
 void init_rand(){ srand(time(NULL)*2817635252+_gcdata.run_time.tv_usec); };
 void* map_val(map* mp,char* key){
-	if(!mp||!key){ return NULL; };
-	assert(ptr_type(mp)==Map);
+	if(!mp||!key||!is_map(mp)){ return NULL; };
+//	assert(mp.ptr_type()==Map)
 	int i=map_has_key(mp,key);
 	return i ? mp->pairs[i-1].val : NULL;
 };

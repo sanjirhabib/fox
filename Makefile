@@ -2,13 +2,13 @@ CC=gcc
 INSTALL_DIR?=/usr/local
 CFLAGS=-Iinclude -std=gnu99 -Wno-logical-op-parentheses -Os -Wno-int-conversion
 FOXS=fox.fox core.fox sql.fox cgi.fox cmd.fox main.fox
-LIBS=-lm -lfox -lsqlite3
+LIBS=-lsqlite3
 HEADERS=fox.h sql.h
+_XLIBS=libfoxstatic.a libfox.so libfoxcgi.so libfoxcgistatic.a libfoxcmdstatic.a
+XLIBS=$(patsubst %,lib/%,$(_XLIBS))
 DEPS=$(patsubst %,include/%,$(HEADERS))
 _OBJ=core.o meta.o fox.o memsize.o sql.o
 OBJ = $(patsubst %,obj/%,$(_OBJ))
-_OCGI=cgi.o
-OCGI = $(patsubst %,obj/%,$(_OCGI))
 _OCMD=cmd.o
 OCMD = $(patsubst %,obj/%,$(_OCMD))
 
@@ -20,13 +20,27 @@ src/%.c: ./%.fox
 obj/%.o: src/%.c
 	$(CC) -c -o $@ $< $(CFLAGS)
 
-bin/fox: obj/main.o $(DEPS) $(OBJ) $(FOXS) $(OCGI) $(OCMD) lib/libfoxstatic.a obj/main.o
-	gcc -shared -o lib/libfox.so $(OBJ) obj/cmd.o -lsqlite3
-	gcc -shared -o lib/libfoxcgi.so $(OBJ) $(OCGI) -lsqlite3
-	gcc -o $@ obj/main.o $(CFLAGS) -Llib -lm -lsqlite3 -lfoxstatic
+bin/fox: obj/main.o $(DEPS) $(OBJ) $(FOXS) $(XLIBS)
+	gcc -o $@ obj/main.o $(CFLAGS) -Llib -lm $(LIBS) -lfoxstatic -lfoxcmdstatic
 	cd tests && ../bin/fox utests
 
-lib/libfoxstatic.a: obj/meta.o obj/fox.o obj/memsize.o obj/sql.o obj/cmd.o obj/core.o
+lib/libfoxcgi.so: $(OBJ) obj/cgi.o
+	rm -f $@
+	gcc -shared -o $@ $^ $(LIBS)
+
+lib/libfox.so: $(OBJ) obj/cmd.o
+	rm -f $@
+	gcc -shared -o $@ $^ $(LIBS)
+
+lib/libfoxcgistatic.a: obj/cgi.o
+	rm -f $@
+	ar rcs $@ $^
+
+lib/libfoxcmdstatic.a: obj/cmd.o
+	rm -f $@
+	ar rcs $@ $^
+
+lib/libfoxstatic.a: $(OBJ)
 	rm -f $@
 	ar rcs $@ $^
 
@@ -36,11 +50,13 @@ include/fox.h: $(FOXS)
 src/meta.c: $(FOXS) include/fox.h
 	fox write_meta src/meta.c
 
-install: bin/fox lib/libfoxstatic.a
+install: bin/fox lib/libfoxstatic.a lib/libfoxcgistatic.a
 	cd tests && ../bin/fox utests
 	cp include/fox.h $(INSTALL_DIR)/include/fox.h
 	cp bin/fox $(INSTALL_DIR)/bin/fox
 	cp lib/libfoxstatic.a $(INSTALL_DIR)/lib/
+	cp lib/libfoxcmdstatic.a $(INSTALL_DIR)/lib/
+	cp lib/libfoxcgistatic.a $(INSTALL_DIR)/lib/
 	cp lib/libfox.so $(INSTALL_DIR)/lib/
 	cp lib/libfoxcgi.so $(INSTALL_DIR)/lib/
 

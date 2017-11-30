@@ -2178,9 +2178,7 @@ char* str_html(char* in){
 	return ret
 }
 void header(char* str) => str.print(); "\r\n".print()
-char* http_out(char* str=NULL,char* status="200 OK",char* mime="text/html; charset=utf-8",map* headers=NULL){
-	if !str && !_globals.out => return NULL
-	if !str  => str=_globals.out
+char* http_out(char* str,char* status="200 OK",char* mime="text/html; charset=utf-8",map* headers=NULL){
 	"Status: $status".header()
 	"Content-Type: $mime".header()
 	"Content-Length: $(str.str_len())".header()
@@ -2501,15 +2499,20 @@ map* http_req(){
 		}
 		return ret
 	if !env.REQUEST_METHOD
-		return {
-			path: "/"
-			paths: ["/"]
-			server: "localhost"
-			port: "80"
-			protocol: "http"
-			param: ""
-			params: []
+		path=_globals.args[1]
+		char* home="file:/"..cwd().."/"
+		ret=(home..path).parse_url()
+		ret.method=:get
+		ret.remote=:localhost
+		ret.server=:localhost
+		ret.protocol=:http
+		ret.port="80"
+		ret.path={
+			full: ret.path
+			home: home
+			next: ret.path.sub_str(home.str_len()) or "/"
 		}
+		return ret
 
 	while((line=stdin.read_line()))
 		header.=line

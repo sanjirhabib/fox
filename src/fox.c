@@ -50,8 +50,8 @@ int make(map* files,char* outdir){
 	for(int next1=next(files,-1,NULL,NULL); has_id(files,next1); next1++){ void* v1=map_id(files,next1); if(file_time(v1)>file_time(".version.txt")){ req=1; break; }; };
 	return req ? compile(files,outdir,"fox","",0,0) : 0;
 };
-int cgi(char* infile, char* outfile,int keepfiles){ return cc(infile,"cgi", outfile, keepfiles); };
-int cc(char* infile, char* as, char* outfile, int keepfiles){
+int cgi(char* infile, char* outfile,int keepfiles){ return cc(infile,outfile, "cgi", keepfiles); };
+int cc(char* infile, char* outfile, char* as, int keepfiles){
 	infile=file_rename(infile,NULL,".fox",NULL,NULL,NULL);
 	if(!outfile){ outfile=infile; };
 	char* in=xstr(infile,".fox", End);
@@ -60,8 +60,8 @@ int cc(char* infile, char* as, char* outfile, int keepfiles){
 	map* switches=xmap(
 		"debug", "-O0 -lfox",
 		"speed", "-Os -lfox",
-		"static", "-lfoxstatic -lsqlite3 -fdata-sections -ffunction-sections -Wl,-dead_strip",
-		"cgi", "-ffoxcgi -lfox"
+		"static", "-lfoxstatic -lfoxcmdstatic -lsqlite3 -fdata-sections -ffunction-sections -Wl,-dead_strip",
+		"cgi", "-lfoxstatic -lfoxcgistatic -lsqlite3 -fdata-sections -ffunction-sections -Wl,-dead_strip"
 	, End);
 	void* libs = as ? map_val(switches,as) : NULL;
 	int ret=exec(
@@ -1461,9 +1461,9 @@ char* read_newline(char** in){
 	*in=str-1;
 	return substr(from,0,str-from);
 };
-char* read_space(char** in){
+char* read_space(char** in,char* spaces){
 	char* str=*in;
-	while(*str && strchr(" \t",*str)) {str++;};
+	while(*str && strchr(spaces,*str)) {str++;};
 	char* from=*in;
 	*in=str-1;
 	return substr(from,0,str-from);
@@ -1475,9 +1475,8 @@ map* read_data(char** in){
 		str+=line_len(str);
 		str+=str_level(str); };
 	if(*str){ str+=2; };
-	*in=str;
-	int idx=0;
-	return parse_data(x_map(substr(from,2,str-from+2)),&idx);
+	*in=str-1;
+	return data_toks(substr(from,0,str-from));
 };
 char* read_heredoc(char** in){
 	char* str=*in;
@@ -1608,11 +1607,11 @@ map* c_tokenizer(char** line,char term){
 		if(str_start(str,"//")){ add_ctok(read_theline(&str),mp,0); }
 		else if(str_start(str,"/*")){ add_ctok(read_upto_word(&str,"*/"),mp,0); }
 		else if(str_start(str,"#")){ add_ctok(read_theline(&str),mp,0); }
-		else if(strchr(" \t",*str)){ add_ctok(read_space(&str),mp,0); }
+		else if(strchr(" \t",*str)){ add_ctok(read_space(&str," \t"),mp,0); }
 		else if(strchr("\n\r",*str)){ add_ctok(read_newline(&str),mp,0); }
 		else if(strchr("\"'",*str)){ add_ctok(read_multistr(&str),mp,1); }
 		else if(str_start(str,"{{")){
-			if(!mp->len%2){ vec_add(mp,NULL); };
+			if(!(mp->len%2)){ vec_add(mp,NULL); };
 			vec_merge(mp,read_data(&str));
 		}else if(str_start(str,"---")){ add_ctok(read_heredoc(&str),mp,1); }
 		else if(strchr("\"'`",*str)){ add_ctok(read_quote(&str),mp,1); }
@@ -2525,8 +2524,10 @@ map* param_c(map* params,map* env,map* fs,map* fn){
 				if(str_eq(map_id(map_id(xparam,idx),1),"End")){ break; };
 				vec_add(cparam,type_convert(map_id(xparam,idx),map_val(p,"type"),env,fs,fn)); };
 			if(neq(map_id(map_id(cparam,map_len(cparam)-1),1),"End")){
-				char* endmark=map_len(cparam) ? " End" : "End";
-				vec_add(cparam,x_map(endmark)); };
+				if(!map_id(map_id(cparam,map_len(cparam)-1),1)){ set(add_id(cparam,map_len(cparam)-1),1,"End"); }
+				else{
+					char* endmark=map_len(cparam) ? " End" : "End";
+					vec_add(cparam,x_map(endmark)); }; };
 			break;
 		}else if(map_len(map_id(xparam,i))<2){
 			if(!map_val(p,"default")){ break; };
@@ -4629,61 +4630,80 @@ char* rtrim_upto(char* in,char upto,int keep){
 	if(!at){ return in; };
 	return sub_str(in,0,at-in + (keep ? 1 : 0));
 };
-map* parse_data(map* toks,int* pidx){
-	int idx=*pidx;
-	int level=(tok_indent(map_id(toks,idx)) ? tok_indent(map_id(toks,idx)) : 1);
-	map* ret=new_vec();
-	while(idx<map_len(toks) && ((tok_indent(map_id(toks,idx)) ? tok_indent(map_id(toks,idx)) : 1))>=level){
-		vec_add(ret,map_id(toks,idx));
-		idx++;
-		if(str_eq(map_id(toks,idx),"=")){
-			int head=term_at(toks,idx+1," \t\n\r");
-			vec_copy(ret,toks, idx+2, head-idx-2);
-			idx=head-1;
-		}else {vec_add(ret,quote_bare(map_id(toks,idx)));};
-		idx++;
-		vec_merge(ret,xvec(NULL,",", End));
-		int haseq=0;
-		int head=idx;
-		int nocomma=0;
-		while(idx<map_len(toks) && !(str_chr(map_id(toks,idx),'\n') || str_chr(map_id(toks,idx),'\r'))){
-			if(!haseq && str_chr(map_id(toks,idx+1),'=')){ haseq=1; };
-			idx+=2; };
-		if(str_eq(map_id(toks,head+1),"=")){
-			set(toks,head+2,xcat(map_id(toks,head+2),map_id(toks,head), End));
-			vec_copy(ret,toks,head+2,idx-head-2);
-		}else if(haseq){
-			1;
-		}else if(idx-head==2){
-			vec_add(ret,map_id(toks,head));
-			vec_add(ret,quote_bare(map_id(toks,head+1)));
-		}else if(idx-head>2){
-			vec_add(ret,map_id(toks,head));
-			vec_add(ret,quote_bare(toks_c(vec_merge(xvec(NULL, End),vec_sub(toks,head+1,idx-head-1))))); };
-		if(idx==head){
-			if(tok_indent(map_id(toks,idx))>level){
-				vec_add(ret," ");
-				vec_merge(vec_merge(ret,parse_data(toks,&idx)),xvec(NULL,",", End));
-			}else {vec_merge(ret,xvec(" ","NULL",NULL,",", End));};
-		}else if(idx<map_len(toks) && tok_indent(map_id(toks,idx))>=level){
-			vec_merge(ret,xvec(NULL,",", End)); }; };
-	*pidx=idx;
-	return xvec("xmap",NULL,"(",NULL,ret,NULL,")", End);
+map* data_toks(char* in){ in=sub_str(in,2,-2); return xvec("xmap",NULL,"(",NULL,data_tokenizer(&in,0),NULL,")", End); };
+map* data_tokenizer(char** in,int level){
+	if(!in||!*in||!**in){ return NULL; };
+	char* str=*in;
+	map* mp=new_vec();
+	char* last=NULL;
+	char* space1=NULL;
+	char* space2=NULL;
+	map* key=NULL;
+	map* val=NULL;
+	while(*str){
+		assert(last!=str);
+		last=str;
+
+		char* temp=str;
+		if(str_start(str,"//")){ space1=xcat(space1,read_theline(&str), End); str++; }
+		else if(str_chr(" \t\n\r",*str)){ space1=xcat(space1,read_space(&str,"\t\n\r "), End); str++; };
+		int clevel=0;
+		for(int i=str_len(space1)-1; i>=0; i--){
+			if(str_chr(" \t",space1[i])){ clevel++; }; };
+		if(clevel<level){
+			str=temp;
+			break;
+		};
+		if(str_chr("\"'`",*str)){ key=xvec(read_quote(&str), End); str++; }
+		else if(*str=='('){
+			str++;
+			key=xvec("(",NULL,c_tokenizer(&str,')'),NULL,")", End);
+			if(*str){ str++; };
+		}else{
+			key=data_quote(read_upto(&str,"\n\r \t"));
+		};
+		if(str_chr(" \t",*str)){ space2=read_over(&str,"\t "); str++; };
+
+		if(str_start(str,"---")){ val=xvec(read_heredoc(&str), End); str++; }
+		else if(!str_chr("\n\r",*str)){ val=data_quote(read_theline(&str)); str++; };
+		
+		if(key && !val){
+			temp=str;
+			map* ret=data_tokenizer(&str,clevel+1);	
+			if(map_len(ret)){
+				val=xvec("xmap",NULL,"(",NULL,ret,NULL,")", End);
+			}else{
+				val=NULL;
+	  			str=temp; }; };
+		if(key || val){
+			if(map_len(mp)){
+				vec_add(mp,NULL);
+				vec_add(mp,","); };
+			vec_add(mp,space1);
+			vec_merge(mp,(key ? key : xvec("NULL", End)));
+			vec_add(mp,NULL);
+			vec_add(mp,",");
+			vec_add(mp,space2);
+			vec_merge(mp,(val ? val : xvec("NULL", End)));
+			space1=space2=NULL;
+			key=val=NULL;
+		}else{
+			space1=xcat(space1,space2, End);
+			space2=NULL; }; };
+	*in=str;
+	return mp;
 };
-int term_at(map* toks,int from,char* terms){
-	int nterm=str_len(terms);
-	int idx=0;
-	for(idx=from; idx<map_len(toks); idx+=2){
-		for(int i=0; i<nterm; i++){
-			if(str_chr(map_id(toks,idx),terms[i])){ return idx; }; }; };
-	return idx;
+char* read_over(char** in,char* chars){
+	char* str=*in;
+	while(*str && str_chr(chars,*str)){
+		str++; };
+	char* from=*in;
+	*in=str-1;
+	return substr(from,0,str-from);
 };
-int vec_copy(map* ret,map* from,int idx,int len){
-	for(int i=idx; i<idx+len; i++){ vec_add(ret,map_id(from,i)); };
-	return idx+len;
-};
-char* quote_bare(char* in){
-	if(!in){ return in; };
-	if(strchr("\"':-",in[0])){ return in; };
-	return str_quote(in);
+map* data_quote(char* in){
+	if(!in || !str_len(in)){ return NULL; };
+	if(str_chr("\"'`",*in)){ return xvec(in, End); };
+	if(*in=='='){ return vec_compact(vec_del(x_map(sub_str(in,1,0)),0,1)); };
+	return xvec(str_quote(in), End);
 };
