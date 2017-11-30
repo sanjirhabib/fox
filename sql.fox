@@ -1120,7 +1120,7 @@ map* tbl_skeys(char* tbl,char* db) => return tbl.tbl_cols(db).cols_skeys()
 map* cols_skeys(map* cols){
 	if !cols.map_len() => return NULL
 	cols.each ,name => if name.str_has(:name) => return {name: name}	
-	return {cols.map_key(0): cols.map_key(0)}
+	return {(cols.map_key(0)): cols.map_key(0)}
 }
 map* toks_sql_params(map* toks, map* ret={}){
 	toks.each val
@@ -1973,6 +1973,22 @@ int sql_count(char* sql,char* db,map* params=NULL){
 			if !val.aggregate => expr="distinct $key"; break
 	return ("select count($expr) "..sqls.from.re_from()..sqls.where.re_where()).sql_value(db,params).to_int()
 }
+map* regexp(char* in, char* pattern){
+	status=0
+	regex_t	re={0}
+	regmatch_t match={0}
+	if regcomp(&re, pattern, REG_EXTENDED) => return NULL
+	if regexec(&re, in, 1, &match, 0) => regfree(&re); return NULL
+	map* ret=[in.sub_str(match.rm_so,match.rm_eo-match.rm_so).px()]
+	while 1
+		in+=match.rm_eo
+		int err=regexec(&re, in, 1, &match, REG_NOTBOL)
+		if err => break
+		ret[]=in.sub_str(match.rm_so,match.rm_eo-match.rm_so).px()
+	regfree(&re);
+	return ret
+}
+//===
 char* read_token(char** line,char* terminators=" \t"){
 	if !*line || !**line => return ''
 	in=*line
@@ -2165,7 +2181,7 @@ void header(char* str) => str.print(); "\r\n".print()
 char* http_out(char* str=NULL,char* status="200 OK",char* mime="text/html; charset=utf-8",map* headers=NULL){
 	if !str && !_globals.out => return NULL
 	if !str  => str=_globals.out
-//	"HTTP/1.1 $status".header()
+	"Status: $status".header()
 	"Content-Type: $mime".header()
 	"Content-Length: $(str.str_len())".header()
 	headers.each v,,i => v.header()
@@ -2270,7 +2286,7 @@ map* link_relative(map* links,char* url){
 			v.link_relative(url)
 			continue
 		if(v.fox_at(0)=='/') continue
-		links[i]=prepad.str_add(v)
+		links[i]=prepad..v
 	return links
 }
 char* links_ul(map* mp,char* class=NULL){
@@ -2417,34 +2433,6 @@ void* pages_exec(void* pages,char* path,map* env=NULL){
 	if data.is_str() => data.http_out(); return :ok
 	return data.data_exec(path.url_data(page).map_merge(env))
 }
-char* not_found(char* path) => return "The requested content $path was not found on the server.".http_out("404 Not Found")
-char* dispatch(map* pages,char* path){
-	if path.static_file() => return NULL
-	if path.fox_at(-1)!='/' && !path.str_has("/?") => return NULL
-	_globals.url=path.parse_url()
-	path=_globals.url.path.str_trim("/")
-	sess_load()
-	load_theme()
-	if pages.pages_exec(path) => return NULL
-	return path.not_found()
-}
-char* inet(map* pages,char* path=NULL){
-	if !path
-		_is_web=1
-		path=http_req().path
-	return pages.dispatch(path)
-}
-char* page(void* body,char* title,int width=3,void* link=NULL,char* theme=:dashboard,char* pg=:page,map* process=NULL,map* env={}){
-	process.process_post()
-	link=link.str_map()
-	body=body.data_exec(env)
-	return {
-		title: title.str_eval(env),
-		body: body,
-		width: width,
-		link: link.links_ul("nav nav nav-sidebar")
-	}.render(_globals.html[pg]).http_out()
-}
 char* map_template(map* mp,char* template) => return mp.render("--body\n"..template)
 map* str_vars(char* str){
 	cur=str
@@ -2502,20 +2490,25 @@ map* http_req(){
 		ret=env.REQUEST_URI.parse_url()
 		ret.method=:get
 		ret.remote=env.REMOTE_ADDR
-		ret.paths=ret.path.str_trim("/").str_split("/")
 		ret.server=env.HTTP_HOST
 		ret.protocol=env.REQUEST_SCHEME
 		ret.port=env.SERVER_PORT
+		char* home=env.SCRIPT_NAME.rtrim_upto('/',1)
+		ret.path={
+			full: ret.path
+			home: home
+			next: ret.path.sub_str(home.str_len()) or "/"
+		}
 		return ret
 	if !env.REQUEST_METHOD
 		return {
-		path: "/",
-		paths: ["/"],
-		server: "localhost",
-		port: "80",
-		protocol: "http",
-		param: "",
-		params: []
+			path: "/"
+			paths: ["/"]
+			server: "localhost"
+			port: "80"
+			protocol: "http"
+			param: ""
+			params: []
 		}
 
 	while((line=stdin.read_line()))
@@ -2536,22 +2529,6 @@ map* http_req(){
 	_globals.req=ret;
 	return ret
 }
-map* regexp(char* in, char* pattern){
-	status=0
-	regex_t	re={0}
-	regmatch_t match={0}
-	if regcomp(&re, pattern, REG_EXTENDED) => return NULL
-	if regexec(&re, in, 1, &match, 0) => regfree(&re); return NULL
-	map* ret=[in.sub_str(match.rm_so,match.rm_eo-match.rm_so).px()]
-	while 1
-		in+=match.rm_eo
-		int err=regexec(&re, in, 1, &match, REG_NOTBOL)
-		if err => break
-		ret[]=in.sub_str(match.rm_so,match.rm_eo-match.rm_so).px()
-	regfree(&re);
-	return ret
-}
-#ifndef __MINGW32__
 int ip_connect(char* host,int port,char** err=NULL){
 	int ret=AF_INET.socket(SOCK_STREAM, 0)
 	if !ret => return "Socket creation failed".err_msg(err)
@@ -2576,4 +2553,86 @@ char* remote_ip(int con){
 	getpeername(con,(struct sockaddr*)&addr,&len)
 	return addr.sin_addr.inet_ntoa()
 }
-#endif
+map* sql_tokenizer(char** line){
+	str=*line
+	map* mp=[]
+	if !*str => return NULL
+	char term=closing_paren(*str)
+	if term => str++
+	while *str && *str!=term
+		if "\"'`".strchr(*str) => mp[]=read_quote(&str)
+		else if str.str_start("--") => read_theline(&str);
+		else if str.str_start("/*") => read_upto(&str,"*/");
+		else if *str==':' => mp[]=fox_read_symbol(&str)
+		else if is_oper(*str) => mp[]=fox_read_oper(&str,term)
+		else if *str>='0' && *str<='9' => mp[]=read_num(&str)
+		else if is_alpha(*str) => mp[]=read_alpha(&str)
+		else if "([{".strchr(*str) => mp.read_paren(&str,sql_tokenizer)
+		else if " \t".strchr(*str) => read_space(&str);
+		else if "\n\r".strchr(*str) => read_newline(&str);
+		else if ".,;".strchr(*str) => mp[]=str.substr(0,1)
+		str++
+	
+	*line=str
+	return mp
+}
+map* prop_tokenizer(char** line){
+	str=*line
+	map* mp=[]
+	if !*str => return NULL
+	char term=closing_paren(*str)
+	if term => str++
+	while *str && *str!=term
+		if "\"'`".strchr(*str) => mp[]=read_quote(&str)
+		else if str.str_start("--") => read_theline(&str);
+		else if str.str_start("/*") => read_upto(&str,"*/");
+		else if *str==':' => mp[]=fox_read_symbol(&str)
+		else if is_oper(*str) => mp[]=fox_read_oper(&str,term)
+		else if *str>='0' && *str<='9' => mp[]=read_num(&str)
+		else if is_alpha(*str) => mp[]=read_alpha(&str)
+		else if "([{".strchr(*str) => mp.read_paren(&str,sql_tokenizer)
+		else if " \t".strchr(*str) => read_space(&str);
+		else if "\n\r".strchr(*str) => read_newline(&str);
+		else if ".,;".strchr(*str) => mp[]=str.substr(0,1)
+		str++
+	
+	*line=str
+	return mp
+}
+map* tokenizer(char** line,char* comment){
+	str=*line
+	mp=[]
+	if !*str => return mp
+	term=*str
+	if term=='(' => term=')'
+	else if term=='[' => term=']'
+	else if term=='{' => term='}'
+	else term=0
+	if term => str++
+	while *str && *str!=term
+		if "\"'`".strchr(*str) => mp[]=read_quote(&str)
+		else if str.str_start("--") => read_theline(&str)
+		else if str.str_start("#") => mp[]=read_theline(&str)
+		else if str.str_start("/*") => read_upto_word(&str,"*/")
+		else if *str==':' => mp[]=fox_read_symbol(&str)
+		else if is_oper(*str) => mp[]=fox_read_oper(&str,term)
+		else if (*str=='.' && (str[1]>='0' && str[1]<='9'))|| (*str>='0' && *str<='9') => mp[]=read_num(&str)
+		else if is_alpha(*str) => mp[]=read_alpha(&str)
+		else if "([{".strchr(*str)
+			char temp[2]={0}
+			temp[0]=*str
+			signs="([{)]}"
+			int hit=signs-signs.strchr(*str)
+			mp[]=temp
+			mp[]=tokenizer(&str,comment)
+			temp[0]=signs[hit+3]
+			mp[]=temp
+		
+		else if " \t".strchr(*str) => read_space(&str)
+		else if "\n\r".strchr(*str) => read_newline(&str)
+		else if ".,;".strchr(*str) => mp[]=str.substr(0,1)
+		str++
+		
+	*line=str
+	return mp
+}

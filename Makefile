@@ -5,8 +5,12 @@ FOXS=fox.fox core.fox sql.fox cgi.fox cmd.fox main.fox
 LIBS=-lm -lfox -lsqlite3
 HEADERS=fox.h sql.h
 DEPS=$(patsubst %,include/%,$(HEADERS))
-_OBJ=core.o dynamic.o fox.o memsize.o sql.o
+_OBJ=core.o meta.o fox.o memsize.o sql.o
 OBJ = $(patsubst %,obj/%,$(_OBJ))
+_OCGI=cgi.o
+OCGI = $(patsubst %,obj/%,$(_OCGI))
+_OCMD=cmd.o
+OCMD = $(patsubst %,obj/%,$(_OCMD))
 
 .PHONY: install clean php tests www
 
@@ -16,24 +20,21 @@ src/%.c: ./%.fox
 obj/%.o: src/%.c
 	$(CC) -c -o $@ $< $(CFLAGS)
 
-bin/fox: obj/main.o $(DEPS) $(OBJ) $(FOXS) lib/libfoxstatic.a
+bin/fox: obj/main.o $(DEPS) $(OBJ) $(FOXS) $(OCGI) $(OCMD) lib/libfoxstatic.a obj/main.o
 	gcc -shared -o lib/libfox.so $(OBJ) obj/cmd.o -lsqlite3
-	gcc -shared -o lib/libfoxcgi.so $(OBJ) obj/cgi.o -lsqlite3
+	gcc -shared -o lib/libfoxcgi.so $(OBJ) $(OCGI) -lsqlite3
 	gcc -o $@ obj/main.o $(CFLAGS) -Llib -lm -lsqlite3 -lfoxstatic
 	cd tests && ../bin/fox utests
 
-lib/libfoxstatic.a: obj/dynamic.o obj/fox.o obj/memsize.o obj/sql.o obj/cmd.o obj/core.o
+lib/libfoxstatic.a: obj/meta.o obj/fox.o obj/memsize.o obj/sql.o obj/cmd.o obj/core.o
 	rm -f $@
 	ar rcs $@ $^
-
-src/sql.c: sql.fox
-	fox fox_c sql.fox src/sql.c
 
 include/fox.h: $(FOXS)
 	fox write_foxh include/fox.h
 
-src/dynamic.c: $(FOXS) include/fox.h
-	fox write_dynamic src/dynamic.c
+src/meta.c: $(FOXS) include/fox.h
+	fox write_meta src/meta.c
 
 install: bin/fox lib/libfoxstatic.a
 	cd tests && ../bin/fox utests

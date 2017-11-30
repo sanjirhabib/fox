@@ -1120,7 +1120,7 @@ map* tbl_skeys(char* tbl,char* db){ return cols_skeys(tbl_cols(tbl,db)); };
 map* cols_skeys(map* cols){
 	if(!map_len(cols)){ return NULL; };
 	for(int next1=next(cols,-1,NULL,NULL); has_id(cols,next1); next1++){ char* name=map_key(cols, next1); if(str_has(name,"name")){ return xmap("name", name, End); }; };	
-	return xmap(map_key(cols,0), map_key(cols,0), End);
+	return xmap((map_key(cols,0)), map_key(cols,0), End);
 };
 map* toks_sql_params(map* toks, map* ret){
 	for(int next1=next(toks,-1,NULL,NULL); has_id(toks,next1); next1++){ void* val=map_id(toks,next1);
@@ -1973,6 +1973,22 @@ int sql_count(char* sql,char* db,map* params){
 			if(!map_val(val,"aggregate")){ expr=xstr("distinct ", key, End); break; }; }; };
 	return to_int(sql_value((xstr(xstr("select count(", expr, ") ", End),re_from(map_val(sqls,"from")),re_where(map_val(sqls,"where")), End)),db,params));
 };
+map* regexp(char* in, char* pattern){
+	int status=0;
+	regex_t	re={0};
+	regmatch_t match={0};
+	if(regcomp(&re, pattern, REG_EXTENDED)){ return NULL; };
+	if(regexec(&re, in, 1, &match, 0)){ regfree(&re); return NULL; };
+	map* ret=xvec(px(sub_str(in,match.rm_so,match.rm_eo-match.rm_so),1), End);
+	while(1){
+		in+=match.rm_eo;
+		int err=regexec(&re, in, 1, &match, REG_NOTBOL);
+		if(err){ break; };
+		vec_add(ret,px(sub_str(in,match.rm_so,match.rm_eo-match.rm_so),1)); };
+	regfree(&re);
+	return ret;
+};
+//===
 char* read_token(char** line,char* terminators){
 	if(!*line || !**line){ return NULL; };
 	char* in=*line;
@@ -2165,7 +2181,7 @@ void header(char* str){ print(str,stdout); print("\r\n",stdout); };
 char* http_out(char* str,char* status,char* mime,map* headers){
 	if(!str && !map_val(_globals,"out")){ return NULL; };
 	if(!str){ str=map_val(_globals,"out"); };
-//	"HTTP/1.1 $status".header()
+	header(xstr("Status: ", status, End));
 	header(xstr("Content-Type: ", mime, End));
 	header(xstr("Content-Length: ",int_str( str_len(str)), End));
 	for(int i=next(headers,-1,NULL,NULL); has_id(headers,i); i++){ void* v=map_id(headers,i); header(v); };
@@ -2270,7 +2286,7 @@ map* link_relative(map* links,char* url){
 			link_relative(v,url);
 			continue; };
 		if(fox_at(v,0)=='/') {continue;};
-		set(links,i,str_add(prepad,v)); };
+		set(links,i,xstr(prepad,v, End)); };
 	return links;
 };
 char* links_ul(map* mp,char* class){
@@ -2417,34 +2433,6 @@ void* pages_exec(void* pages,char* path,map* env){
 	if(is_str(data)){ http_out(data,"200 OK","text/html; charset=utf-8",NULL); return "ok"; };
 	return data_exec(data,map_merge(url_data(path,page),env));
 };
-char* not_found(char* path){ return http_out(xstr("The requested content ", path, " was not found on the server.", End),"404 Not Found","text/html; charset=utf-8",NULL); };
-char* dispatch(map* pages,char* path){
-	if(static_file(path)){ return NULL; };
-	if(fox_at(path,-1)!='/' && !str_has(path,"/?")){ return NULL; };
-	add(_globals,"url",parse_url(path));
-	path=str_trim(map_val(map_val(_globals,"url"),"path"),"/");
-	sess_load();
-	load_theme("dashboard");
-	if(pages_exec(pages,path,NULL)){ return NULL; };
-	return not_found(path);
-};
-char* inet(map* pages,char* path){
-	if(!path){
-		_is_web=1;
-		path=map_val(http_req(),"path"); };
-	return dispatch(pages,path);
-};
-char* page(void* body,char* title,int width,void* link,char* theme,char* pg,map* process,map* env){
-	process_post(process);
-	link=str_map(link,Map);
-	body=data_exec(body,env);
-	return http_out(render(xmap(
-		"title", str_eval(title,env),
-		"body", body,
-		"width",int_var( width),
-		"link", links_ul(link,"nav nav nav-sidebar")
-	, End),map_val(map_val(_globals,"html"),pg)),"200 OK","text/html; charset=utf-8",NULL);
-};
 char* map_template(map* mp,char* template){ return render(mp,xstr("--body\n",template, End)); };
 map* str_vars(char* str){
 	char* cur=str;
@@ -2502,20 +2490,25 @@ map* http_req(){
 		ret=parse_url(map_val(env,"REQUEST_URI"));
 		add(ret,"method","get");
 		add(ret,"remote",map_val(env,"REMOTE_ADDR"));
-		add(ret,"paths",str_split(str_trim(map_val(ret,"path"),"/"),"/",0));
 		add(ret,"server",map_val(env,"HTTP_HOST"));
 		add(ret,"protocol",map_val(env,"REQUEST_SCHEME"));
 		add(ret,"port",map_val(env,"SERVER_PORT"));
+		char* home=rtrim_upto(map_val(env,"SCRIPT_NAME"),'/',1);
+		add(ret,"path",xmap(
+			"full", map_val(ret,"path"),
+			"home", home,
+			"next", (sub_str(map_val(ret,"path"),str_len(home),0) ? sub_str(map_val(ret,"path"),str_len(home),0) : "/")
+		, End));
 		return ret; };
 	if(!map_val(env,"REQUEST_METHOD")){
 		return xmap(
-		"path", "/",
-		"paths", xvec("/", End),
-		"server", "localhost",
-		"port", "80",
-		"protocol", "http",
-		"param", "",
-		"params", new_vec()
+			"path", "/",
+			"paths", xvec("/", End),
+			"server", "localhost",
+			"port", "80",
+			"protocol", "http",
+			"param", "",
+			"params", new_vec()
 		, End);
 	};
 	while((line=read_line(stdin))){
@@ -2536,22 +2529,6 @@ map* http_req(){
 	add(_globals,"req",ret);
 	return ret;
 };
-map* regexp(char* in, char* pattern){
-	int status=0;
-	regex_t	re={0};
-	regmatch_t match={0};
-	if(regcomp(&re, pattern, REG_EXTENDED)){ return NULL; };
-	if(regexec(&re, in, 1, &match, 0)){ regfree(&re); return NULL; };
-	map* ret=xvec(px(sub_str(in,match.rm_so,match.rm_eo-match.rm_so),1), End);
-	while(1){
-		in+=match.rm_eo;
-		int err=regexec(&re, in, 1, &match, REG_NOTBOL);
-		if(err){ break; };
-		vec_add(ret,px(sub_str(in,match.rm_so,match.rm_eo-match.rm_so),1)); };
-	regfree(&re);
-	return ret;
-};
-#ifndef __MINGW32__
 int ip_connect(char* host,int port,char** err){
 	int ret=socket(AF_INET,SOCK_STREAM, 0);
 	if(!ret){ return err_msg("Socket creation failed",err); };
@@ -2576,4 +2553,86 @@ char* remote_ip(int con){
 	getpeername(con,(struct sockaddr*)&addr,&len);
 	return inet_ntoa(addr.sin_addr);
 };
-#endif
+map* sql_tokenizer(char** line){
+	char* str=*line;
+	map* mp=new_vec();
+	if(!*str){ return NULL; };
+	char term=closing_paren(*str);
+	if(term){ str++; };
+	while(*str && *str!=term){
+		if(strchr("\"'`",*str)){ vec_add(mp,read_quote(&str)); }
+		else if(str_start(str,"--")){ read_theline(&str); }
+		else if(str_start(str,"/*")){ read_upto(&str,"*/"); }
+		else if(*str==':'){ vec_add(mp,fox_read_symbol(&str)); }
+		else if(is_oper(*str)){ vec_add(mp,fox_read_oper(&str,term)); }
+		else if(*str>='0' && *str<='9'){ vec_add(mp,read_num(&str)); }
+		else if(is_alpha(*str,NULL)){ vec_add(mp,read_alpha(&str)); }
+		else if(strchr("([{",*str)){ read_paren(mp,&str,sql_tokenizer); }
+		else if(strchr(" \t",*str)){ read_space(&str); }
+		else if(strchr("\n\r",*str)){ read_newline(&str); }
+		else if(strchr(".,;",*str)){ vec_add(mp,substr(str,0,1)); };
+		str++;
+	};
+	*line=str;
+	return mp;
+};
+map* prop_tokenizer(char** line){
+	char* str=*line;
+	map* mp=new_vec();
+	if(!*str){ return NULL; };
+	char term=closing_paren(*str);
+	if(term){ str++; };
+	while(*str && *str!=term){
+		if(strchr("\"'`",*str)){ vec_add(mp,read_quote(&str)); }
+		else if(str_start(str,"--")){ read_theline(&str); }
+		else if(str_start(str,"/*")){ read_upto(&str,"*/"); }
+		else if(*str==':'){ vec_add(mp,fox_read_symbol(&str)); }
+		else if(is_oper(*str)){ vec_add(mp,fox_read_oper(&str,term)); }
+		else if(*str>='0' && *str<='9'){ vec_add(mp,read_num(&str)); }
+		else if(is_alpha(*str,NULL)){ vec_add(mp,read_alpha(&str)); }
+		else if(strchr("([{",*str)){ read_paren(mp,&str,sql_tokenizer); }
+		else if(strchr(" \t",*str)){ read_space(&str); }
+		else if(strchr("\n\r",*str)){ read_newline(&str); }
+		else if(strchr(".,;",*str)){ vec_add(mp,substr(str,0,1)); };
+		str++;
+	};
+	*line=str;
+	return mp;
+};
+map* tokenizer(char** line,char* comment){
+	char* str=*line;
+	map* mp=new_vec();
+	if(!*str){ return mp; };
+	char term=*str;
+	if(term=='('){ term=')'; }
+	else if(term=='['){ term=']'; }
+	else if(term=='{'){ term='}'; }
+	else {term=0;};
+	if(term){ str++; };
+	while(*str && *str!=term){
+		if(strchr("\"'`",*str)){ vec_add(mp,read_quote(&str)); }
+		else if(str_start(str,"--")){ read_theline(&str); }
+		else if(str_start(str,"#")){ vec_add(mp,read_theline(&str)); }
+		else if(str_start(str,"/*")){ read_upto_word(&str,"*/"); }
+		else if(*str==':'){ vec_add(mp,fox_read_symbol(&str)); }
+		else if(is_oper(*str)){ vec_add(mp,fox_read_oper(&str,term)); }
+		else if((*str=='.' && (str[1]>='0' && str[1]<='9'))|| (*str>='0' && *str<='9')){ vec_add(mp,read_num(&str)); }
+		else if(is_alpha(*str,NULL)){ vec_add(mp,read_alpha(&str)); }
+		else if(strchr("([{",*str)){
+			char temp[2]={0};
+			temp[0]=*str;
+			char* signs="([{)]}";
+			int hit=signs-strchr(signs,*str);
+			vec_add(mp,temp);
+			vec_add(mp,tokenizer(&str,comment));
+			temp[0]=signs[hit+3];
+			vec_add(mp,temp);
+		}
+		else if(strchr(" \t",*str)){ read_space(&str); }
+		else if(strchr("\n\r",*str)){ read_newline(&str); }
+		else if(strchr(".,;",*str)){ vec_add(mp,substr(str,0,1)); };
+		str++;
+	};
+	*line=str;
+	return mp;
+};

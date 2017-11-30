@@ -50,15 +50,21 @@ int make(map* files=source_files(),char* outdir="c"){
 	files.each v1 => if v1.file_time()>".version.txt".file_time() => req=1; break
 	return req ? files.compile(outdir) : 0
 }
-int cgi(char* infile="main.fox", char* outfile="index.cgi", char* libs="-lfoxcgi",int keepfiles=0) => return infile.cc(outfile,libs,keepfiles)
-int cc(char* infile, char* outfile=NULL, char* libs="-lfox", int keepfiles=0){
-	optimize="-g -Os"
+int cgi(char* infile="main.fox", char* outfile="index.cgi",int keepfiles=0) => return infile.cc(:cgi, outfile, keepfiles)
+int cc(char* infile, char* as="debug", char* outfile=NULL, int keepfiles=0){
 	infile=infile.file_rename(,".fox")
 	if !outfile => outfile=infile
 	in=infile..".fox"
 	in.fox_c(infile..".c")
 	in.fox_h(infile..".h")
-	ret="gcc $(optimize) $(infile).c -o $outfile $(libs) -std=gnu99 -Wno-logical-op-parentheses -lm 2>&1"
+	switches={
+		debug: "-O0 -lfox"
+		speed: "-Os -lfox"
+		static: "-lfoxstatic -lsqlite3 -fdata-sections -ffunction-sections -Wl,-dead_strip"
+		cgi: "-ffoxcgi -lfox"
+	}
+	libs = as ? switches[as] : ''
+	ret="gcc $(infile).c -o $outfile $(libs) -std=gnu99 -Wno-logical-op-parentheses -lm 2>&1"
 		.px()
 		.exec()
 	if !keepfiles
@@ -76,7 +82,7 @@ int compile(map* files=source_files(),char* outdir="c",char* outfile=:fox,char* 
 	infiles=out_c.map_join(" ")
 	optimize="-g -Os"
 	if release => optimize="-O3"
-	ret="gcc $(optimize) $(infiles) $('callfunc.c'.file_rename(outdir)) extern.c -o $(outfile) -rdynamic -std=gnu99 -Wno-logical-op-parentheses -lfox -lm -I $outdir/ $(options) 2>&1"
+	ret="gcc $(optimize) $(infiles) $('callfunc.c'.file_rename(outdir)) extern.c -o $(outfile) -rmeta -std=gnu99 -Wno-logical-op-parentheses -lfox -lm -I $outdir/ $(options) 2>&1"
 		.px()
 		.exec()
 	if ret && outfile===:fox
@@ -113,7 +119,7 @@ map* build(map* files=source_files(),char* outdir="c"){
 		ret[]=outfile
 		v2.write_c(outfile)
 	"fox.h".file_rename(outdir).write_foxh()
-	"callfunc.c".file_rename(outdir).write_dynamic()
+	"meta.c".file_rename(outdir).write_meta()
 	mem_usage().px()
 	return ret
 }
@@ -210,7 +216,6 @@ char* mstr(char* format, ...){
 	args.va_end()
 	return ret
 }
-char* str_add(char* str1,char* str2) => return str1.str_dup()..str2
 char* cat_char(char* str, char c){
 	if !str => return c.char_str()
 	len=str.str_len() //lima
@@ -1463,6 +1468,17 @@ char* read_space(char** in){
 	*in=str-1
 	return from.substr(0,str-from)
 }
+map* read_data(char** in){
+	str=*in
+	from=*in
+	while *str && !str.str_start("}}")
+		str+=str.line_len()
+		str+=str.str_level()
+	if *str => str+=2
+	*in=str
+	idx=0
+	return from.substr(2,str-from+2).x_map().parse_data(&idx)
+}
 char* read_heredoc(char** in){
 	str=*in
 	len=str.line_len()
@@ -1518,43 +1534,6 @@ char* read_quote(char** in){
 	from=*in
 	*in=str
 	return from.substr(0,str-from+1)
-}
-map* tokenizer(char** line,char* comment){
-	str=*line
-	mp=[]
-	if !*str => return mp
-	term=*str
-	if term=='(' => term=')'
-	else if term=='[' => term=']'
-	else if term=='{' => term='}'
-	else term=0
-	if term => str++
-	while *str && *str!=term
-		if "\"'`".strchr(*str) => mp[]=read_quote(&str)
-		else if str.str_start("--") => read_theline(&str)
-		else if str.str_start("#") => mp[]=read_theline(&str)
-		else if str.str_start("/*") => read_upto_word(&str,"*/")
-		else if *str==':' => mp[]=fox_read_symbol(&str)
-		else if is_oper(*str) => mp[]=fox_read_oper(&str,term)
-		else if (*str=='.' && (str[1]>='0' && str[1]<='9'))|| (*str>='0' && *str<='9') => mp[]=read_num(&str)
-		else if is_alpha(*str) => mp[]=read_alpha(&str)
-		else if "([{".strchr(*str)
-			char temp[2]={0}
-			temp[0]=*str
-			signs="([{)]}"
-			int hit=signs-signs.strchr(*str)
-			mp[]=temp
-			mp[]=tokenizer(&str,comment)
-			temp[0]=signs[hit+3]
-			mp[]=temp
-		
-		else if " \t".strchr(*str) => read_space(&str)
-		else if "\n\r".strchr(*str) => read_newline(&str)
-		else if ".,;".strchr(*str) => mp[]=str.substr(0,1)
-		str++
-		
-	*line=str
-	return mp
 }
 char* xlog(char* str){
 	FILE* fp=fopen("/tmp/log.txt","a+")
@@ -1632,6 +1611,9 @@ map* c_tokenizer(char** line,char term){
 		else if " \t".strchr(*str) => read_space(&str).add_ctok(mp,0)
 		else if "\n\r".strchr(*str) => read_newline(&str).add_ctok(mp,0)
 		else if "\"'".strchr(*str) => read_multistr(&str).add_ctok(mp,1)
+		else if str.str_start("{{")
+			if !mp->len%2 => mp[]=NULL
+			mp.vec_merge(read_data(&str))
 		else if str.str_start("---") => read_heredoc(&str).add_ctok(mp,1)
 		else if "\"'`".strchr(*str) => read_quote(&str).add_ctok(mp,1)
 		else if *str==':' => fox_read_symbol(&str).add_ctok(mp,1)
@@ -1798,7 +1780,7 @@ int requires_semicolon(map* mp,int idx){
 map* add_semicolon(map* mp,int recurse=1){
 	if(!mp) return mp
 	for(int idx=1;idx<mp->len;idx+=2)
-		if recurse && mp[idx]==="{" && (mp[idx-2]===")" || mp[idx-2].is_keyword())
+		if recurse && mp[idx]==="{" && (mp[idx-2]===")" || (mp[idx-2].is_keyword() && !mp[idx-2].is_word("return")))
 			mp[idx+2].add_semicolon()
 			idx+=4
 			continue
@@ -2157,6 +2139,22 @@ map* syn_func(map* syn,int with_body=0){
 	if with_body => ret.body=body
 	return ret
 }
+map* file_callmap(char* filename) => return filename.file_funcs(1).func_depends()
+map* func_depend(map* mp,map* ret={}){
+	for int i=0; i<mp.map_len(); i+=2
+		if mp[i+1].is_map() => mp[i+1].func_depend(ret); continue
+		name=mp.syn_is_call(i)
+		if name => ret[name]=name
+	return ret
+}
+map* func_depends(map* mp){
+	ret={}
+	mp.each fn,name
+		name.px()
+		ret.name=fn.body.func_depend()
+		ret.name.each val => "\t$val".px()
+	return ret
+}
 map* syn_funcs(map* mp,int with_body=0){
 	ret={}
 	for int i=1; i<mp.map_len(); i+=2
@@ -2164,7 +2162,6 @@ map* syn_funcs(map* mp,int with_body=0){
 			fn=mp[i].syn_func(with_body)
 			if fn.name===:main => continue
 			ret[fn.name]=fn
-//			"\nfunc: %s".dx(fn.name)
 	return ret
 }
 map* file_vec(char* in) => return in.fox_read_file().str_vec()
@@ -2331,8 +2328,6 @@ map* auto_types(map* toks,char* context=:c,int is_script=0,map* env={},map* fns=
 				last.vec_merge(tok.vec_sub(8)).auto_types(:syn,is_script,env,fns,func)
 				if is_script
 					toks.vec_splice(j+1,1,expanded)
-					//???? how does it work ????
-					//					toks[j+1]=last
 			else tok.auto_types(:syn,is_script,env,fns,func)
 		return toks
 	else if context===:syn
@@ -2371,7 +2366,6 @@ map* auto_types(map* toks,char* context=:c,int is_script=0,map* env={},map* fns=
 				type=toks.expr_type(toks.syn_assign_val(),0,env,fns)
 				if type
 					toks.vec_splice(1,0,"$type ".x_map().vec_del(0).vec_compact())
-//					"$type $name".px()
 					env[name]=type
 				else
 					"$(func.name)(): unknown var $name".px()
@@ -2415,8 +2409,6 @@ map* auto_types(map* toks,char* context=:c,int is_script=0,map* env={},map* fns=
 					if mid.syn_is_call(0)
 						temp++
 						varname=:map_..temp.int_str()
-//						name=params[0][1]
-//						varname="$(name)_mp"
 						toks.syn_set_param(i+2,params.vec_splice(0,0,[[NULL,varname]]).toks_join(","))
 						toks.vec_splice(head+1,i-head+2,"map* $varname=".x_map().vec_splice(0,1,NULL).vec_merge(mid).vec_merge([NULL,";"," "]))
 					else
@@ -2674,7 +2666,7 @@ map* syn_flow_body(map* syn,int no=0){
 	return iselse ? iselse : syn[11+no*16]
 }
 char* syn_is_call(map* syn, int idx){
-	if syn[idx+1].is_code() && syn[idx+3]==="(" && syn[idx+7]===")"
+	if syn[idx+1].is_code() && !syn[idx+1].is_keyword() && syn[idx+3]==="(" && syn[idx+7]===")"
 		return syn[idx+1]
 	return NULL
 }
@@ -3166,10 +3158,10 @@ char* write_phpconfig(){
 
 	---'.write_file("config.m4")
 }
-char* write_dynamic(char* outfile){
+char* write_meta(char* outfile){
 	map* funcs=source_funcs()
 	return ---
-	/* This is a generated file. To change it, edit function write_dynamic() in fox.c */
+	/* This is a generated file. To change it, edit function write_meta() in fox.c */
 	#include "sqlite3.h"
 	#include "fox.h"
 
@@ -4146,7 +4138,7 @@ char* fork_exec(char* cmd,map* params){
 		else if status.WIFSIGNALED() => "command %s killed".mstr(cmd)
 	return NULL
 }
-map* source_files() => return ["core.fox","fox.fox","sql.fox","cmd.fox"]
+map* source_files() => return ["core.fox","fox.fox","sql.fox","cmd.fox","cgi.fox"]
 map* source_funcs(){
 	if !_globals.cache.funcs
 		map* mp={}	
@@ -4156,7 +4148,7 @@ map* source_funcs(){
 		_globals.cache.funcs=mp
 	return _globals.cache.funcs
 }
-map* file_funcs(char* filename) => return filename.fox_read_file().x_funcs()
+map* file_funcs(char* filename,int withbody=0) => return filename.fox_read_file().x_funcs(withbody)
 char* help() => return funcs().funcs_cdecl()
 map* funcs(){
 	return _globals.cache.funcs ? _globals.cache.funcs : _globals.cache.reflect.funcs
@@ -4533,6 +4525,16 @@ map* inline_vectors(map* toks){
 							body[idx2-2]=:NULL
 						else
 							body[idx2-2]=body[idx2-2].str_quote()
+					if idx2>4 && body[idx2-2]!==")" && body[idx2-4]!==","
+						if body[idx2-4]===";" => body[idx2-4]=","
+						else
+							body.vec_splice(idx2-3,0,[NULL,","])
+							idx2+=2
+					else if idx2>8 && body[idx2-2]===")" && body[idx2-8]!==","
+						if body[idx2-8]===";" => body[idx2-8]=","
+						else
+							body.vec_splice(idx2-7,0,[NULL,","])
+							idx2+=2
 					body[idx2]=","
 				if skip => skip--
 		if body[body->len-body->len%2-1]===";"
@@ -4587,52 +4589,6 @@ int crash(){
 int str_ascii(char* in){
 	return in[0]
 }
-map* sql_tokenizer(char** line){
-	str=*line
-	map* mp=[]
-	if !*str => return NULL
-	char term=closing_paren(*str)
-	if term => str++
-	while *str && *str!=term
-		if "\"'`".strchr(*str) => mp[]=read_quote(&str)
-		else if str.str_start("--") => read_theline(&str);
-		else if str.str_start("/*") => read_upto(&str,"*/");
-		else if *str==':' => mp[]=fox_read_symbol(&str)
-		else if is_oper(*str) => mp[]=fox_read_oper(&str,term)
-		else if *str>='0' && *str<='9' => mp[]=read_num(&str)
-		else if is_alpha(*str) => mp[]=read_alpha(&str)
-		else if "([{".strchr(*str) => mp.read_paren(&str,sql_tokenizer)
-		else if " \t".strchr(*str) => read_space(&str);
-		else if "\n\r".strchr(*str) => read_newline(&str);
-		else if ".,;".strchr(*str) => mp[]=str.substr(0,1)
-		str++
-	
-	*line=str
-	return mp
-}
-map* prop_tokenizer(char** line){
-	str=*line
-	map* mp=[]
-	if !*str => return NULL
-	char term=closing_paren(*str)
-	if term => str++
-	while *str && *str!=term
-		if "\"'`".strchr(*str) => mp[]=read_quote(&str)
-		else if str.str_start("--") => read_theline(&str);
-		else if str.str_start("/*") => read_upto(&str,"*/");
-		else if *str==':' => mp[]=fox_read_symbol(&str)
-		else if is_oper(*str) => mp[]=fox_read_oper(&str,term)
-		else if *str>='0' && *str<='9' => mp[]=read_num(&str)
-		else if is_alpha(*str) => mp[]=read_alpha(&str)
-		else if "([{".strchr(*str) => mp.read_paren(&str,sql_tokenizer)
-		else if " \t".strchr(*str) => read_space(&str);
-		else if "\n\r".strchr(*str) => read_newline(&str);
-		else if ".,;".strchr(*str) => mp[]=str.substr(0,1)
-		str++
-	
-	*line=str
-	return mp
-}
 void benchmark_gc(){
 	ret=[]
 	for i=0;i<1000000;i++
@@ -4666,4 +4622,68 @@ char* var_bits(void* var){
 		if i && !(i%8) => ret[i+i/8-1]='-'
 		ret[i+i/8]=ptr[idx/8] & (1u << (idx%8) ) ? '1' : '0'
 	return ret
+}
+char* rtrim_upto(char* in,char upto,int keep=1){
+	if !in => return in
+	char* at=in.strrchr(upto)
+	if !at => return in
+	return in.sub_str(0,at-in + (keep ? 1 : 0))
+}
+map* parse_data(map* toks,int* pidx){
+	idx=*pidx
+	level=toks[idx].tok_indent() or 1
+	ret=[]
+	while idx<toks.map_len() && (toks[idx].tok_indent() or 1)>=level
+		ret[]=toks[idx]
+		idx++
+		if toks[idx]==="="
+			head=toks.term_at(idx+1," \t\n\r")
+			ret.vec_copy(toks, idx+2, head-idx-2)
+			idx=head-1
+		else ret[]=toks[idx].quote_bare()
+		idx++
+		ret.vec_merge([NULL,","])
+		haseq=0
+		head=idx
+		nocomma=0
+		while idx<toks.map_len() && !(toks[idx].str_chr('\n') || toks[idx].str_chr('\r'))
+			if !haseq && toks[idx+1].str_chr('=') => haseq=1
+			idx+=2
+		if toks[head+1]==="="
+			toks[head+2].=toks[head]
+			ret.vec_copy(toks,head+2,idx-head-2)
+		else if haseq
+			1
+		else if idx-head==2
+			ret[]=toks[head]
+			ret[]=toks[head+1].quote_bare()
+		else if idx-head>2
+			ret[]=toks[head]
+			ret[]=[NULL].vec_merge(toks.vec_sub(head+1,idx-head-1)).toks_c().quote_bare()
+		if idx==head
+			if toks[idx].tok_indent()>level
+				ret[]=" "
+				ret.vec_merge(toks.parse_data(&idx)).vec_merge([NULL,","])
+			else ret.vec_merge([" ",:NULL,NULL,","])
+		else if idx<toks.map_len() && toks[idx].tok_indent()>=level
+			ret.vec_merge([NULL,","])
+	*pidx=idx
+	return [:xmap,NULL,"(",NULL,ret,NULL,")"]
+}
+int term_at(map* toks,int from,char* terms){
+	nterm=terms.str_len()
+	idx=0
+	for idx=from; idx<toks.map_len(); idx+=2
+		for i=0; i<nterm; i++
+			if toks[idx].str_chr(terms[i]) => return idx
+	return idx
+}
+int vec_copy(map* ret,map* from,int idx,int len){
+	for i=idx; i<idx+len; i++ => ret[]=from[i]
+	return idx+len
+}
+char* quote_bare(char* in){
+	if !in => return in
+	if "\"':-".strchr(in[0]) => return in
+	return in.str_quote()
 }
