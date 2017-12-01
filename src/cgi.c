@@ -8,7 +8,7 @@ void* px(void* str,int newline){
 	return ret;
 };
 void xexit(int val){
-	http_out(NULL,"200 OK","text/html; charset=utf-8",NULL);
+	http_out(map_val(_globals,"out"),"200 OK","text/html; charset=utf-8",NULL);
 	gc_end();
 	exit(val);
 };

@@ -2706,6 +2706,8 @@ char* c_x(char* in){ return toks_c(map_tox(x_map(in))); };
 char* x_c(char* in){ return toks_c(x_toks(in,0)); };
 char* func_ccall(map* fn){
 	char* ret=NULL;
+	char* preproc=NULL;
+	int isvariadic=0;
 	map* map_1=map_val(fn,"params"); for(int i=next(map_1,-1,NULL,NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i); char* k=map_key(map_1, i);
 		char* def=map_val(v,"default");
 		v=map_val(v,"type");
@@ -2713,7 +2715,9 @@ char* func_ccall(map* fn){
 		v=drop_left(v,"unsigned ");
 		char* pre=NULL;
 		char* post=NULL;
+		char* mid=xstr("v.map_id(",int_str( i), ")", End);
 		if(str_eq(v,"char*")){ post=".is_str()"; }
+		else if(str_eq(v,"char**")){ preproc=xcat(preproc,xstr("char* p", k, "_", map_val(fn,"name"), "=v.map_id(",int_str( i), ").is_str(); ", End), End); mid=xstr("&p", k, "_", map_val(fn,"name"), End); }
 		else if(str_eq(v,"map*")){ post=".is_map()"; }
 		else if(is_word(v,"int long size_t char time_t") || str_eq(v,"long long")){ post=".to_int()"; }
 		else if(is_word(v,"double float")){ post=".to_double()"; }
@@ -2723,13 +2727,24 @@ char* func_ccall(map* fn){
 			else if(str_eq(map_val(fn,"type"),"int")){ mtype="int"; }
 			else if(str_eq(map_val(fn,"type"),"double")){ mtype="double"; }
 			else {return NULL;};
-			return xstr("call_variadic_", mtype, "(v,", map_val(fn,"name"), ",\"", map_val(fn,"name"), "\")", End);
+			isvariadic=1;
+			ret=xstr("call_variadic_", mtype, "(v,", map_val(fn,"name"), ",\"", map_val(fn,"name"), "\")", End);
+			break;
 		}else if(!str_end(v,"*")){
 			verbose("ignoring %s/%s/%s",map_val(fn,"name"),v,k, End);
 			return NULL; };
-		if(def){ ret=xcat(ret,xstr("v->len>=",int_str( i), " ? ", pre, "v.map_id(",int_str( i), ")", post, " : ", sub_str(x_c(def),0,-1), ",", End), End); }
-		else{ ret=xcat(ret,xstr(pre, "v.map_id(",int_str( i), ")", post, ",", End), End); }; };
-	return xstr(map_val(fn,"name"), "(", null_str(sub_str(ret,0,-1)), ")", End);
+		if(def){ ret=xcat(ret,xstr("v->len>=",int_str( i), " ? ", pre, mid, post, " : ", sub_str(x_c(def),0,-1), ",", End), End); }
+		else{ ret=xcat(ret,xstr(pre, mid, post, ",", End), End); }; };
+	char* postproc=NULL;
+	if(is_word(map_val(fn,"type"),"int long long size_t time_t char")){ postproc=".int_var()"; preproc=xcat(preproc,"return ", End); }
+	else if(is_word(map_val(fn,"type"),"double float")){ postproc=".double_var()"; preproc=xcat(preproc,"return ", End); }
+	else if(str_eq(map_val(fn,"type"),"void")){
+		postproc=xcat(postproc,"; return NULL", End);
+	}else if(!is_word(map_val(fn,"type"),"void* map* char*")) {return NULL;}
+	else {preproc=xcat(preproc,"return ", End);};
+	if(isvariadic){ return x_c(xstr(preproc, ret, postproc, End)); };
+	return x_c(xstr(preproc, map_val(fn,"name"), "(", null_str(sub_str(ret,0,-1)), ")", postproc, End));
+	//pp1
 };
 char* map_ccode(void* mp){
 	if(!mp){ return "NULL"; };
@@ -2751,23 +2766,16 @@ char* map_ccode(void* mp){
 };
 char* callfunc_c(map* funcs){
 	char* ret="function calls\n";
+	map* fdups=new_map();
 	for(int i2=next(funcs,-1,NULL,NULL); has_id(funcs,i2); i2++){ void* v=map_id(funcs,i2); char* k=map_key(funcs, i2);
+		if(map_val(fdups,map_val(v,"name"))){ continue; };
+		add(fdups,map_val(v,"name"),int_var(1));
 		if(str_eq(k,"args_map")){ continue; };
 		char* str_params=func_ccall(v);
 		if(!str_params){
 			continue; };
-		char* post="";
-		char* isvoid="return ";
-		char* isvoid2="";
-		void* ftype=map_val(v,"type");
-		if(is_word(ftype,"int long long size_t time_t char")){ post=".int_var()"; }
-		else if(is_word(ftype,"double float")){ post=".double_var()"; }
-		else if(str_eq(ftype,"void")){
-			isvoid="";
-			isvoid2=" return NULL;";
-		}else if(!is_word(ftype,"void* map* char*")) {continue;};
-		char* exp=x_c(xstr(str_params, post, End));
-		ret=xcat(ret,mstr("\t\tcase %p: %s%s%s break;\n",str_hash(map_val(v,"name")),isvoid,exp,isvoid2, End), End); };
+		//pp1
+		ret=xcat(ret,mstr("\t\tcase %p: { %s break; }\n",str_hash(map_val(v,"name")),str_params, End), End); };
 	return ret;
 };
 char* file_foxh(char* infile,char* outfile){
@@ -4426,6 +4434,9 @@ map* toks_macros(map* mp){
 int is_inline_vector(map* toks,int idx){
 	if(!is_word(map_id(toks,idx),"[ { ")){ return 0; };
 	char* pre=is_str(map_id(toks,idx-2));
+	if(str_eq(pre,":")){
+		for(int i=idx-4; i>=0; i-=2){
+			if(str_eq(map_id(toks,i),"case")){ return 0; }; }; };
 	if(is_word(pre,") ]")){ return 0; };
 	if(is_code(pre) && !is_word(pre,"return")){ return 0; };
 	if(str_eq(pre,"=")){
@@ -4705,5 +4716,9 @@ map* data_quote(char* in){
 	if(!in || !str_len(in)){ return NULL; };
 	if(str_chr("\"'`",*in)){ return xvec(in, End); };
 	if(*in=='='){ return vec_compact(vec_del(x_map(sub_str(in,1,0)),0,1)); };
+	if(*in=='-'){
+	return xvec(str_quote(in), End);
+
+	};
 	return xvec(str_quote(in), End);
 };

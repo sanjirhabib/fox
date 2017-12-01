@@ -336,6 +336,13 @@ void* double_var(double f){
 	return (void*)(((*(size_t*)&f) & ~(3ll<<61)) | ((1ll & 3ll)<<61));
 };
 int has_id(map* mp,int idx){ return idx>=0 && idx<mp->len; };
+void* map_idp(map* mp,int idx){
+	if(!mp){ return NULL; };
+	if(!is_map(mp)){ px((xstr("Error! not map ",str_quote(to_str(mp,"",0)), End)),1); assert(0); };
+	assert(is_map(mp));
+	if(idx<0 || idx>=mp->len){ return NULL; };
+	return mp->type==Vector ? &mp->vars[idx] : &mp->pairs[idx].val;
+};
 void* map_id(map* mp,int idx){
 	if(!mp){ return NULL; };
 	if(!is_map(mp)){ px((xstr("Error! not map ",str_quote(to_str(mp,"",0)), End)),1); assert(0); };

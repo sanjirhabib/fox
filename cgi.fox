@@ -8,7 +8,7 @@ void* px(void* str,int newline=1){
 	return ret
 }
 void xexit(int val=0){
-	http_out()
+	_globals.out.http_out()
 	gc_end()
 	exit(val)
 }

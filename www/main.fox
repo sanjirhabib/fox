@@ -13,12 +13,12 @@ main(){
 				source/ View Source
 				http://github.com/sanjirhabib/fox Github
 		}}.show_page()
-//	if path==="login/"
-//		form={
-//			cols
-//				username code
-//				password password
-//		}
+	if path==="login/"
+		form={
+			cols
+				username - code
+				password - password
+		}
 	return "$(_globals.req.path.full) [$path] <pre>$(_globals.req)</pre>".not_found()	
 }
 int not_found(char* path) => "The requested content $path was not found on the server.".http_out("404 Not Found"); return -404

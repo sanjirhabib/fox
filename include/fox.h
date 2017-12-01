@@ -146,6 +146,7 @@ double is_double(void* v);
 void* int_var(size_t i);
 void* double_var(double f);
 int has_id(map* mp, int idx);
+void* map_idp(map* mp, int idx);
 void* map_id(map* mp, int idx);
 int map_len(map* mp);
 char* map_key(map* mp, int idx);

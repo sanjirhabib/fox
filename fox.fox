@@ -2706,6 +2706,8 @@ char* c_x(char* in) => return in.x_map().map_tox().toks_c()
 char* x_c(char* in) => return in.x_toks().toks_c()
 char* func_ccall(map* fn){
 	ret=''
+	preproc=''
+	isvariadic=0
 	fn.params.each v,k,i
 		char* def=v.default
 		v=v.type
@@ -2713,7 +2715,9 @@ char* func_ccall(map* fn){
 		v=v.drop_left(:unsigned\ )
 		pre=''
 		post=''
+		mid="v.map_id($i)"
 		if v==="char*" => post=".is_str()"
+		else if v==="char**" => preproc.="char* p$(k)_$(fn.name)=v.map_id($i).is_str(); "; mid="&p$(k)_$(fn.name)"
 		else if v==="map*" => post=".is_map()"
 		else if v.is_word("int long size_t char time_t") || v==="long long" => post=".to_int()"
 		else if v.is_word("double float") => post=".to_double()"
@@ -2723,13 +2727,24 @@ char* func_ccall(map* fn){
 			else if fn.type===:int => mtype=:int
 			else if fn.type===:double => mtype=:double
 			else return NULL
-			return "call_variadic_$mtype(v,$(fn.name),\"$(fn.name)\")"
+			isvariadic=1
+			ret="call_variadic_$mtype(v,$(fn.name),\"$(fn.name)\")"
+			break
 		else if !v.str_end("*")
 			"ignoring %s/%s/%s".verbose(fn.name,v,k)
 			return NULL
-		if def => ret.="v->len>=$i ? $(pre)v.map_id($i)$(post) : $(def.x_c().sub_str(0,-1)),"
-		else => ret.="$(pre)v.map_id($i)$post,"
-	return "$(fn.name)($(ret.sub_str(0,-1).null_str()))"
+		if def => ret.="v->len>=$i ? $pre$mid$post : $(def.x_c().sub_str(0,-1)),"
+		else => ret.="$pre$mid$post,"
+	char* postproc=''
+	if fn.type.is_word("int long long size_t time_t char") => postproc=".int_var()"; preproc.='return '
+	else if fn.type.is_word("double float") => postproc=".double_var()"; preproc.='return '
+	else if fn.type===:void
+		postproc.="; return NULL"
+	else if(!fn.type.is_word("void* map* char*")) return NULL
+	else preproc.='return '
+	if isvariadic => return "$preproc$ret$postproc".x_c()
+	return "$preproc$(fn.name)($(ret.sub_str(0,-1).null_str()))$postproc".x_c()
+	//pp1
 }
 char* map_ccode(void* mp){
 	if !mp => return :NULL
@@ -2751,23 +2766,16 @@ char* map_ccode(void* mp){
 }
 char* callfunc_c(map* funcs){
 	ret="function calls\n"
+	fdups={}
 	funcs.each v,k,i2
+		if fdups[v.name] => continue
+		fdups[v.name]=1
 		if k===:args_map => continue
 		str_params=v.func_ccall()
 		if(!str_params)
 			continue
-		post=""
-		isvoid="return "
-		isvoid2=""
-		ftype=v.type
-		if ftype.is_word("int long long size_t time_t char") => post=".int_var()"
-		else if ftype.is_word("double float") => post=".double_var()"
-		else if ftype===:void
-			isvoid=""
-			isvoid2=" return NULL;"
-		else if(!ftype.is_word("void* map* char*")) continue
-		exp="$str_params$post".x_c()
-		ret.="\t\tcase %p: %s%s%s break;\n".mstr(v.name.str_hash(),isvoid,exp,isvoid2)
+		//pp1
+		ret.="\t\tcase %p: { %s break; }\n".mstr(v.name.str_hash(),str_params)
 	return ret
 }
 char* file_foxh(char* infile,char* outfile=NULL){
@@ -4426,6 +4434,9 @@ map* toks_macros(map* mp){
 int is_inline_vector(map* toks,int idx){
 	if !toks[idx].is_word("[ { ") => return 0
 	pre=toks[idx-2].is_str()
+	if pre===":"
+		for int i=idx-4; i>=0; i-=2
+			if toks[i]===:case => return 0
 	if pre.is_word(") ]") => return 0
 	if pre.is_code() && !pre.is_word(:return) => return 0
 	if pre==="="
@@ -4705,5 +4716,7 @@ map* data_quote(char* in){
 	if !in || !in.str_len() => return NULL
 	if "\"'`".str_chr(*in) => return [in]
 	if *in=='=' => return in.sub_str(1).x_map().vec_del(0,1).vec_compact()
+	if *in=='-'
+		
 	return [in.str_quote()]
 }
