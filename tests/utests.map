@@ -2291,7 +2291,7 @@ x_c/262
 	----.x_c()
 ---
 ---
-	write_file(json(map_val(map_val(_globals,"res"),"sess"),0),mstr("/tmp/sess.%s",sess_id(), End),0);
+	write_file(json(map_val(map_val(_globals,"res"),"sess"),0),mstr("/tmp/sess.%s",sess_id(), End),0,1);
 ---
 
 

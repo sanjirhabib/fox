@@ -152,7 +152,6 @@ void save_refere(){
 	add(add_key(req,"gets",Map),"_refer",refer);
 	http_redirect(xstr("./?", map_amps(map_val(req,"gets")), End));
 };
-char* home_url(char* path){ return xstr(full_url(map_val(map_val(map_val(_globals,"req"),"path"),"home")),path, End); };
 char* referer(){
 	return (map_val(map_val(map_val(_globals,"req"),"gets"),"_refer") ? map_val(map_val(map_val(_globals,"req"),"gets"),"_refer") : (map_val(parse_url(map_val(env_vars(),"HTTP_REFERER")),"path") ? map_val(parse_url(map_val(env_vars(),"HTTP_REFERER")),"path") : home_url(NULL)));
 };
@@ -355,13 +354,6 @@ char* page_html(map* data){
 	"</body></html>\n", 
 	"", 
 	"", End);
-};
-char* show_port(){
-	if(str_eq(map_val(map_val(_globals,"req"),"protocol"),"http") && str_eq(map_val(map_val(_globals,"req"),"port"),"80")){ return NULL; };
-	return xstr(":",map_val(map_val(_globals,"req"),"port"), End);
-};
-char* full_url(char* url){
-	return xstr(map_val(map_val(_globals,"req"),"protocol"),"://",map_val(map_val(_globals,"req"),"server"),show_port(),"/",str_ltrim(url,"/"), End);
 };
 int is_user(char* who){ return str_eq(map_val(map_val(_globals,"sess"),"user"),who) || str_eq(map_val(map_val(_globals,"sess"),"role"),who); };
 void authorized(char* who){ if(!is_user(who)){ not_found(map_val(map_val(_globals,"req"),"path")); }; };

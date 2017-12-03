@@ -43,11 +43,12 @@ int cc(char* infile, char* outfile, char* as, char* opts, int keepfiles){
 	char* in=xstr(infile,".fox", End);
 	fox_c(in,xstr(infile,".c", End));
 	fox_h(in,xstr(infile,".h", End));
+	char* libs="-I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lcrypto -lmarkdown -lcurl -lsqlite3";
 	map* switches=xmap(
-		"debug", "-O0 -lfox -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lcrypto -lmarkdown",
-		"speed", "-Os -lfox -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lcrypto -lmarkdown",
-		"static", "-lfoxstatic -lfoxcmdstatic -lsqlite3 -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lmarkdown -lcrypto -fdata-sections -ffunction-sections -Wl,-dead_strip",
-		"cgi", "-lfoxstatic -lfoxcgistatic -lsqlite3 -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lmarkdown -lcrypto -fdata-sections -ffunction-sections -Wl,-dead_strip"
+		"debug", xstr("-O0 -lfox ", libs, End),
+		"speed", xstr("-Os -lfox ", libs, End),
+		"static", xstr("-lfoxstatic -lfoxcmdstatic ", libs, " -fdata-sections -ffunction-sections -Wl,-dead_strip", End),
+		"cgi", xstr("-Os -lfoxstatic -lfoxcgistatic ", libs, " -fdata-sections -ffunction-sections", End)
 	, End);
 	as = as ? map_val(switches,as) : NULL;
 	int ret=exec(
@@ -84,13 +85,13 @@ char* file_dir(char* file){
 	if(i==-1){ return NULL; };
 	return sub_str(file,0,i+1);
 };
-void write_source(char* dir){
+void write_source(){
 	source_funcs();
 	map* map_1=source_files(); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* infile=map_id(map_1,next1);
-		fox_c(infile,xstr(file_rename(infile,dir,".fox",NULL,NULL,NULL),".c", End));
-		fox_h(infile,xstr(file_rename(infile,dir,".fox",NULL,NULL,NULL),".h", End)); };
-	write_foxh(file_rename("fox.h",dir,NULL,NULL,NULL,NULL));
-	write_meta(file_rename("meta.c",dir,NULL,NULL,NULL,NULL));
+		fox_c(infile,xstr(file_rename(infile,"src",".fox",NULL,NULL,NULL),".c", End));
+		fox_h(infile,xstr(file_rename(infile,"include",".fox",NULL,NULL,NULL),".h", End)); };
+	write_foxh(file_rename("fox.h","include",NULL,NULL,NULL,NULL));
+	write_meta(file_rename("meta.c","src",NULL,NULL,NULL,NULL));
 };
 char* file_rename(char* file,char* dir,char* delext,char* addext,char* prefix,char* postfix){
 	char* olddir=file_dir(file);
@@ -154,7 +155,7 @@ char* write_configm4(char* name, char* outfile){
 	"  PHP_NEW_EXTENSION(", name, ", ", name, ".c ", name, "php.c, $ext_shared,, -DZEND_ENABLE_STATIC_TSRMLS_CACHE=1)\n", 
 	"fi\n", 
 	"", 
-	"", End),outfile,0);
+	"", End),outfile,0,1);
 };
 char* mem_usage(){
 	int runtime=run_time();
@@ -247,10 +248,10 @@ char* cwd(){
 	free(ret);
 	return ret2;
 };
-char* write_file(char* data,char* filename,int readonly){
+char* write_file(char* data,char* filename,int readonly,int verbose){
 	if(!filename){ return data; };
 	if(str_eq(filename,"-")){ return px(data,1); };
-	px(xstr("-> ", filename, End),1);
+	if(verbose){ px(xstr("-> ", filename, End),1); };
 	if(readonly && is_file(filename)){ chmod(filename,0666); };
 	FILE* fp=fopen(filename,"w");
 	if(!fp){ fox_error(xstr("writting to file ", filename, " failed", End),0); };
@@ -2683,9 +2684,9 @@ int is_func_decl(map* syn){
 	return 0;
 };
 char* fox_h(char* infile,char* outfile){
-	return write_file((xstr("#include <fox.h>\n",funcs_cdecl(file_funcs(infile,0),0), End)),outfile,0);
+	return write_file((xstr("#include <fox.h>\n",funcs_cdecl(file_funcs(infile,0),0), End)),outfile,0,1);
 };
-char* fox_c(char* infile, char* outfile){ return write_file(x_c(fox_read_file(infile,1)),outfile,0); };
+char* fox_c(char* infile, char* outfile){ return write_file(x_c(fox_read_file(infile,1)),outfile,0,1); };
 map* x_map(char* in){ return c_tokenizer(&in,'\0'); };
 char* c_x(char* in){ return toks_c(map_tox(x_map(in))); };
 
@@ -2768,7 +2769,7 @@ char* callfunc_c(map* funcs){
 	return ret;
 };
 char* file_foxh(char* infile,char* outfile){
-	return write_file(funcs_cdecl(file_funcs(infile,0),1),outfile,0);
+	return write_file(funcs_cdecl(file_funcs(infile,0),1),outfile,0,1);
 };
 char* func_cdecl(map* fn,int show_default){
 	char* ret2="";
@@ -2895,7 +2896,7 @@ char* foxh(){
 	"";
 };
 char* write_foxh(char* outfile){
-	return write_file((xstr(foxh(),funcs_cdecl(source_funcs(),0), End)),outfile,0);
+	return write_file((xstr(foxh(),funcs_cdecl(source_funcs(),0), End)),outfile,0,1);
 };
 char* fox_phpc(char* infile,char* outfile){
 	map* fns=infile ? file_funcs(infile,0) : source_funcs();
@@ -3143,7 +3144,7 @@ char* fox_phpc(char* infile,char* outfile){
 	"}\n", 
 	"", 
 	"", End), End);
-	return write_file(ret,outfile,0);
+	return write_file(ret,outfile,0,1);
 };
 char* write_phpconfig(){
 	return write_file(""
@@ -3155,7 +3156,7 @@ char* write_phpconfig(){
 	"  PHP_NEW_EXTENSION(foxphp, foxphp.c fox.c sql.c extern.c callfunc.c, $ext_shared,,-Wno-logical-op-parentheses -DPHP_MOD)\n"
 	"fi\n"
 	""
-	"","config.m4",0);
+	"","config.m4",0,1);
 };
 char* write_meta(char* outfile){
 	map* funcs=source_funcs();
@@ -3182,7 +3183,7 @@ char* write_meta(char* outfile){
 	"	}\n", 
 	"}\n", 
 	"", 
-	"", End)),outfile,1);
+	"", End)),outfile,1,1);
 	px(mem_usage(),1);
 	return ret;
 };
@@ -3528,7 +3529,7 @@ int str_char_count(char* str,char c){
 };
 char* write_c(char* infile,char* outfile){
 	source_funcs();
-	return write_file(x_c(fox_read_file(infile,1)),outfile,1);
+	return write_file(x_c(fox_read_file(infile,1)),outfile,1,1);
 };
 map* command_line(char* in,int argc,char** argv){
 	if(argc==1 || (argc==2 && str_eq(argv[1],"-h"))){ px(in,1); return NULL; };
@@ -3630,7 +3631,8 @@ int run_cmdline(map* args){
 		ret=invoke(cmdline_params(vec_sub(args,2,0),name),name); };
 	if(_printed){ return is_i(ret) ? is_int(ret) : 0; };
 	if(is_map(ret)){ px(json(ret,1),1); return 0; };
-	if(is_str(ret) || is_num(ret)){ px(to_str(ret,"",0),1); };
+	if(is_blob(ret)){ print(ret,stdout); }
+	else if(is_str(ret) || is_num(ret)){ px(to_str(ret,"",0),1); };
 	return is_i(ret) ? is_int(ret) : 0;
 };
 int utests(char* test,char* file){
@@ -4273,7 +4275,7 @@ char* time_str(time_t timer){
 	strftime(buffer,20, "%Y-%m-%d %H:%M:%S",localtime(&timer));
 	return str_dup(buffer);
 };
-char* increase_version(){ return write_file(int_str((atoi(fox_read_file(".version.txt",1))+1)),".version.txt",0); };
+char* increase_version(){ return write_file(int_str((atoi(fox_read_file(".version.txt",1))+1)),".version.txt",0,1); };
 int call_variadic_int(map* mp,void* fp,char* name){
 	int(*ptr)(void* param1,...)=fp;
 	if(!mp){ return ptr(End); };

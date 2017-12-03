@@ -1,0 +1,5 @@
+Install the required packages
+
+yum install libcurl-devel libmarkdown-devel libsqlite3x-devel
+
+make safe

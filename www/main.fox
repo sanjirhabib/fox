@@ -35,12 +35,12 @@ main(){
 			}}
 		data.show_page()
 	map* parts=NULL
-	if (parts=path.re_match("^([0-9]+)/"))
+	if (parts=path.regexp("^([0-9]+)/"))
 		id=parts[1]
 		_globals.tabs[:Post]=(id.."/").home_url()
 		row="select * from blog where id=:id".sql_row(:blog,{id: id})
 		if !row => "Blog $id".not_found()
-		if path.re_match("^[0-9]+/$")
+		if path.regexp("^[0-9]+/$")
 			data={{
 				title =row.title
 				tab Home
@@ -51,7 +51,7 @@ main(){
 					edit/ Edit
 				}}
 			data.show_page()
-		if path.re_match("^[0-9]+/edit/$")
+		if path.regexp("^[0-9]+/edit/$")
 			_globals.tabs[:Edit]=(id.."/edit/").home_url()
 			form={{
 				title Post A New Blog
@@ -152,7 +152,6 @@ void save_refere(){
 	req.gets._refer=refer
 	"./?$(req.gets.map_amps())".http_redirect()
 }
-char* home_url(char* path=NULL) => return _globals.req.path.home.full_url()..path
 char* referer(){
 	return _globals.req.gets._refer or env_vars().HTTP_REFERER.parse_url().path or home_url()
 }
@@ -253,7 +252,7 @@ map* page_data(map* data){
 	data.header=head..data.css
 		..(_globals.css and "<style>\n".._globals.css.map_join("\n").."</style>")
 	data.footer=---
-	Run Time: $(run_time())ms=$(gc_time())/$(run_time()-total_time()-gc_time())/$(total_time())
+	Run Time: $(run_time())ms=$(gc_time())GC+$(run_time()-total_time()-gc_time())Code+$(total_time())DB
 	Malloc: $(total_kb())KB. Total: $(max_mem()/1024)KB.
 	GC: $(gc_runs())runs.
 	---
@@ -355,13 +354,6 @@ char* page_html(map* data){
 	</body></html>
 
 	---
-}
-char* show_port(){
-	if _globals.req.protocol===:http && _globals.req.port==="80" => return ''
-	return ":".._globals.req.port
-}
-char* full_url(char* url=NULL){
-	return _globals.req.protocol.."://".._globals.req.server..show_port().."/"..url.str_ltrim("/")
 }
 int is_user(char* who) => return _globals.sess.user===who || _globals.sess.role===who
 void authorized(char* who) => if !who.is_user() => _globals.req.path.not_found()

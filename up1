@@ -1,0 +1,2 @@
+#!/bin/bash
+rsync -varz ./ box:/web/fox/ --exclude .git --exclude lib --exclude obj --exclude www --exclude bin --exclude fox --exclude speed --exclude project --exclude php

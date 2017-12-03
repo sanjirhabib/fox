@@ -1475,13 +1475,13 @@ map* tables_map(map* tbls){
 	return tbls;
 };
 char* db_file(char* db,char* file){
-	return write_file(map_str(xmap("db", tables_map(db_tables(db)), End)),file,0);
+	return write_file(map_str(xmap("db", tables_map(db_tables(db)), End)),file,0,1);
 };
 char* schema_file(char* db,char* file){
 	map* ret=new_map();
 	map* map_1=sql_rows("_schema",db,NULL); for(int i=next(map_1,-1,NULL,NULL); has_id(map_1,i); i++){ void* row=map_id(map_1,i);
 		add(add_key(ret,map_val(row,"type"),Map),map_val(row,"name"),str_map(map_val(row,"data"),Map)); };
-	return write_file(map_str(ret),file,0);
+	return write_file(map_str(ret),file,0,1);
 };
 map* file_compile(char* file,char* db,int go){
 	map* ret=file_sync_schema(file,db,go);
@@ -1541,7 +1541,7 @@ char* confirm(char* prompt,char* option1,char* option2,char* title,map* data){
 	return NULL;		
 };
 char* sql_delete(void* ids,char* tbl,char* db){
-	return xstr(xstr("delete from ", tbl, End),lite_exec(re_where(pkeys_where(tbl,db)),db,sql_id_ids(tbl,db,ids)), End);
+	return lite_exec((xstr(xstr("delete from ", tbl, End),re_where(pkeys_where(tbl,db)), End)),db,sql_id_ids(tbl,db,ids));
 };
 char* crud_delete(char* sql,char* db,char* back){
 	if(confirm("Delete this record?","Yes","No","Confirm",NULL)){
@@ -1982,7 +1982,7 @@ int sql_count(char* sql,char* db,map* params){
 			if(!map_val(val,"aggregate")){ expr=xstr("distinct ", key, End); break; }; }; };
 	return to_int(sql_value((xstr(xstr("select count(", expr, ") ", End),re_from(map_val(sqls,"from")),re_where(map_val(sqls,"where")), End)),db,params));
 };
-map* re_match(char* in, char* pattern){
+map* regexp(char* in, char* pattern){
 	int status=0;
 	regex_t	re={0};
 	regmatch_t match[10]={0};
@@ -2191,7 +2191,7 @@ char* http_out(char* str,char* status,char* mime,map* headers){
 	if(map_val(_globals,"sessid")){
 		void* sess=map_val(_globals,"sess");
 		add(_globals,"sess",NULL);
-		write_file(json(sess,0),xstr("/tmp/sess.", sess_id(), End),0);
+		write_file(json(sess,0),xstr("/tmp/sess.", sess_id(), End),0,0);
 		add(_globals,"sessid",NULL); };
 	if(callonce){ return str; };
 	callonce=1;
@@ -2273,6 +2273,7 @@ map* parse_url(char* path){
 	add(ret,"gets",amps_map(map_id(two,1)));
 	return ret;
 };
+char* url_host(char* url){ return map_id(regexp(url,"://([^:/]+)"),1); };
 void load_theme(char* name){
 	if(!str_len(name)) {return;};
 	map* mp=file_map((xstr(name,".map", End)));
@@ -2659,9 +2660,19 @@ map* tokenizer(char** line,char* comment){
 	*line=str;
 	return mp;
 };
-char* md_url(char* url,int len,void* junk){
-	return xstr("<img src=habib:", substr(url,0,len), "></img>", End);
+char* md_url(char* in,int len,void* junk){
+	char* url=sub_str(in,0,len);	
+	if(str_eq(url_host(url),"localhost") || str_has(url_host(url),"habibur")){ return url; };
+	char* ext3=sub_str(url,-4,0);
+	if(!is_word(ext3,".jpg jpeg .png .gif")){ return url; };
+	char* id=md5(url);
+	char* file=xstr("imgs/", id, ".jpg", End);
+	if(is_file(file)){ return home_url(file); };
+	char* data=fox_curl(url);
+	if(data){ write_file(data,file,0,0); return home_url(file); }
+	else {return xstr("BAD--",url, End);};
 };
+char* file_markdown(char* infile,char* outfile){ return write_file(fox_markdown(fox_read_file(infile,1)),outfile,0,1); };
 char* fox_markdown(char* in){
 	FILE* out;
 	char* outbuff;
@@ -2682,7 +2693,6 @@ size_t fox_curl_cat(void* ptr, size_t size, size_t num, void* old){
 };
 char* fox_curl(char* url){
 	char* ret=new_blob(0);
-	CURLcode res;
 	CURL* curl_handle = curl_easy_init();
 	curl_easy_setopt(curl_handle,CURLOPT_URL, url);
 	curl_easy_setopt(curl_handle,CURLOPT_WRITEFUNCTION,fox_curl_cat);
@@ -2690,7 +2700,15 @@ char* fox_curl(char* url){
 	curl_easy_setopt(curl_handle,CURLOPT_USERAGENT, "Mozilla/5.0 (compatible; habibur/1; +http://news.habibur.com/)");
 	curl_easy_setopt(curl_handle,CURLOPT_FOLLOWLOCATION,1);
 	curl_easy_setopt(curl_handle,CURLOPT_ENCODING,0);
-	res = curl_easy_perform(curl_handle);
+	int res = curl_easy_perform(curl_handle);
 	curl_easy_cleanup(curl_handle);
-	return ret;
+	return res ? NULL : ret;
+};
+char* full_url(char* url){ return xstr(((map_val(map_val(_globals,"req"),"protocol") ? map_val(map_val(_globals,"req"),"protocol") : "http")),"://",((map_val(map_val(_globals,"req"),"server") ? map_val(map_val(_globals,"req"),"server") : "localhost")),show_port(),"/",str_ltrim(url,"/"), End); };
+char* home_url(char* path){ return xstr(full_url(map_val(map_val(map_val(_globals,"req"),"path"),"home")),path, End); };
+char* show_port(){
+	if(!map_val(map_val(_globals,"req"),"port")){ return NULL; };
+	if(str_eq(map_val(map_val(_globals,"req"),"protocol"),"http") && str_eq(map_val(map_val(_globals,"req"),"port"),"80")){ return NULL; };
+	if(str_eq(map_val(map_val(_globals,"req"),"protocol"),"https") && str_eq(map_val(map_val(_globals,"req"),"port"),"443")){ return NULL; };
+	return xstr(":",map_val(map_val(_globals,"req"),"port"), End);
 };

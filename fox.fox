@@ -43,11 +43,12 @@ int cc(char* infile, char* outfile=NULL, char* as="debug", char* opts=NULL, int 
 	in=infile..".fox"
 	in.fox_c(infile..".c")
 	in.fox_h(infile..".h")
+	libs="-I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lcrypto -lmarkdown -lcurl -lsqlite3"
 	switches={
-		debug: "-O0 -lfox -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lcrypto -lmarkdown"
-		speed: "-Os -lfox -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lcrypto -lmarkdown"
-		static: "-lfoxstatic -lfoxcmdstatic -lsqlite3 -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lmarkdown -lcrypto -fdata-sections -ffunction-sections -Wl,-dead_strip"
-		cgi: "-lfoxstatic -lfoxcgistatic -lsqlite3 -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lmarkdown -lcrypto -fdata-sections -ffunction-sections -Wl,-dead_strip"
+		debug: "-O0 -lfox $libs"
+		speed: "-Os -lfox $libs"
+		static: "-lfoxstatic -lfoxcmdstatic $libs -fdata-sections -ffunction-sections -Wl,-dead_strip"
+		cgi: "-Os -lfoxstatic -lfoxcgistatic $libs -fdata-sections -ffunction-sections"
 	}
 	as = as ? switches[as] : ''
 	ret="gcc $infile.c -o $outfile $as $opts -std=gnu99 -Wno-logical-op-parentheses -lm 2>&1"
@@ -84,13 +85,13 @@ char* file_dir(char* file){
 	if i==-1 => return NULL
 	return file.sub_str(0,i+1)
 }
-void write_source(char* dir){
+void write_source(){
 	source_funcs()
 	source_files().each infile
-		infile.fox_c(infile.file_rename(dir,".fox")..".c")
-		infile.fox_h(infile.file_rename(dir,".fox")..".h")
-	"fox.h".file_rename(dir).write_foxh()
-	"meta.c".file_rename(dir).write_meta()
+		infile.fox_c(infile.file_rename(:src,".fox")..".c")
+		infile.fox_h(infile.file_rename(:include,".fox")..".h")
+	"fox.h".file_rename(:include).write_foxh()
+	"meta.c".file_rename(:src).write_meta()
 }
 char* file_rename(char* file,char* dir=NULL,char* delext=NULL,char* addext=NULL,char* prefix=NULL,char* postfix=NULL){
 	olddir=file.file_dir()
@@ -247,10 +248,10 @@ char* cwd(){
 	ret.free()
 	return ret2
 }
-char* write_file(char* data,char* filename,int readonly=0){
+char* write_file(char* data,char* filename,int readonly=0,int verbose=1){
 	if !filename => return data
 	if filename==="-" => return data.px()
-	"-> $filename".px()
+	if verbose => "-> $filename".px()
 	if readonly && filename.is_file() => filename.chmod(0666)
 	FILE* fp=filename.fopen(:w)
 	if !fp => "writting to file $filename failed".fox_error()
@@ -3630,7 +3631,8 @@ int run_cmdline(map* args){
 		ret=args.vec_sub(2).cmdline_params(name).invoke(name)
 	if _printed => return ret.is_i() ? ret.is_int() : 0
 	if ret.is_map() => ret.json(1).px(); return 0
-	if ret.is_str() || ret.is_num() => ret.to_str().px()
+	if ret.is_blob() => ret.print()
+	else if ret.is_str() || ret.is_num() => ret.to_str().px()
 	return ret.is_i() ? ret.is_int() : 0
 }
 int utests(char* test=NULL,char* file="utests.map"){

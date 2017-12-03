@@ -1541,7 +1541,7 @@ char* confirm(char* prompt=NULL,char* option1=NULL,char* option2=NULL,char* titl
 	return NULL		
 }
 char* sql_delete(void* ids,char* tbl,char* db){
-	return "delete from $tbl"..re_where(tbl.pkeys_where(db)).lite_exec(db,tbl.sql_id_ids(db,ids))
+	return ("delete from $tbl"..re_where(tbl.pkeys_where(db))).lite_exec(db,tbl.sql_id_ids(db,ids))
 }
 char* crud_delete(char* sql,char* db=_globals.ddb,char* back="../"){
 	if "Delete this record?".confirm(:Yes,:No)
@@ -1982,7 +1982,7 @@ int sql_count(char* sql,char* db,map* params=NULL){
 			if !val.aggregate => expr="distinct $key"; break
 	return ("select count($expr) "..sqls.from.re_from()..sqls.where.re_where()).sql_value(db,params).to_int()
 }
-map* re_match(char* in, char* pattern){
+map* regexp(char* in, char* pattern){
 	status=0
 	regex_t	re={0}
 	regmatch_t match[10]={0}
@@ -2191,7 +2191,7 @@ char* http_out(char* str=NULL,char* status="200 OK",char* mime="text/html; chars
 	if _globals.sessid
 		sess=_globals.sess
 		_globals.sess=NULL
-		sess.json().write_file("/tmp/sess.$(sess_id())")
+		sess.json().write_file("/tmp/sess.$(sess_id())",0,0)
 		_globals.sessid=NULL
 	if callonce => return str
 	callonce=1
@@ -2273,6 +2273,7 @@ map* parse_url(char* path){
 	ret.gets=two[1].amps_map()
 	return ret
 }
+char* url_host(char* url) => return url.regexp("://([^:/]+)")[1]
 void load_theme(char* name=:dashboard){
 	if(!name.str_len()) return
 	mp=(name..".map").file_map()
@@ -2659,9 +2660,19 @@ map* tokenizer(char** line,char* comment){
 	*line=str
 	return mp
 }
-char* md_url(char* url,int len,void* junk){
-	return "<img src=habib:$(url.substr(0,len))></img>"
+char* md_url(char* in,int len,void* junk){
+	url=in.sub_str(0,len)	
+	if url.url_host()===:localhost || url.url_host().str_has(:habibur) => return url
+	ext3=url.sub_str(-4)
+	if !ext3.is_word(".jpg jpeg .png .gif") => return url
+	id=url.md5()
+	file="imgs/$id.jpg"
+	if file.is_file() => return file.home_url()
+	data=url.fox_curl()
+	if data => data.write_file(file,0,0); return file.home_url()
+	else return "BAD--"..url
 }
+char* file_markdown(char* infile,char* outfile=NULL) => return infile.fox_read_file().fox_markdown().write_file(outfile)
 char* fox_markdown(char* in){
 	FILE* out
 	char* outbuff
@@ -2682,7 +2693,6 @@ size_t fox_curl_cat(void* ptr, size_t size, size_t num, void* old){
 }
 char* fox_curl(char* url){
 	ret=new_blob(0)
-	CURLcode res
 	CURL* curl_handle = curl_easy_init()
 	curl_handle.curl_easy_setopt(CURLOPT_URL, url)
 	curl_handle.curl_easy_setopt(CURLOPT_WRITEFUNCTION,fox_curl_cat)
@@ -2690,7 +2700,15 @@ char* fox_curl(char* url){
 	curl_handle.curl_easy_setopt(CURLOPT_USERAGENT, "Mozilla/5.0 (compatible; habibur/1; +http://news.habibur.com/)")
 	curl_handle.curl_easy_setopt(CURLOPT_FOLLOWLOCATION,1)
 	curl_handle.curl_easy_setopt(CURLOPT_ENCODING,0)
-	res = curl_handle.curl_easy_perform()
+	int res = curl_handle.curl_easy_perform()
 	curl_handle.curl_easy_cleanup()
-	return ret
+	return res ? NULL : ret
+}
+char* full_url(char* url=NULL) => return (_globals.req.protocol or :http).."://"..(_globals.req.server or :localhost)..show_port().."/"..url.str_ltrim("/")
+char* home_url(char* path=NULL) => return _globals.req.path.home.full_url()..path
+char* show_port(){
+	if !_globals.req.port => return ''
+	if _globals.req.protocol===:http && _globals.req.port==="80" => return ''
+	if _globals.req.protocol===:https && _globals.req.port==="443" => return ''
+	return ":".._globals.req.port
 }

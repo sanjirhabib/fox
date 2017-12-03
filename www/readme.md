@@ -3,11 +3,15 @@
 
 Edit your http.conf and add the following:
 ```
+#osx
 LoadModule cgi_module libexec/mod_cgi.so
-<Directory "/web">
-	SetHandler cgi-script
+#linux
+LoadModule cgi_module modules/mod_cgi.so
+<Directory "/www">
+	Options Indexes FollowSymLinks ExecCGI
+	AddHandler cgi-script .cgi
 <IfModule dir_module>
-	DirectoryIndex index.php index.html cgi                                                                      
+	DirectoryIndex index.html index.php index.cgi                                                                      
 ```
 Add the following to your .htaccess file in your web document folder
 ```

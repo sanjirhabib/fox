@@ -1,8 +1,8 @@
 CC=gcc
 INSTALL_DIR?=/usr/local
-CFLAGS=-Iinclude -std=gnu99 -Wno-logical-op-parentheses -Os -Wno-int-conversion -Wno-unused-command-line-argument
+CFLAGS=-Iinclude -std=gnu99 -Wno-logical-op-parentheses -Os -Wno-int-conversion -L/usr/lib64/ -fPIC
 FOXS=fox.fox core.fox sql.fox cgi.fox cmd.fox main.fox
-LIBS=-lsqlite3 -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lcrypto -lmarkdown -lcurl
+LIBS=-lsqlite3 -I/usr/local/opt/openssl/include -L/usr/local/lib -L/usr/local/opt/openssl/lib -lcrypto -lmarkdown -lcurl
 HEADERS=fox.h sql.h
 _XLIBS=libfoxstatic.a libfox.so libfoxcgi.so libfoxcgistatic.a libfoxcmdstatic.a
 XLIBS=$(patsubst %,lib/%,$(_XLIBS))
@@ -26,6 +26,8 @@ safe:
 	$(CC) -c -o obj/core.o src/core.c $(CFLAGS) $(LIBS)
 	$(CC) -c -o obj/cgi.o src/cgi.c $(CFLAGS) $(LIBS)
 	$(CC) -c -o obj/main.o src/main.c $(CFLAGS) $(LIBS)
+	$(CC) -c -o obj/meta.o src/meta.c $(CFLAGS) $(LIBS)
+	$(CC) -c -o obj/memsize.o src/memsize.c $(CFLAGS) $(LIBS)
 	rm -f lib/libfoxcmdstatic.a
 	ar rcs lib/libfoxcmdstatic.a obj/cmd.o
 	rm -f lib/libfoxstatic.a
@@ -37,7 +39,7 @@ bin/fox: obj/main.o $(DEPS) $(OBJ) $(FOXS) $(XLIBS)
 	cd tests && ../bin/fox utests
 
 src/core.c src/fox.c src/sql.c src/cgi.c src/cmd.c: $(FOXS)
-	fox write_source src
+	fox write_source
 
 
 lib/libfoxcgi.so: $(OBJ) obj/cgi.o
