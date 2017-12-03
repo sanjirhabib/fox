@@ -818,3 +818,4 @@ char* remote_ip(int con);
 map* sql_tokenizer(char** line);
 map* prop_tokenizer(char** line);
 map* tokenizer(char** line, char* comment);
+char* fox_markdown(char* in);

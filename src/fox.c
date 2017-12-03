@@ -1,27 +1,13 @@
 #line 2 "/web/fox/fox.fox"
 /*
-	TODO
-		suppurt for: return 1 and 2 or 3
-	Bug
-	Fixed
-   */
-/* zero=next,id,map_key,map_del,vec_del,set,set_map,add_id,map_index,change_key,del_index
 NOTE:
 	Haven't used LLVM. That would force the whole application to be JITed.
 TODO:
 	eval case:
 	eval << >>
-	support and or
 CONSIDER:
 	sym(char*);
-BUG:
-	new_blob() in fox_read_file() crashes in php
-Optimize:
-Generational GC
-	create 3 memory pages gen1,gen2,gen3
-   */
-
-//#define NDEBUG
+*/
 #include "fox.h"
 
 #define MAXMEM 10*1024*1024
@@ -58,10 +44,10 @@ int cc(char* infile, char* outfile, char* as, char* opts, int keepfiles){
 	fox_c(in,xstr(infile,".c", End));
 	fox_h(in,xstr(infile,".h", End));
 	map* switches=xmap(
-		"debug", "-O0 -lfox -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lcrypto",
-		"speed", "-Os -lfox -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lcrypto",
-		"static", "-lfoxstatic -lfoxcmdstatic -lsqlite3 -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lcrypto -fdata-sections -ffunction-sections -Wl,-dead_strip",
-		"cgi", "-lfoxstatic -lfoxcgistatic -lsqlite3 -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lcrypto -fdata-sections -ffunction-sections -Wl,-dead_strip"
+		"debug", "-O0 -lfox -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lcrypto -lmarkdown",
+		"speed", "-Os -lfox -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lcrypto -lmarkdown",
+		"static", "-lfoxstatic -lfoxcmdstatic -lsqlite3 -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lmarkdown -lcrypto -fdata-sections -ffunction-sections -Wl,-dead_strip",
+		"cgi", "-lfoxstatic -lfoxcgistatic -lsqlite3 -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lmarkdown -lcrypto -fdata-sections -ffunction-sections -Wl,-dead_strip"
 	, End);
 	as = as ? map_val(switches,as) : NULL;
 	int ret=exec(
@@ -2439,7 +2425,7 @@ char* head_type(map* toks, int idx, int upto, map* env,map* fs){
 };
 int expr_tail(map* toks,int idx,char* expr){
 	idx++;
-	char* presid="= += -= /= *= %= ^= .= ? : && || == === !== != >= <= > < .. + - / * ++ -- ! -> .";
+	char* presid="= += -= /= *= %= ^= &&= ||= .= ? : && || == === !== != >= <= > < and or .. + - / * ++ -- ! -> .";
 	int expr_presid=is_word(expr,presid);
 	while(idx<map_len(toks)){
 		char* v=is_str(map_id(toks,idx));
@@ -3460,13 +3446,9 @@ int is_true(void * val){
 };
 char* read_line(FILE* fp){
 	char buff[1024];
-	char* buf=buff;
-	size_t max=1024;
 	char* ret=NULL;
-	while(getline(&buf,&max,fp)>0){
-		ret=xcat(ret,buf, End);
-		if(strchr(buf,'\n')) {return ret;};
-	};
+	while(fgets(buff,sizeof(buff),fp)){
+		ret=xcat(ret,buff, End); };		
 	return ret;
 };
 char* skip_paren(char* str){
@@ -4474,14 +4456,14 @@ map* string_operators(map* toks){
 			vec_splice(toks,i+3,tail-i-3,mid);
 			set(toks,i+1,"=");
 			i=head;
-		}
-//			head=toks.expr_head(i-2,"<")
-//			tail=toks.expr_tail(i+2,"and")
-//			left=toks.vec_sub(head+1,i-head-1)
-//			right=toks.vec_sub(i+2,tail-i-2).string_operators()
-//			mid=["(",NULL,[NULL].vec_merge(left).vec_merge([toks[i],"?"," "]).vec_merge(left).vec_merge([" ",":"]).vec_merge(right),NULL,")"]
-//			toks.vec_splice(head+1,tail-head-1,mid)
-		else if(str_eq(map_id(toks,i+1),"or")){
+		}else if(str_eq(map_id(toks,i+1),"and")){
+			int head=expr_head(toks,i-2,"<");
+			int tail=expr_tail(toks,i+2,"and");
+			map* left=vec_sub(toks,head+1,i-head-1);
+			map* right=string_operators(vec_sub(toks,i+2,tail-i-2));
+			map* mid=xvec("(",NULL,vec_merge(vec_merge(vec_merge(vec_merge(xvec(NULL, End),left),xvec(map_id(toks,i),"?", End)),right),xvec(" ",":"," ","NULL", End)),NULL,")", End);
+			vec_splice(toks,head+1,tail-head-1,mid);
+		}else if(str_eq(map_id(toks,i+1),"or")){
 			int head=expr_head(toks,i-2,"<");
 			int tail=expr_tail(toks,i+2,"or");
 			map* left=vec_sub(toks,head+1,i-head-1);

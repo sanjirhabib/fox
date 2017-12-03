@@ -13,21 +13,26 @@ main(){
 		rows.each row
 			body.=---
 			<h3><a href="$(row.id)/">$(row.title)</a></h3>
-			<div>$(row.body)</div>
-			<div>Posted: $(row.datetime.time_ago()) ago.</div>
+			<div class='posted'>Posted: $(row.datetime.time_ago()) ago.</div>
+			<div>$(row.html)</div>
+			<hr noshade=noshade>
 			---
+		css=---
+		hr {width:90%;margin:auto;height:1px;margin-bottom:4em;margin-top:3em;color:gray;}
+		h1, h2, h3, h4, h5, h6 {text-align: left;}
+		.posted {text-align: right;}
+		div {text-align:justify;}
+		---;
 		data={{
 			title Habib's Blog
 			body =body
-			menu
-				source/ View Source
-				http://github.com/sanjirhabib/fox Github
+			css =css
 		}}
 		if :habib.is_user()
-			data.menu.map_merge({{
+			data.menu={{
 				add/ +Write New
 				draft/ Drafts
-			}})
+			}}
 		data.show_page()
 	map* parts=NULL
 	if (parts=path.re_match("^([0-9]+)/"))
@@ -39,7 +44,7 @@ main(){
 			data={{
 				title =row.title
 				tab Home
-				body =row.body
+				body =row.html
 			}}
 			if :habib.is_user()
 				data.menu={{
@@ -54,17 +59,19 @@ main(){
 					title - text
 					body - para
 				buttons
-					draft -
 					publish -
+					draft -
 				vals =row
 			}}
 			data=form.form_data()
 			if data.draft
 				data.status=:draft			
+				data.html=data.body.fox_markdown()
 				id.id_update(:blog,:blog,data)
 				"../".http_redirect()
 			else if data.publish
 				data.status=:live	
+				data.html=data.body.fox_markdown()
 				id.id_update(:blog,:blog,data)
 				"$id/".home_url().http_redirect()
 			form.show_form()
@@ -79,7 +86,7 @@ main(){
 			---
 		{{
 			title Saved Drafts
-			body =body
+			body =(body or "No drafts found")
 		}}.show_page()
 	if path==="add/"
 		_globals.tabs["Add New"]="add/".home_url()
@@ -90,19 +97,20 @@ main(){
 				title - text
 				body - para
 			buttons
-				save -
 				publish -
+				draft -
 		}}
 		data=form.form_data()
 		if data.save
 			data.status=:draft			
 			data.datetime=datetime()
+			data.html=data.body.fox_markdown()
 			row_insert(data,:blog,:blog)
 		else if data.publish
 			data.status=:live	
 			data.datetime=datetime()
+			data.html=data.body.fox_markdown()
 			row_insert(data,:blog,:blog)
-			data.datetime=datetime()
 			home_url().http_redirect()
 		form.show_form()
 	if path==="login/"
@@ -152,21 +160,29 @@ char* name_id(char* name){
 	return name
 }
 char* ctrl_html(map* ctrl){
+	id=ctrl.id or ctrl.name.name_id()
 	if ctrl.type===:code
 		return ---
-		<input type=text name=$(ctrl.name) value="$(ctrl.value)" id=$(ctrl.id or ctrl.name.name_id()) size="input-$(ctrl.size or :medium)"></input>
+		<input type=text name=$(ctrl.name) value="$(ctrl.value)" id=$id size="input-$(ctrl.size or :medium)"></input>
 		---
 	if ctrl.type===:text
 		return ---
-		<input type=text name=$(ctrl.name) value="$(ctrl.value)" id=$(ctrl.id or ctrl.name.name_id()) size="input-$(ctrl.size or :large)"></input>
+		<input type=text name=$(ctrl.name) value="$(ctrl.value)" id=$id size="input-$(ctrl.size or :large)"></input>
 		---
 	if ctrl.type===:para
+		_globals.jsfile[]='jquery.textarea.js'
+		_globals.css[]=".source {font-family:courier;overflow:auto;width:100%;height:30em;}"
+		_globals.js[]='$(\"#'..id..'\").tabby()'
 		return ---
-		<textarea style="width:20em; height:10em;" id=$(ctrl.id or ctrl.name.name_id()) class='para' name='$(ctrl.name)'>$(ctrl.value)</textarea>
+		<textarea style="width:20em; height:10em;" id=$id class='para' name='$(ctrl.name)'>$(ctrl.value)</textarea>
+		---
+	if ctrl.type===:source
+		return ---
+		<textarea id=$id class='source' wrap='off' name='$(ctrl.name)'>$(ctrl.value)</textarea>
 		---
 	if ctrl.type===:password
 		return ---
-		<input type=password name=$(ctrl.name) value="$(ctrl.value)" id=$(ctrl.id or ctrl.name.name_id())></input>
+		<input type=password name=$(ctrl.name) value="$(ctrl.value)" id=$id></input>
 		---
 	return "control type $(ctrl.type) unspported. please provide support in ctrl_html()"
 }
@@ -223,12 +239,15 @@ map* page_data(map* data){
 	data.tab||=data.title
 	data.logo||=data.base.."/logo.jpg"
 	data.home="/"
+	data.css&&="<style>\n$(data.css)\n</style>"
 	head=''
 	['/res/bootstrap.css','/res/bootstrap-responsive.css','/res/jquery.js','/res/bootstrap.js']
 	.each v
 		if v.sub_str(-4)==='.css' => head.="<link rel='stylesheet' href='$v'></link>\n"
 		else head.="<script async src='$v'></script>\n"
-	data.header=head
+	_globals.jsfile.each v
+		head.="<script async src='$v'></script>\n"
+	data.header=head..data.css
 	data.footer=---
 	Run Time: $(run_time())ms=$(gc_time())/$(run_time()-total_time()-gc_time())/$(total_time())
 	Malloc: $(total_kb())KB. Total: $(max_mem()/1024)KB.

@@ -2,7 +2,7 @@ CC=gcc
 INSTALL_DIR?=/usr/local
 CFLAGS=-Iinclude -std=gnu99 -Wno-logical-op-parentheses -Os -Wno-int-conversion
 FOXS=fox.fox core.fox sql.fox cgi.fox cmd.fox main.fox
-LIBS=-lsqlite3 -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lcrypto
+LIBS=-lsqlite3 -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lcrypto -lmarkdown
 HEADERS=fox.h sql.h
 _XLIBS=libfoxstatic.a libfox.so libfoxcgi.so libfoxcgistatic.a libfoxcmdstatic.a
 XLIBS=$(patsubst %,lib/%,$(_XLIBS))

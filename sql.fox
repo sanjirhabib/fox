@@ -1,5 +1,7 @@
 #include <fox.h>
 #include <regex.h>
+#include <regex.h>
+#include <mkdio.h>
 
 int _is_web=0;
 
@@ -2544,7 +2546,7 @@ map* http_req(){
 	if size>2000000 => "Request should be with less than 2MB data".http_error("413 Request Entity Too Large")
 	line=''
 	header=''
-	while((line=stdin.read_line()))
+	while (line=stdin.read_line())
 		header.=line
 	ret.post=header
 	_globals.req=ret
@@ -2656,4 +2658,15 @@ map* tokenizer(char** line,char* comment){
 		
 	*line=str
 	return mp
+}
+char* fox_markdown(char* in){
+	FILE* out
+	char* outbuff
+	size_t outsize=0
+	out=open_memstream(&outbuff,&outsize)
+	markdown(mkd_string(in,in.str_len(),0),out,0)
+	fclose(out)
+	ret=outbuff.str_dup()
+	free(outbuff)
+	return ret
 }

@@ -1,5 +1,7 @@
 #include <fox.h>
 #include <regex.h>
+#include <regex.h>
+#include <mkdio.h>
 
 int _is_web=0;
 
@@ -2656,4 +2658,15 @@ map* tokenizer(char** line,char* comment){
 	};
 	*line=str;
 	return mp;
+};
+char* fox_markdown(char* in){
+	FILE* out;
+	char* outbuff;
+	size_t outsize=0;
+	out=open_memstream(&outbuff,&outsize);
+	markdown(mkd_string(in,str_len(in),0),out,0);
+	fclose(out);
+	char* ret=str_dup(outbuff);
+	free(outbuff);
+	return ret;
 };
