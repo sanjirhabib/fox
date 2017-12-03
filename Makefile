@@ -1,8 +1,8 @@
 CC=gcc
 INSTALL_DIR?=/usr/local
-CFLAGS=-Iinclude -std=gnu99 -Wno-logical-op-parentheses -Os -Wno-int-conversion
+CFLAGS=-Iinclude -std=gnu99 -Wno-logical-op-parentheses -Os -Wno-int-conversion -Wno-unused-command-line-argument
 FOXS=fox.fox core.fox sql.fox cgi.fox cmd.fox main.fox
-LIBS=-lsqlite3 -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lcrypto -lmarkdown
+LIBS=-lsqlite3 -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lcrypto -lmarkdown -lcurl
 HEADERS=fox.h sql.h
 _XLIBS=libfoxstatic.a libfox.so libfoxcgi.so libfoxcgistatic.a libfoxcmdstatic.a
 XLIBS=$(patsubst %,lib/%,$(_XLIBS))
@@ -12,17 +12,33 @@ OBJ = $(patsubst %,obj/%,$(_OBJ))
 _OCMD=cmd.o
 OCMD = $(patsubst %,obj/%,$(_OCMD))
 
-.PHONY: install clean php tests www
+.DEFAULT_GOAL := bin/fox
 
-src/%.c: ./%.fox
-	fox fox_c $< $@
+.PHONY: install clean php tests www
 
 obj/%.o: src/%.c
 	$(CC) -c -o $@ $< $(CFLAGS) $(LIBS)
 
+safe:
+	$(CC) -c -o obj/fox.o src/fox.c $(CFLAGS) $(LIBS)
+	$(CC) -c -o obj/cmd.o src/cmd.c $(CFLAGS) $(LIBS)
+	$(CC) -c -o obj/sql.o src/sql.c $(CFLAGS) $(LIBS)
+	$(CC) -c -o obj/core.o src/core.c $(CFLAGS) $(LIBS)
+	$(CC) -c -o obj/cgi.o src/cgi.c $(CFLAGS) $(LIBS)
+	$(CC) -c -o obj/main.o src/main.c $(CFLAGS) $(LIBS)
+	rm -f lib/libfoxcmdstatic.a
+	ar rcs lib/libfoxcmdstatic.a obj/cmd.o
+	rm -f lib/libfoxstatic.a
+	ar rcs lib/libfoxstatic.a $(OBJ)
+	gcc -o bin/fox obj/main.o $(CFLAGS) -Llib -lm $(LIBS) -lfoxstatic -lfoxcmdstatic
+
 bin/fox: obj/main.o $(DEPS) $(OBJ) $(FOXS) $(XLIBS)
 	gcc -o $@ obj/main.o $(CFLAGS) -Llib -lm $(LIBS) -lfoxstatic -lfoxcmdstatic
 	cd tests && ../bin/fox utests
+
+src/core.c src/fox.c src/sql.c src/cgi.c src/cmd.c: $(FOXS)
+	fox write_source src
+
 
 lib/libfoxcgi.so: $(OBJ) obj/cgi.o
 	rm -f $@
@@ -43,9 +59,6 @@ lib/libfoxcmdstatic.a: obj/cmd.o
 lib/libfoxstatic.a: $(OBJ)
 	rm -f $@
 	ar rcs $@ $^
-
-include/fox.h: $(FOXS)
-	fox write_foxh include/fox.h
 
 src/meta.c: $(FOXS) include/fox.h
 	fox write_meta src/meta.c

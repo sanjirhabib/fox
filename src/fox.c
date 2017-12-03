@@ -84,6 +84,14 @@ char* file_dir(char* file){
 	if(i==-1){ return NULL; };
 	return sub_str(file,0,i+1);
 };
+void write_source(char* dir){
+	source_funcs();
+	map* map_1=source_files(); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* infile=map_id(map_1,next1);
+		fox_c(infile,xstr(file_rename(infile,dir,".fox",NULL,NULL,NULL),".c", End));
+		fox_h(infile,xstr(file_rename(infile,dir,".fox",NULL,NULL,NULL),".h", End)); };
+	write_foxh(file_rename("fox.h",dir,NULL,NULL,NULL,NULL));
+	write_meta(file_rename("meta.c",dir,NULL,NULL,NULL,NULL));
+};
 char* file_rename(char* file,char* dir,char* delext,char* addext,char* prefix,char* postfix){
 	char* olddir=file_dir(file);
 	char* ret=file;
@@ -242,7 +250,7 @@ char* cwd(){
 char* write_file(char* data,char* filename,int readonly){
 	if(!filename){ return data; };
 	if(str_eq(filename,"-")){ return px(data,1); };
-//	if !silent => "-> $filename".px()
+	px(xstr("-> ", filename, End),1);
 	if(readonly && is_file(filename)){ chmod(filename,0666); };
 	FILE* fp=fopen(filename,"w");
 	if(!fp){ fox_error(xstr("writting to file ", filename, " failed", End),0); };

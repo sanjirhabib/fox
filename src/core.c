@@ -87,17 +87,21 @@ char* xcat(char* ret,...){
 	while(1){
 		char* str=va_arg(args,char*);
 		if(str==End){ break; };
-		ret=cat(ret,to_str(str,"",0)); };
+		ret=cat(ret,to_str(str,"",0),-1020); };
 	va_end(args);
 	return ret;
 };
-char* cat(char* str1,char* str2){
+char* cat(char* str1,char* str2,size_t len){
 	assert((!str1 || is_str(str1)) && (!str2 || is_str(str2)));
 	if(!str2){ return str1; };
-	if(!str1){ return str_dup(str2); };
-	str1=fox_realloc(str1,str_len(str1)+str_len(str2)+1,ptr_type(str1));
-	memcpy((str1+str_len(str1)),str2,str_len(str2));
-	if(ptr_type(str1)==Blob){ *(size_t*)(str1-8)+=str_len(str2); };
+	if(len==-1020){ len=str_len(str2); };
+	if(!str1){ return str_dup_len(str2,len); };
+	int oldlen=str_len(str1);
+	str1=fox_realloc(str1,str_len(str1)+len+1,ptr_type(str1));
+	assert(oldlen==str_len(str1));
+	memcpy((str1+str_len(str1)),str2,len);
+	if(ptr_type(str1)==Blob){ *(size_t*)(str1-8)+=len; };
+	assert(oldlen+len==str_len(str1));
 	assert(!str1[str_len(str1)]);
 	return str1;
 };
@@ -161,6 +165,10 @@ char* new_blob(int size){
 	assert(str_len(ret)==size);
 	assert(!ret[size]);
 	return ret;
+};
+char* blob_dup(char* str, int len){
+	if(!str||!len){ return NULL; };
+	return memcpy(new_blob(len),str,len);
 };
 char* str_dup_len(char* str, int len){
 	if(!str){ return NULL; };
@@ -777,7 +785,7 @@ void* fox_realloc(void* ptr,size_t size,int type){
 	void* ret=fox_alloc(size,type);
 	assert(ret);
 	assert(oldsize || type==String);
-	oldsize ? memcpy(ret,ptr,oldsize) : memcpy(ret,ptr,strlen(ptr)+1);
+	oldsize ? memcpy(ret,head,oldsize) : memcpy(ret,ptr,strlen(ptr)+1);
 	return ret+offset;
 };
 void* fox_alloc(size_t size,int type){

@@ -1,7 +1,7 @@
 #include <fox.h>
 #include <regex.h>
-#include <regex.h>
 #include <mkdio.h>
+#include <curl/curl.h>
 
 int _is_web=0;
 
@@ -2659,14 +2659,38 @@ map* tokenizer(char** line,char* comment){
 	*line=str
 	return mp
 }
+char* md_url(char* url,int len,void* junk){
+	return "<img src=habib:$(url.substr(0,len))></img>"
+}
 char* fox_markdown(char* in){
 	FILE* out
 	char* outbuff
 	size_t outsize=0
 	out=open_memstream(&outbuff,&outsize)
-	markdown(mkd_string(in,in.str_len(),0),out,0)
+	void* md=mkd_string(in,in.str_len(),0)
+	mkd_e_url(md,(mkd_callback_t)md_url)
+	markdown(md,out,0)
 	fclose(out)
 	ret=outbuff.str_dup()
 	free(outbuff)
+	return ret
+}
+size_t fox_curl_cat(void* ptr, size_t size, size_t num, void* old){
+	char** old1=(char**)old;
+	*old1=cat(*old1,ptr,size*num)
+	return size*num
+}
+char* fox_curl(char* url){
+	ret=new_blob(0)
+	CURLcode res
+	CURL* curl_handle = curl_easy_init()
+	curl_handle.curl_easy_setopt(CURLOPT_URL, url)
+	curl_handle.curl_easy_setopt(CURLOPT_WRITEFUNCTION,fox_curl_cat)
+	curl_handle.curl_easy_setopt(CURLOPT_WRITEDATA, (void*)&ret)
+	curl_handle.curl_easy_setopt(CURLOPT_USERAGENT, "Mozilla/5.0 (compatible; habibur/1; +http://news.habibur.com/)")
+	curl_handle.curl_easy_setopt(CURLOPT_FOLLOWLOCATION,1)
+	curl_handle.curl_easy_setopt(CURLOPT_ENCODING,0)
+	res = curl_handle.curl_easy_perform()
+	curl_handle.curl_easy_cleanup()
 	return ret
 }

@@ -84,6 +84,14 @@ char* file_dir(char* file){
 	if i==-1 => return NULL
 	return file.sub_str(0,i+1)
 }
+void write_source(char* dir){
+	source_funcs()
+	source_files().each infile
+		infile.fox_c(infile.file_rename(dir,".fox")..".c")
+		infile.fox_h(infile.file_rename(dir,".fox")..".h")
+	"fox.h".file_rename(dir).write_foxh()
+	"meta.c".file_rename(dir).write_meta()
+}
 char* file_rename(char* file,char* dir=NULL,char* delext=NULL,char* addext=NULL,char* prefix=NULL,char* postfix=NULL){
 	olddir=file.file_dir()
 	ret=file
@@ -242,7 +250,7 @@ char* cwd(){
 char* write_file(char* data,char* filename,int readonly=0){
 	if !filename => return data
 	if filename==="-" => return data.px()
-//	if !silent => "-> $filename".px()
+	"-> $filename".px()
 	if readonly && filename.is_file() => filename.chmod(0666)
 	FILE* fp=filename.fopen(:w)
 	if !fp => "writting to file $filename failed".fox_error()

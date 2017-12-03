@@ -91,13 +91,17 @@ char* xcat(char* ret, char* ...){
 	args.va_end()
 	return ret
 }
-char* cat(char* str1,char* str2){
+char* cat(char* str1,char* str2,size_t len=-1020){
 	assert((!str1 || str1.is_str()) && (!str2 || str2.is_str()))
 	if !str2 => return str1
-	if !str1 => return str2.str_dup()
-	str1=str1.fox_realloc(str1.str_len()+str2.str_len()+1,str1.ptr_type())
-	(str1+str1.str_len()).memcpy(str2,str2.str_len())
-	if str1.ptr_type()==Blob => *(size_t*)(str1-8)+=str2.str_len()
+	if len==-1020 => len=str2.str_len()
+	if !str1 => return str2.str_dup_len(len)
+	oldlen=str1.str_len()
+	str1=str1.fox_realloc(str1.str_len()+len+1,str1.ptr_type())
+	assert(oldlen==str1.str_len())
+	(str1+str1.str_len()).memcpy(str2,len)
+	if str1.ptr_type()==Blob => *(size_t*)(str1-8)+=len
+	assert(oldlen+len==str1.str_len())
 	assert(!str1[str1.str_len()])
 	return str1
 }
@@ -161,6 +165,10 @@ char* new_blob(int size){
 	assert(ret.str_len()==size)
 	assert(!ret[size])
 	return ret
+}
+char* blob_dup(char* str, int len){
+	if !str||!len => return NULL
+	return new_blob(len).memcpy(str,len)
 }
 char* str_dup_len(char* str, int len){
 	if !str => return NULL
@@ -777,7 +785,7 @@ void* fox_realloc(void* ptr,size_t size,int type){
 	void* ret=size.fox_alloc(type)
 	ret.assert()
 	assert(oldsize || type==String)
-	oldsize ? ret.memcpy(ptr,oldsize) : ret.memcpy(ptr,ptr.strlen()+1)
+	oldsize ? ret.memcpy(head,oldsize) : ret.memcpy(ptr,ptr.strlen()+1)
 	return ret+offset
 }
 void* fox_alloc(size_t size,int type){

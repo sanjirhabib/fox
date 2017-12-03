@@ -1,7 +1,7 @@
 #include <fox.h>
 #include <regex.h>
-#include <regex.h>
 #include <mkdio.h>
+#include <curl/curl.h>
 
 int _is_web=0;
 
@@ -2210,7 +2210,7 @@ char* http_out(char* str,char* status,char* mime,map* headers){
 char* static_file(char* path){
 	if(has_word(path,"? ../ /.. \\")){ return NULL; };
 	if(!str_start(path,"/res/")){ return NULL; };
-	char* ret=fox_read_file(cat("/web/",str_trim(path,"/")),0);
+	char* ret=fox_read_file(cat("/web/",str_trim(path,"/"),-1020),0);
 	if(ret){ return http_out(ret,"200 OK",file_mime(path),NULL); };
 	return NULL;
 };
@@ -2659,14 +2659,38 @@ map* tokenizer(char** line,char* comment){
 	*line=str;
 	return mp;
 };
+char* md_url(char* url,int len,void* junk){
+	return xstr("<img src=habib:", substr(url,0,len), "></img>", End);
+};
 char* fox_markdown(char* in){
 	FILE* out;
 	char* outbuff;
 	size_t outsize=0;
 	out=open_memstream(&outbuff,&outsize);
-	markdown(mkd_string(in,str_len(in),0),out,0);
+	void* md=mkd_string(in,str_len(in),0);
+	mkd_e_url(md,(mkd_callback_t)md_url);
+	markdown(md,out,0);
 	fclose(out);
 	char* ret=str_dup(outbuff);
 	free(outbuff);
+	return ret;
+};
+size_t fox_curl_cat(void* ptr, size_t size, size_t num, void* old){
+	char** old1=(char**)old;
+	*old1=cat(*old1,ptr,size*num);
+	return size*num;
+};
+char* fox_curl(char* url){
+	char* ret=new_blob(0);
+	CURLcode res;
+	CURL* curl_handle = curl_easy_init();
+	curl_easy_setopt(curl_handle,CURLOPT_URL, url);
+	curl_easy_setopt(curl_handle,CURLOPT_WRITEFUNCTION,fox_curl_cat);
+	curl_easy_setopt(curl_handle,CURLOPT_WRITEDATA, (void*)&ret);
+	curl_easy_setopt(curl_handle,CURLOPT_USERAGENT, "Mozilla/5.0 (compatible; habibur/1; +http://news.habibur.com/)");
+	curl_easy_setopt(curl_handle,CURLOPT_FOLLOWLOCATION,1);
+	curl_easy_setopt(curl_handle,CURLOPT_ENCODING,0);
+	res = curl_easy_perform(curl_handle);
+	curl_easy_cleanup(curl_handle);
 	return ret;
 };

@@ -57,7 +57,7 @@ main(){
 				title Post A New Blog
 				cols
 					title - text
-					body - para
+					body - source
 				buttons
 					publish -
 					draft -
@@ -95,7 +95,7 @@ main(){
 			title Post A New Blog
 			cols
 				title - text
-				body - para
+				body - source
 			buttons
 				publish -
 				draft -
@@ -170,13 +170,16 @@ char* ctrl_html(map* ctrl){
 		<input type=text name=$(ctrl.name) value="$(ctrl.value)" id=$id size="input-$(ctrl.size or :large)"></input>
 		---
 	if ctrl.type===:para
-		_globals.jsfile[]='jquery.textarea.js'
-		_globals.css[]=".source {font-family:courier;overflow:auto;width:100%;height:30em;}"
-		_globals.js[]='$(\"#'..id..'\").tabby()'
 		return ---
-		<textarea style="width:20em; height:10em;" id=$id class='para' name='$(ctrl.name)'>$(ctrl.value)</textarea>
+		<textarea class="source" style="width:20em; height:10em;" id=$id name='$(ctrl.name)'>$(ctrl.value)</textarea>
 		---
 	if ctrl.type===:source
+		static int codeincluded=0
+		if !codeincluded
+			_globals.jsfile[]='jquery.textarea.js'
+			_globals.css[]=".source {font-family:courier;overflow:auto;width:100%;height:30em;}"
+			_globals.js[]='$(\"#'..id.."\").tabby()"
+			codeincluded=1
 		return ---
 		<textarea id=$id class='source' wrap='off' name='$(ctrl.name)'>$(ctrl.value)</textarea>
 		---
@@ -248,11 +251,13 @@ map* page_data(map* data){
 	_globals.jsfile.each v
 		head.="<script async src='$v'></script>\n"
 	data.header=head..data.css
+		..(_globals.css and "<style>\n".._globals.css.map_join("\n").."</style>")
 	data.footer=---
 	Run Time: $(run_time())ms=$(gc_time())/$(run_time()-total_time()-gc_time())/$(total_time())
 	Malloc: $(total_kb())KB. Total: $(max_mem()/1024)KB.
 	GC: $(gc_runs())runs.
 	---
+	footer.=(_globals.js and "<script>\n".._globals.js.map_join("\n").."</script>")
 	tabs=''
 	lddata={"@context": "http://schema.org", "@type": "BreadcrumbList"}
 	i=1
