@@ -1,28 +1,222 @@
+#line 2 "/web/fox/www/main.fox"
 #include "main.h"
 main(){
-	_globals.req=http_req();
-	path=_globals.req.path.next
+	req=http_req()
+	path=req.path.next
+	_globals.dbs.user="/web/habibur/user.db"
+	_globals.dbs.blog="blog.db"
+	sess_init()
+	_globals.tabs={Home: home_url()}
 	if path==="/"
-		return {{
-			title Lima's Page
-			tab Lima
-			body ---
-				This is a good page
-				---
+		rows="select * from blog where status!='draft' order by datetime desc limit 10".sql_rows(:blog)
+		body=''
+		rows.each row
+			body.=---
+			<h3><a href="$(row.id)/">$(row.title)</a></h3>
+			<div>$(row.body)</div>
+			<div>Posted: $(row.datetime.time_ago()) ago.</div>
+			---
+		data={{
+			title Habib's Blog
+			body =body
 			menu
 				source/ View Source
 				http://github.com/sanjirhabib/fox Github
+		}}
+		if :habib.is_user()
+			data.menu.map_merge({{
+				add/ +Write New
+				draft/ Drafts
+			}})
+		data.show_page()
+	map* parts=NULL
+	if (parts=path.re_match("^([0-9]+)/"))
+		id=parts[1]
+		_globals.tabs[:Post]=(id.."/").home_url()
+		row="select * from blog where id=:id".sql_row(:blog,{id: id})
+		if !row => "Blog $id".not_found()
+		if path.re_match("^[0-9]+/$")
+			data={{
+				title =row.title
+				tab Home
+				body =row.body
+			}}
+			if :habib.is_user()
+				data.menu={{
+					edit/ Edit
+				}}
+			data.show_page()
+		if path.re_match("^[0-9]+/edit/$")
+			_globals.tabs[:Edit]=(id.."/edit/").home_url()
+			form={{
+				title Post A New Blog
+				cols
+					title - text
+					body - para
+				buttons
+					draft -
+					publish -
+				vals =row
+			}}
+			data=form.form_data()
+			if data.draft
+				data.status=:draft			
+				id.id_update(:blog,:blog,data)
+				"../".http_redirect()
+			else if data.publish
+				data.status=:live	
+				id.id_update(:blog,:blog,data)
+				"$id/".home_url().http_redirect()
+			form.show_form()
+	if path==="draft/"
+		_globals.tabs[:Drafts]="draft/".home_url()
+		body=''
+		"select * from blog where status='draft' order by datetime desc".sql_rows(:blog).each row
+			body.=---
+				<div class="row">
+					<div class="span8">$(row.title) [<a href="../$(row.id)/edit/">Edit</a>]</div>
+				</div>
+			---
+		{{
+			title Saved Drafts
+			body =body
 		}}.show_page()
+	if path==="add/"
+		_globals.tabs["Add New"]="add/".home_url()
+		:habib.authorized()
+		form={{
+			title Post A New Blog
+			cols
+				title - text
+				body - para
+			buttons
+				save -
+				publish -
+		}}
+		data=form.form_data()
+		if data.save
+			data.status=:draft			
+			data.datetime=datetime()
+			row_insert(data,:blog,:blog)
+		else if data.publish
+			data.status=:live	
+			data.datetime=datetime()
+			row_insert(data,:blog,:blog)
+			data.datetime=datetime()
+			home_url().http_redirect()
+		form.show_form()
 	if path==="login/"
-		form={
+		_globals.tabs[:Login]="login/".home_url()
+		form={{
+			title Login
 			cols
 				username - code
 				password - password
-		}
-	return "$(_globals.req.path.full) [$path] <pre>$(_globals.req)</pre>".not_found()	
+			buttons
+				login -
+		}}
+		save_refere()
+		data=form.form_data()
+		if data
+			row="select * from user where username=:name".sql_row(:user,{name: data.username})
+			if !row
+				form.error.username="User not found"
+			else if row.password!==md5(data.password.."habibur.com")
+				form.error.password="Password mismatched"
+			else
+				_globals.sess.user=row.username
+				_globals.sess.role=row.role
+				referer().http_redirect()
+				form.msg="Login OK"
+
+			if form.error
+				form.msg="Login failed"
+		form.show_form()
+	if path==="logout/"
+		_globals.sess={}
+		referer().http_redirect()
+	"$(_globals.req.path.full) [$path]".not_found()	
 }
-int not_found(char* path) => "The requested content $path was not found on the server.".http_out("404 Not Found"); return -404
-int show_page(map* data) => data.page_data().page().px(); return 0
+void save_refere(){
+	refer=referer()
+	req=_globals.req
+	if req.method!==:get || !refer || req.gets._refer || refer.str_end(req.path) => return
+	req.gets._refer=refer
+	"./?$(req.gets.map_amps())".http_redirect()
+}
+char* home_url(char* path=NULL) => return _globals.req.path.home.full_url()..path
+char* referer(){
+	return _globals.req.gets._refer or env_vars().HTTP_REFERER.parse_url().path or home_url()
+}
+char* name_id(char* name){
+	return name
+}
+char* ctrl_html(map* ctrl){
+	if ctrl.type===:code
+		return ---
+		<input type=text name=$(ctrl.name) value="$(ctrl.value)" id=$(ctrl.id or ctrl.name.name_id()) size="input-$(ctrl.size or :medium)"></input>
+		---
+	if ctrl.type===:text
+		return ---
+		<input type=text name=$(ctrl.name) value="$(ctrl.value)" id=$(ctrl.id or ctrl.name.name_id()) size="input-$(ctrl.size or :large)"></input>
+		---
+	if ctrl.type===:para
+		return ---
+		<textarea style="width:20em; height:10em;" id=$(ctrl.id or ctrl.name.name_id()) class='para' name='$(ctrl.name)'>$(ctrl.value)</textarea>
+		---
+	if ctrl.type===:password
+		return ---
+		<input type=password name=$(ctrl.name) value="$(ctrl.value)" id=$(ctrl.id or ctrl.name.name_id())></input>
+		---
+	return "control type $(ctrl.type) unspported. please provide support in ctrl_html()"
+}
+char* form_html(map* mp){
+	mp.vals.each val,key
+		if mp.cols[key] => mp.cols[key].value=val
+	ret=---
+	<fieldset><legend>$(mp.title)</legend>
+	<p class='text-$(mp.error ? :error : :info)'>$(mp.msg)</p>
+	<form method=$(mp.method or :post)>
+	---
+	mp.cols.each val, name
+		ret.=---
+		<div class="control-group">
+		<label>$(val.label or val.name.str_title())</label>$(val.ctrl_html())
+		<span class='help-block'>$(mp.error[name])</span>
+		</div>
+		---
+	ret.="<div class='form-actions'><div class='btn-group'>"
+	mp.buttons.each val, name, idx
+		ret.=---
+		<input class='btn$(!idx ? " btn-primary" : "")' type='submit' name='$(val.name)' value='$(val.name.str_title())'>
+		---
+	ret.="</div></div>"
+	ret.="</form>"
+	return ret
+}
+int not_found(char* path=NULL) => "The requested content $(path or _globals.req.path) was not found on the server.".http_out("404 Not Found"); return -404
+int show_page(map* data) => data.page_data().page_html().http_out(); return 0
+map* param_map(char* in){
+	ret={}
+	in.str_split("&").each val
+		two=val.str_split("=",2)
+		ret[two[0]]=two[1]
+	return ret
+}
+map* form_data(map* form){
+	if _globals.req.method!==:post => return NULL
+	param=_globals.req.post.amps_map()
+	form.buttons.each ,key
+		if param[key]
+			form.cols.each val,key
+				val.value=param[key]
+			return param
+	return NULL
+}
+int show_form(map* data){
+	data.body=data.form_html()
+	return data.show_page()
+}
 map* page_data(map* data){
 	data.base||="/habibur"
 	data.title||="Habib's Site"
@@ -42,20 +236,23 @@ map* page_data(map* data){
 	---
 	tabs=''
 	lddata={"@context": "http://schema.org", "@type": "BreadcrumbList"}
-	path={'Home': "/", 'Fox': '/fox/'}
 	i=1
-	path.each url, name
-		tabs.="<li><a href='$url'>$name</a></li>\n"
+	_globals.tabs.each url, name, idx
+		active=''
+		if idx==_globals.tabs.map_len()-1
+			active=" class='active'"			
+		tabs.="<li$active><a href='$url'>$name</a></li>\n"
+			
 		lddata.itemListElement[]={
 			"@type": "ListItem",
 			"position": i++, "item": { "@id": url.full_url(), "name": url.full_url() }
 		}
-	tabs="$tabs<li class='active'><a href='#'>$(data.tab)</a></li>"
 	lddata.itemListElement[]={
 		"@type": "ListItem",
-		"position": i++, "item": { "@id": _globals.path.full_url(), "name": _globals.path.full_url() }
+		"position": i++, "item": { "@id": _globals.req.path.full_url(), "name": _globals.req.path.full_url() }
 	}
-	data.tabs="<div><ul class='nav nav-tabs'>$tabs</ul></div>"
+	if _globals.tabs.map_len()>1
+		data.tabs="<div><ul class='nav nav-tabs'>$tabs</ul></div>"
 	data.ldmenu="<script type='application/ld+json'>$lddata</script>"
 	body=''
 	data.menu.each name, url
@@ -79,14 +276,14 @@ map* page_data(map* data){
 			body.="<div class='span7'>$(data.body)</div><div class=span3>$(data.help)</div>"
 	data.body=body
 	login=''
-	if _globals.req.user
-		login="<span class='pull-right'>$(_globals.req.user) as $(_globals.req.role) | <a href='$(full_url())logout/'>Logout</a> &nbsp; </span>"
+	if _globals.sess.user
+		login="<span class='pull-right'>$(_globals.sess.user) as $(_globals.sess.role) | <a href='$(home_url())logout/'>Logout</a> &nbsp; </span>"
 	else
-		login="<span class='pull-right' style='margin-right:3em;'><a href='$(full_url())login/'>Login</a> | <a href='$(full_url())register/'>Register</a></span>"
+		login="<span class='pull-right' style='margin-right:3em;'><a href='$(home_url())login/'>Login</a> | <a href='$(home_url())register/'>Register</a></span>"
 	data.login=login
 	return data
 }
-char* page(map* data){
+char* page_html(map* data){
 	return ---
 	<!DOCTYPE html>
 	<html><head><meta charset='utf-8'>
@@ -142,3 +339,5 @@ char* show_port(){
 char* full_url(char* url=NULL){
 	return _globals.req.protocol.."://".._globals.req.server..show_port().."/"..url.str_ltrim("/")
 }
+int is_user(char* who) => return _globals.sess.user===who || _globals.sess.role===who
+void authorized(char* who) => if !who.is_user() => _globals.req.path.not_found()

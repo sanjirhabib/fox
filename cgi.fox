@@ -1,5 +1,8 @@
 #include <fox.h>
-__attribute__((destructor)) static void maindtor(void) => _globals.out.http_out(); gc_end()
+__attribute__((destructor)) static void maindtor(void){
+	http_out()
+	gc_end()
+}
 void* px(void* str,int newline=1){
 	void* ret=str
 	str=str.to_str()
@@ -8,7 +11,7 @@ void* px(void* str,int newline=1){
 	return ret
 }
 void xexit(int val=0){
-	_globals.out.http_out()
+	http_out()
 	gc_end()
 	exit(val)
 }

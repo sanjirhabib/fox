@@ -1011,19 +1011,26 @@ map* parse_connection2(char* in){
 };
 map* parse_connection(char* in){
 	map* ret=str_split(in,";",0);
-	ret=xmap("db" , parse_connection2(map_id(ret,0)), "ddb" , map_id(ret,1) ? map_id(ret,1) : map_id(ret,0), "module" , map_id(ret,2), "dd" , str_split(map_id(ret,3),",",0), "desc", in , End);
-	add(ret,"type",map_val(map_val(ret,"db"),"type"));
+	ret=parse_connection2(map_id(ret,0));
+	map_merge(ret,xmap(
+		"ddb", map_id(ret,1) ? map_id(ret,1) : map_id(ret,0),
+		"module", map_id(ret,2),
+		"dd", str_split(map_id(ret,3),",",0),
+		"fulldesc", in
+	, End));
 	return ret;
 };
 map* conn_db(char* db){
 	if(!is_code(db)){ return map_val(parse_connection(db),"db"); };
-	void* ret=map_val(map_val(map_val(_globals,"dbs"),db),"db");
+	void* ret=map_val(map_val(_globals,"dbs"),db);
 	if(!ret){ fox_error(xstr("SQLite connection ", db, " not found", End),0); };
-	return ret;
+	if(is_str(ret)){ add(add_key(_globals,"dbs",Map),db,parse_connection(ret)); };
+	return map_val(map_val(_globals,"dbs"),db);
 };
 map* lite_exec(char* sql,char* db,map* params){
+	char* cname=db;
 	db=map_val(conn_db(db),"name");
-	if(!db){ fox_error("query() connection not found",0); };
+	if(!db){ fox_error(xstr("query() connection ", str_quote(cname), " not found ", map_val(_globals,"dbs"), End),0); };
 	sqlite3* conn=NULL;
 	sqlite3_stmt* stm=NULL;
 	start_time();
@@ -1973,18 +1980,16 @@ int sql_count(char* sql,char* db,map* params){
 			if(!map_val(val,"aggregate")){ expr=xstr("distinct ", key, End); break; }; }; };
 	return to_int(sql_value((xstr(xstr("select count(", expr, ") ", End),re_from(map_val(sqls,"from")),re_where(map_val(sqls,"where")), End)),db,params));
 };
-map* regexp(char* in, char* pattern){
+map* re_match(char* in, char* pattern){
 	int status=0;
 	regex_t	re={0};
-	regmatch_t match={0};
+	regmatch_t match[10]={0};
 	if(regcomp(&re, pattern, REG_EXTENDED)){ return NULL; };
-	if(regexec(&re, in, 1, &match, 0)){ regfree(&re); return NULL; };
-	map* ret=xvec(px(sub_str(in,match.rm_so,match.rm_eo-match.rm_so),1), End);
-	while(1){
-		in+=match.rm_eo;
-		int err=regexec(&re, in, 1, &match, REG_NOTBOL);
-		if(err){ break; };
-		vec_add(ret,px(sub_str(in,match.rm_so,match.rm_eo-match.rm_so),1)); };
+	if(regexec(&re, in, 10, match, 0)){ regfree(&re); return NULL; };
+	map* ret=new_vec();
+	for(int i=0; i<10; i++){
+		if(match[i].rm_so<0){ break; };
+		vec_add(ret,sub_str(in,match[i].rm_so, match[i].rm_eo-match[i].rm_so)); };
 	regfree(&re);
 	return ret;
 };
@@ -2118,8 +2123,9 @@ map* show_map(char* show){
 char* data_show(map* data,char* show){
 	return NULL;
 };
-char* http_redirect(char* url){ return http_out(NULL,"301 Moved Permanently","text/html",xvec(xstr("Location: ", url, End), End)); };
-void* http_error(char* msg,char* status){ http_out(mstr(map_val(_globals,"fox_error"),status,status,msg, End),status,"text/html; charset=utf-8",NULL); return NULL; };
+char* http_moved(char* url){ return http_out(NULL,"301 Moved Permanently","text/html",xvec(xstr("Location: ", url, End), End)); };
+char* http_redirect(char* url){ return http_out(NULL,"302 Moved Temporarily","text/html",xvec(xstr("Location: ", url, End), End)); };
+void* http_error(char* msg,char* status){ http_out(msg,status,"text/html; charset=utf-8",NULL); xexit(0); return NULL; };
 map* compile_template(char* tem){
 	if(!tem) {return NULL;};
 	map* blks=str_split(tem,"\n--",0);
@@ -2179,16 +2185,24 @@ char* str_html(char* in){
 };
 void header(char* str){ print(str,stdout); print("\r\n",stdout); };
 char* http_out(char* str,char* status,char* mime,map* headers){
+	static int callonce=0;
+	if(map_val(_globals,"sessid")){
+		void* sess=map_val(_globals,"sess");
+		add(_globals,"sess",NULL);
+		write_file(json(sess,0),xstr("/tmp/sess.", sess_id(), End),0);
+		add(_globals,"sessid",NULL); };
+	if(callonce){ return str; };
+	callonce=1;
+	char* out=xstr(map_val(_globals,"out"),str, End);
 	header(xstr("Status: ", status, End));
 	header(xstr("Content-Type: ", mime, End));
-	header(xstr("Content-Length: ",int_str( str_len(str)), End));
+	header(xstr("Content-Length: ",int_str( str_len(out)), End));
 	for(int i=next(headers,-1,NULL,NULL); has_id(headers,i); i++){ void* v=map_id(headers,i); header(v); };
-	map* map_1=map_val(map_val(_globals,"res"),"cookie"); for(int i2=next(map_1,-1,NULL,NULL); has_id(map_1,i2); i2++){ void* v2=map_id(map_1,i2);
+	map* map_1=map_val(_globals,"cookie"); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* v2=map_id(map_1,next1);
 		header(xstr("Set-Cookie: ", v2, End)); };
-	if(map_val(map_val(_globals,"res"),"sess")){
-		write_file(json(map_val(map_val(_globals,"res"),"sess"),0),xstr("/tmp/sess.", sess_id(), End),0); };
 	header("");
-	print(str,stdout);
+	print(out,stdout);
+	xexit(0);
 	return str;
 };
 char* static_file(char* path){
@@ -2200,7 +2214,7 @@ char* static_file(char* path){
 };
 
 char* str_url(char* in){
-	if(!in){ return in; };
+	if(!in||!*in){ return in; };
 	int bad=0;
 	char* head=in;
 	for(;*in;in++){
@@ -2235,6 +2249,14 @@ char* url_str(char* in){
 		else {ret[i]=*in;}; };
 	return ret;
 };
+char* map_amps(map* mp){
+	char* ret=NULL;
+	for(int next1=next(mp,-1,NULL,NULL); has_id(mp,next1); next1++){ void* v=map_id(mp,next1); char* n=map_key(mp, next1);
+		if(!str_len(v)){ continue; };
+		if(ret){ ret=xcat(ret,"&", End); };
+		ret=xcat(ret,str_url(is_str(n)),"=",str_url(v), End); };
+	return ret;
+};
 map* amps_map(char* in){
 	map* ret=new_map();
 	map* map_1=str_split(in,"&",0); for(int i=next(map_1,-1,NULL,NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i);
@@ -2246,8 +2268,8 @@ map* parse_url(char* path){
 	map* ret=xmap("url", path, End);
 	map* two=str_split(path,"?",2);
 	add(ret,"path",map_id(two,0));
-	add(ret,"param",map_id(two,1));
-	return add(ret,"params",amps_map(map_id(two,1)));
+	add(ret,"gets",amps_map(map_id(two,1)));
+	return ret;
 };
 void load_theme(char* name){
 	if(!str_len(name)) {return;};
@@ -2255,13 +2277,19 @@ void load_theme(char* name){
 	if(!mp){ fox_error(xstr("Can't read theme file ", name, ".map", End),0); };
 	map_merge(_globals,mp);
 };
-void sess_load(){
-	char* sid=map_val(header_vals("cookie"),"sessid");
-	if(!sid) {return;};
+map* sess_init(){
+	void* sid=map_val(header_map(map_val(env_vars(),"HTTP_COOKIE")),"sessid");
+	map* sess=new_map();
+	if(!sid){
+		sid=sess_newid();
+		cookie_set("sessid",sid,"/",NULL);
+	}else{
+		sess=xjson_map(fox_read_file(xstr("/tmp/sess.", sid, End),0),Map); };
 	add(_globals,"sessid",sid);
-	add(_globals,"sess",xjson_map(fox_read_file(xstr("/tmp/sess.", sid, End),0),Map));
+	add(_globals,"sess",sess);
+	return sess;
 };
-void	sess_add(char* name, char* value){ add(add_key(add_key(_globals,"res",Map),"sess",Map),name,value); };
+void	sess_add(char* name, char* value){ add(add_key(_globals,"sess",Map),name,value); };
 char*	sess_id(){ return map_val(_globals,"sessid"); };
 char*	sess_file(){ return sess_id() ? xstr("/tmp/sess.", sess_id(), End) : NULL; };
 char*	sess_newid(){ return rand_str(24); };
@@ -2269,7 +2297,7 @@ void cookie_set(char* name,char* value,char* path,char* expire){
 	char* xexpire=NULL;
 	if(expire){ xexpire=xstr("; expires=", expire, End); };
 	char* ss=xstr(name, "=", value, "; path=", path, xexpire, End);
-	add(add_key(_globals,"res",Map),"cookie",ss);
+	vec_add(add_key(_globals,"cookie",Vector),ss);
 };
 void sess_delete(){
 	if(!sess_file()){ return; };
@@ -2346,10 +2374,6 @@ map* process_login(char* username,char* password){
 	sess_add("role","admin");
 	http_redirect("../dump/");
 	return NULL;
-};
-char* page_set_cookie(){
-	add(add_key(add_key(_globals,"res",Map),"cookie",Map),"sessid","helloworldsession");
-	return http_out("../dump/","200 OK","text/html; charset=utf-8",NULL);
 };
 char* page_dump(){
 	return http_out(xcat(
@@ -2469,7 +2493,6 @@ map* header_val(char* line,map* mp){
 	add(mp,str_tolower(str_trim(map_id(pair,0)," \t\n\r")),str_trim(map_id(pair,1)," \t\n\r"));
 	return mp;
 };
-map* header_vals(char* name){ return header_map(map_val(map_val(_globals,"req"),name)); };
 map* header_map(char* val){
 	if(!val){ return NULL; };
 	map* ret=new_map();
@@ -2481,23 +2504,7 @@ map* header_map(char* val){
 };
 map* http_req(){
 	map* ret=new_map();
-	char* line=NULL;
-	char* header=NULL;
 	map* env=env_vars();
-	if(str_eq(map_val(env,"REQUEST_METHOD"),"GET")){
-		ret=parse_url(map_val(env,"REQUEST_URI"));
-		add(ret,"method","get");
-		add(ret,"remote",map_val(env,"REMOTE_ADDR"));
-		add(ret,"server",map_val(env,"HTTP_HOST"));
-		add(ret,"protocol",map_val(env,"REQUEST_SCHEME"));
-		add(ret,"port",map_val(env,"SERVER_PORT"));
-		char* home=rtrim_upto(map_val(env,"SCRIPT_NAME"),'/',1);
-		add(ret,"path",xmap(
-			"full", map_val(ret,"path"),
-			"home", home,
-			"next", (sub_str(map_val(ret,"path"),str_len(home),0) ? sub_str(map_val(ret,"path"),str_len(home),0) : "/")
-		, End));
-		return ret; };
 	if(!map_val(env,"REQUEST_METHOD")){
 		void* path=map_id(map_val(_globals,"args"),1);
 		char* home=xstr("file:/",cwd(),"/", End);
@@ -2512,23 +2519,34 @@ map* http_req(){
 			"home", home,
 			"next", (sub_str(map_val(ret,"path"),str_len(home),0) ? sub_str(map_val(ret,"path"),str_len(home),0) : "/")
 		, End));
-		return ret;
-	};
+		add(_globals,"req",ret);
+		return ret; };
+	ret=parse_url(map_val(env,"REQUEST_URI"));
+	add(ret,"remote",map_val(env,"REMOTE_ADDR"));
+	add(ret,"server",map_val(env,"HTTP_HOST"));
+	add(ret,"protocol",map_val(env,"REQUEST_SCHEME"));
+	add(ret,"port",map_val(env,"SERVER_PORT"));
+	char* home=rtrim_upto(map_val(env,"SCRIPT_NAME"),'/',1);
+	add(ret,"path",xmap(
+		"full", map_val(ret,"path"),
+		"home", home,
+		"next", (sub_str(map_val(ret,"path"),str_len(home),0) ? sub_str(map_val(ret,"path"),str_len(home),0) : "/")
+	, End));
+	if(str_eq(map_val(env,"REQUEST_METHOD"),"GET")){
+		add(ret,"method","get");
+		add(_globals,"req",ret);
+		return ret; };
+	if(!str_eq(map_val(env,"REQUEST_METHOD"),"POST")){
+		http_error(xstr("Method ", map_val(env,"REQUEST_METHOD"), " not supported", End),"405 Method not supported"); };
+	add(ret,"method","post");
+	long long size=to_int(map_val(ret,"CONTENT_LENGTH"));
+//	"Content-Lenght was not provided".http_error("411 Length Required")
+	if(size>2000000){ http_error("Request should be with less than 2MB data","413 Request Entity Too Large"); };
+	char* line=NULL;
+	char* header=NULL;
 	while((line=read_line(stdin))){
-		header=xcat(header,line, End);
-		if(strchr("\r\n",line[0])){ break; };
-		if(!ret->len){
-			map* pair=str_split(str_trim(line," \t\n\r")," ",3);
-			add(ret,"method",map_id(pair,0));
-			add(ret,"path",map_id(pair,1));
-			continue; };
-		header_val(line,ret); };
-	if(str_eq(map_val(ret,"method"),"POST")){
-		int size=to_int(map_val(ret,"content-length"));
-		if(!size){ http_error("Content-Lenght was not provided","411 Length Required"); };
-		if(size>2000000){ http_error("Request should be with less than 2MB data","413 Request Entity Too Large"); };
-		add(ret,"post",read_stdin(size,NULL)); };
-	add(ret,"header",header);
+		header=xcat(header,line, End); };
+	add(ret,"post",header);
 	add(_globals,"req",ret);
 	return ret;
 };

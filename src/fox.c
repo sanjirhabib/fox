@@ -50,23 +50,23 @@ int make(map* files,char* outdir){
 	for(int next1=next(files,-1,NULL,NULL); has_id(files,next1); next1++){ void* v1=map_id(files,next1); if(file_time(v1)>file_time(".version.txt")){ req=1; break; }; };
 	return req ? compile(files,outdir,"fox","",0,0) : 0;
 };
-int cgi(char* infile, char* outfile,int keepfiles){ return cc(infile,outfile, "cgi", keepfiles); };
-int cc(char* infile, char* outfile, char* as, int keepfiles){
+int cgi(char* infile, char* outfile,char* opts,int keepfiles){ return cc(infile,outfile, "cgi", opts, keepfiles); };
+int cc(char* infile, char* outfile, char* as, char* opts, int keepfiles){
 	infile=file_rename(infile,NULL,".fox",NULL,NULL,NULL);
 	if(!outfile){ outfile=infile; };
 	char* in=xstr(infile,".fox", End);
 	fox_c(in,xstr(infile,".c", End));
 	fox_h(in,xstr(infile,".h", End));
 	map* switches=xmap(
-		"debug", "-O0 -lfox",
-		"speed", "-Os -lfox",
-		"static", "-lfoxstatic -lfoxcmdstatic -lsqlite3 -fdata-sections -ffunction-sections -Wl,-dead_strip",
-		"cgi", "-lfoxstatic -lfoxcgistatic -lsqlite3 -fdata-sections -ffunction-sections -Wl,-dead_strip"
+		"debug", "-O0 -lfox -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lcrypto",
+		"speed", "-Os -lfox -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lcrypto",
+		"static", "-lfoxstatic -lfoxcmdstatic -lsqlite3 -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lcrypto -fdata-sections -ffunction-sections -Wl,-dead_strip",
+		"cgi", "-lfoxstatic -lfoxcgistatic -lsqlite3 -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lcrypto -fdata-sections -ffunction-sections -Wl,-dead_strip"
 	, End);
-	void* libs = as ? map_val(switches,as) : NULL;
+	as = as ? map_val(switches,as) : NULL;
 	int ret=exec(
 		px(
-		xstr("gcc ", infile, ".c -o ", outfile, " ", libs, " -std=gnu99 -Wno-logical-op-parentheses -lm 2>&1", End),1),NULL);
+		xstr("gcc ", infile, ".c -o ", outfile, " ", as, " ", opts, " -std=gnu99 -Wno-logical-op-parentheses -lm 2>&1", End),1),NULL);
 	if(!keepfiles){
 		remove((xstr(infile,".c", End)));	
 		remove((xstr(infile,".h", End))); };	
@@ -199,14 +199,6 @@ char* int_human(int i,char* unit,char* zero){
 	if(ret && unit){ ret=xcat(ret,unit, End); };
 	return ret;
 };
-extern char **environ;
-map* env_vars(){
-	map* ret=new_map();
-	for(char **env=environ;*env;++env){
-		map* mp=str_split(*env,"=",2);
-		add(ret,map_id(mp,0),map_id(mp,1)); };
-	return ret;
-};
 char* substr(char* src,int from,int len){ return len ? sub_str(src,from,len) : NULL; };
 char* mstr(char* format, ...){
 	char* ret=NULL;
@@ -264,7 +256,7 @@ char* cwd(){
 char* write_file(char* data,char* filename,int readonly){
 	if(!filename){ return data; };
 	if(str_eq(filename,"-")){ return px(data,1); };
-	px(xstr("-> ", filename, End),1);
+//	if !silent => "-> $filename".px()
 	if(readonly && is_file(filename)){ chmod(filename,0666); };
 	FILE* fp=fopen(filename,"w");
 	if(!fp){ fox_error(xstr("writting to file ", filename, " failed", End),0); };
@@ -1552,7 +1544,7 @@ char* char_str(char c){
 	ret[0]=c;
 	ret[1]='\0';
 	char* str=str_dup(ret);
-	assert(str_len(str)==1);
+	assert(str_len(str)<=1);
 	return str;
 };
 int map_has_word(map* mp,char* str){
@@ -2719,8 +2711,11 @@ char* func_ccall(map* fn){
 		if(str_eq(v,"char*")){ post=".is_str()"; }
 		else if(str_eq(v,"char**")){ preproc=xcat(preproc,xstr("char* p", k, "_", map_val(fn,"name"), "=v.map_id(",int_str( i), ").is_str(); ", End), End); mid=xstr("&p", k, "_", map_val(fn,"name"), End); }
 		else if(str_eq(v,"map*")){ post=".is_map()"; }
-		else if(is_word(v,"int long size_t char time_t") || str_eq(v,"long long")){ post=".to_int()"; }
-		else if(is_word(v,"double float")){ post=".to_double()"; }
+		else if(is_word(v,"int long size_t time_t") || str_eq(v,"long long")){ post=".to_int()"; }
+		else if(str_eq(v,"char")){
+			post=xstr(".is_str() ? ", mid, ".is_str()[0] : ", mid, ".to_int())", End);
+			pre="(";
+		}else if(is_word(v,"double float")){ post=".to_double()"; }
 		else if(str_eq(k,"...")){
 			char* mtype=NULL;
 			if(str_end(map_val(fn,"type"),"*")){ mtype="ptr"; }
@@ -2829,6 +2824,7 @@ char* foxh(){
 	"\n"
 	"#include <signal.h>\n"
 	"#include <sqlite3.h>\n"
+	"#include <openssl/md5.h>\n"
 	"\n"
 	"enum Types {\n"
 	"	Null,Int,Double,String,Blob,Map,Vector,Index,Keys,Cell,Cell2,Tail\n"
@@ -3169,7 +3165,7 @@ char* write_phpconfig(){
 };
 char* write_meta(char* outfile){
 	map* funcs=source_funcs();
-	return write_file(x_c(xstr("", 
+	char* ret=write_file(x_c(xstr("", 
 	"/* This is a generated file. To change it, edit function write_meta() in fox.c */\n", 
 	"#include \"sqlite3.h\"\n", 
 	"#include \"fox.h\"\n", 
@@ -3193,6 +3189,8 @@ char* write_meta(char* outfile){
 	"}\n", 
 	"", 
 	"", End)),outfile,1);
+	px(mem_usage(),1);
+	return ret;
 };
 map* eval_params(map* sent,char* name,map* env){
 	assert(name);
@@ -3471,15 +3469,29 @@ char* read_line(FILE* fp){
 	};
 	return ret;
 };
+char* skip_paren(char* str){
+	char open=*str;
+	char close=closing_paren(open);
+	int level=1;
+	str++;
+	while(*str && level){
+		if(str_chr("\"'`",*str)){ str=skip_quote(str); continue; }
+		else if(*str==open){ level++; }
+		else if(*str==close){ level--; }
+		else if(*str=='\\'){ str++; if(!*str){ break; }; };
+		str++; };
+	return str;
+};
 char* skip_quote(char* str){
+	if(!str || !*str){ return str; };
 	char end=*str;
+	str++;
 	while(*str && *str!=end){
 		if(*str=='\\'){
 			str++;
-			if(!*str||*str==end) {break;};
-		};
-		str++;
-	};
+			if(!*str){ break; }; };
+		str++; };
+	if(*str==end){ str++; };
 	return str;
 };
 char* str_toupper(char* str){
@@ -4160,6 +4172,7 @@ map* source_funcs(){
 map* file_funcs(char* filename,int withbody){ return x_funcs(fox_read_file(filename,1),withbody); };
 char* help(){ return funcs_cdecl(funcs(),1); };
 map* funcs(){
+	if(!map_val(map_val(_globals,"cache"),"reflect")){add(add_key(_globals,"cache",Map),"reflect",reflect()); };
 	return map_val(map_val(_globals,"cache"),"funcs") ? map_val(map_val(_globals,"cache"),"funcs") : map_val(map_val(map_val(_globals,"cache"),"reflect"),"funcs");
 };
 void* run(char* in){
@@ -4662,6 +4675,7 @@ map* data_tokenizer(char** in,int level){
 		for(int i=str_len(space1)-1; i>=0; i--){
 			if(str_chr(" \t",space1[i])){ clevel++; }; };
 		if(clevel<level){
+			space1=NULL;
 			str=temp;
 			break;
 		};
@@ -4676,6 +4690,7 @@ map* data_tokenizer(char** in,int level){
 		if(str_chr(" \t",*str)){ space2=read_over(&str,"\t "); str++; };
 
 		if(str_start(str,"---")){ val=xvec(read_heredoc(&str), End); str++; }
+		else if(*str=='-' && str_chr(" \t\n\r\0",str[1])){ val=prop_toks(read_theline(&str),key); str++; }
 		else if(!str_chr("\n\r",*str)){ val=data_quote(read_theline(&str)); str++; };
 		
 		if(key && !val){
@@ -4701,6 +4716,7 @@ map* data_tokenizer(char** in,int level){
 		}else{
 			space1=xcat(space1,space2, End);
 			space2=NULL; }; };
+	vec_add(mp,space1);
 	*in=str;
 	return mp;
 };
@@ -4716,9 +4732,123 @@ map* data_quote(char* in){
 	if(!in || !str_len(in)){ return NULL; };
 	if(str_chr("\"'`",*in)){ return xvec(in, End); };
 	if(*in=='='){ return vec_compact(vec_del(x_map(sub_str(in,1,0)),0,1)); };
-	if(*in=='-'){
 	return xvec(str_quote(in), End);
-
-	};
-	return xvec(str_quote(in), End);
+};
+map* prop_toks(char* in,map* name){
+	map* ret=vec_merge(xvec(NULL,"\"name\"",","," ", End),name);
+	map* toks=split_by(in+1,',',0);
+	for(int next1=next(toks,-1,NULL,NULL); has_id(toks,next1); next1++){ void* val=map_id(toks,next1); char*  idx=map_key(toks, next1);
+		val=split_by(val,' ',2);
+		if(!map_len(val)){ continue; };
+		if(map_len(val)==1){
+			if(!idx){
+				vec_add(val,map_id(val,0));
+			}else{
+				void* temp=map_id(val,0);
+				set(val,0,"type");
+				set(val,1,temp); }; };
+		if(map_len(ret)){
+			vec_merge(ret,xvec(NULL,","," ", End));
+		}else{
+			vec_add(ret,NULL); };
+		vec_merge(ret,data_quote(map_id(val,0)));
+		vec_merge(ret,xvec(NULL,","," ", End));
+		vec_merge(ret,data_quote(map_id(val,1))); };
+	return xvec("xmap",NULL,"(",NULL,ret,NULL,")", End);
+};
+map* split_by(char* str, char term, int max){
+//	"spliting by $(term.char_str())".px()
+	if(!*str){ return NULL; };
+	map* ret=new_vec();
+	char* head=str;
+	if(!str_chr(" \t\n\r",term)){ head=skip_over(head," \t\n\r"); };
+	while(*str && (!max || map_len(ret)<max-1)){
+		if(strchr("\"'`",*str)){ str=skip_quote(str); continue; }
+		else if(strchr("([{",*str)){ str=skip_paren(str); continue; }
+		else if(*str==term){
+			vec_add(ret,sub_str(head,0,str-head));
+			head=str+1;
+			if(!str_chr(" \t\n\r",term)){ head=skip_over(head," \t\n\r"); }; };
+		str++; };
+	while(*str){ str++; };
+	if(str>head){ vec_add(ret,sub_str(head,0,str-head)); };
+	return ret;
+};
+char* str_hex(char* in){
+	char* ret=new_str(str_len(in)*2);
+	for(int i=0; i<str_len(in); i++){
+		sprintf(ret+i*2,"%02x",((unsigned char*)in)[i]); };
+	return ret;
+};
+char* md5(char* in){
+	char* ret=new_blob(16);
+	MD5((unsigned char*)in,str_len(in),(unsigned char*)ret);
+	return str_hex(ret);
+};
+map* data_map(char** in,int level){
+	if(!in||!*in||!**in){ return NULL; };
+	char* str=*in;
+	map* ret=new_map();
+	char* last=NULL;
+	while(*str){
+		assert(last!=str);
+		last=str;
+		char* tabstart=skip_over(str,"\n\r");
+		if(str_start(str,"//")){ str=skip_upto(str,"\n\r"); continue; };
+		char* keystart=skip_over(tabstart," \t");
+		char* keyend=skip_code(keystart," \r\n\t");
+		str=keyend;
+		if(keyend==keystart){ continue; };
+		if(keystart-tabstart<level){ break; };
+		char* key=data_unquote(sub_str(keystart,0,keyend-keystart));
+		char* valstart=skip_over(keyend," \t");
+		char* valend=skip_upto(valstart,"\n\r");
+		str=valend;
+		if(valend==valstart){
+			map* submap=data_map(&str,level+1);
+			if(submap){ add(ret,key,submap); }
+			else {add(ret,key,NULL);};
+		}else{
+			char* val=sub_str(valstart,0,valend-valstart);
+			if(val[0]=='-' && str_chr(" \t",val[1])){ add(ret,key,prop_vals(val,key)); }
+			else {add(ret,key,data_unquote(val));}; }; };
+	if(map_len(ret)){
+		*in=str;
+		return ret; };
+	return NULL;	
+};
+char* skip_code(char* in,char* terminator){
+	while(*in){
+		if(str_chr("({[",*in)){ in=skip_paren(in); continue; };
+		if(str_chr("\"'`",*in)){ in=skip_quote(in); continue; };
+		if(str_chr(terminator,*in)){ break; };
+		in++; };
+	return in;
+};
+char* skip_upto(char* in,char* chars){
+	while(*in && !strchr(chars,*in)) {in++;};
+	return in;
+};
+char* data_unquote(char* in){
+	if(!in || !str_len(in)){ return NULL; };
+	if(str_chr("\"'`",*in)){ return str_unquote(in); };
+	if(*in=='='){ return eval(sub_str(in,1,0),NULL); };
+	if(str_start(in,"---")){ return substr(in,3,-3); };
+	return in;
+};
+map* prop_vals(char* in,char* name){
+	map* ret=xmap("name", name, End);
+	map* toks=split_by(in+1,',',0);
+	for(int next1=next(toks,-1,NULL,NULL); has_id(toks,next1); next1++){ void* val=map_id(toks,next1); char*  idx=map_key(toks, next1);
+		val=split_by(val,' ',2);
+		if(!map_len(val)){ continue; };
+		if(map_len(val)==1){
+			if(!idx){
+				vec_add(val,data_unquote(map_id(val,0)));
+			}else{
+				char* temp=data_unquote(map_id(val,0));
+				set(val,0,"type");
+				set(val,1,temp); }; };
+		add(ret,data_unquote(map_id(val,0)),data_unquote(map_id(val,1))); };
+	return ret;
 };

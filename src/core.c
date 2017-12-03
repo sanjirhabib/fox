@@ -335,7 +335,10 @@ void* int_var(size_t i){
 void* double_var(double f){
 	return (void*)(((*(size_t*)&f) & ~(3ll<<61)) | ((1ll & 3ll)<<61));
 };
-int has_id(map* mp,int idx){ return idx>=0 && idx<mp->len; };
+int has_id(map* mp,int idx){
+	if(!is_map(mp)){ return 0; };
+	return idx>=0 && idx<mp->len;
+};
 void* map_idp(map* mp,int idx){
 	if(!mp){ return NULL; };
 	if(!is_map(mp)){ px((xstr("Error! not map ",str_quote(to_str(mp,"",0)), End)),1); assert(0); };
@@ -345,8 +348,9 @@ void* map_idp(map* mp,int idx){
 };
 void* map_id(map* mp,int idx){
 	if(!mp){ return NULL; };
-	if(!is_map(mp)){ px((xstr("Error! not map ",str_quote(to_str(mp,"",0)), End)),1); assert(0); };
-	assert(is_map(mp));
+	if(!is_map(mp)){ return NULL; };
+//	if !mp.is_map() => ("Error! not map "..mp.to_str().str_quote()).px(); assert(0)
+//	assert(mp.is_map())
 	if(idx<0 || idx>=mp->len){ return NULL; };
 	return mp->type==Vector ? mp->vars[idx] : mp->pairs[idx].val;
 };
@@ -502,6 +506,7 @@ mempage* no_page(int no){
 	return NULL;
 };
 struct mempage* new_page(int block_size,int blocks){
+//	printf("\nGC Page: %d * %d = %d\n",block_size,blocks,block_size*blocks)
 	int size=block_size*blocks;
 	char* page=malloc((size+blocks));
 	_gcdata.pages=realloc(_gcdata.pages,(_gcdata.total_pages+1)*sizeof(mempage));
@@ -959,9 +964,20 @@ void* map_val(map* mp,char* key){
 	int i=map_has_key(mp,key);
 	return i ? mp->pairs[i-1].val : NULL;
 };
+extern char **environ;
+map* env_vars(){
+	if(map_val(_globals,"env")){ return map_val(_globals,"env"); };
+	map* ret=new_map();
+	for(char **env=environ;*env;++env){
+		map* mp=str_split(*env,"=",2);
+		add(ret,map_id(mp,0),map_id(mp,1)); };
+	add(_globals,"env",ret);
+	return ret;
+};
 map* argv_map(char** argv,int argc){
 	map* ret=new_vec();
 	ret->len=argc;
 	ret->vars=(void**)argv;
+	add(_globals,"args",ret);
 	return ret;
 };

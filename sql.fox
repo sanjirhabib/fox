@@ -1011,19 +1011,26 @@ map* parse_connection2(char* in){
 }
 map* parse_connection(char* in){
 	ret=in.str_split(";")
-	ret={db : ret[0].parse_connection2(), ddb : ret[1] ? ret[1] : ret[0], module : ret[2], dd : ret[3].str_split(","), desc: in }
-	ret.type=ret.db.type
+	ret=ret[0].parse_connection2()
+	ret.map_merge({
+		ddb: ret[1] ? ret[1] : ret[0],
+		module: ret[2],
+		dd: ret[3].str_split(","),
+		fulldesc: in
+	})
 	return ret
 }
 map* conn_db(char* db){
 	if !db.is_code() => return db.parse_connection().db
-	ret=_globals.dbs[db].db
+	ret=_globals.dbs[db]
 	if !ret => "SQLite connection $db not found".fox_error()
-	return ret
+	if ret.is_str() => _globals.dbs[db]=ret.parse_connection()
+	return _globals.dbs[db]
 }
 map* lite_exec(char* sql,char* db,map* params=NULL){
+	cname=db
 	db=db.conn_db().name
-	if !db => "query() connection not found".fox_error()
+	if !db => "query() connection $(cname.str_quote()) not found $(_globals.dbs)".fox_error()
 	sqlite3* conn=NULL
 	sqlite3_stmt* stm=NULL
 	start_time()
@@ -1973,18 +1980,16 @@ int sql_count(char* sql,char* db,map* params=NULL){
 			if !val.aggregate => expr="distinct $key"; break
 	return ("select count($expr) "..sqls.from.re_from()..sqls.where.re_where()).sql_value(db,params).to_int()
 }
-map* regexp(char* in, char* pattern){
+map* re_match(char* in, char* pattern){
 	status=0
 	regex_t	re={0}
-	regmatch_t match={0}
+	regmatch_t match[10]={0}
 	if regcomp(&re, pattern, REG_EXTENDED) => return NULL
-	if regexec(&re, in, 1, &match, 0) => regfree(&re); return NULL
-	map* ret=[in.sub_str(match.rm_so,match.rm_eo-match.rm_so).px()]
-	while 1
-		in+=match.rm_eo
-		int err=regexec(&re, in, 1, &match, REG_NOTBOL)
-		if err => break
-		ret[]=in.sub_str(match.rm_so,match.rm_eo-match.rm_so).px()
+	if regexec(&re, in, 10, match, 0) => regfree(&re); return NULL
+	ret=[]
+	for i=0; i<10; i++
+		if match[i].rm_so<0 => break
+		ret[]=in.sub_str(match[i].rm_so, match[i].rm_eo-match[i].rm_so)
 	regfree(&re);
 	return ret
 }
@@ -2118,8 +2123,9 @@ map* show_map(char* show){
 char* data_show(map* data,char* show){
 	return NULL
 }
-char* http_redirect(char* url) => return NULL.http_out("301 Moved Permanently","text/html",["Location: $url"])
-void* http_error(char* msg,char* status) => _globals.fox_error.mstr(status,status,msg).http_out(status); return NULL
+char* http_moved(char* url) => return NULL.http_out("301 Moved Permanently","text/html",["Location: $url"])
+char* http_redirect(char* url) => return NULL.http_out("302 Moved Temporarily","text/html",["Location: $url"])
+void* http_error(char* msg,char* status) => msg.http_out(status); xexit(0); return NULL
 map* compile_template(char* tem){
 	if(!tem) return NULL
 	blks=tem.str_split("\n--",0)
@@ -2178,17 +2184,25 @@ char* str_html(char* in){
 	return ret
 }
 void header(char* str) => str.print(); "\r\n".print()
-char* http_out(char* str,char* status="200 OK",char* mime="text/html; charset=utf-8",map* headers=NULL){
+char* http_out(char* str=NULL,char* status="200 OK",char* mime="text/html; charset=utf-8",map* headers=NULL){
+	static int callonce=0
+	if _globals.sessid
+		sess=_globals.sess
+		_globals.sess=NULL
+		sess.json().write_file("/tmp/sess.$(sess_id())")
+		_globals.sessid=NULL
+	if callonce => return str
+	callonce=1
+	out=_globals.out..str
 	"Status: $status".header()
 	"Content-Type: $mime".header()
-	"Content-Length: $(str.str_len())".header()
+	"Content-Length: $(out.str_len())".header()
 	headers.each v,,i => v.header()
-	_globals.res.cookie.each v2,,i2
+	_globals.cookie.each v2
 		"Set-Cookie: $v2".header()
-	if _globals.res.sess
-		_globals.res.sess.json().write_file("/tmp/sess.$(sess_id())")
 	"".header()
-	str.print()
+	out.print()
+	xexit(0)
 	return str
 }
 char* static_file(char* path){
@@ -2200,7 +2214,7 @@ char* static_file(char* path){
 }
 
 char* str_url(char* in){
-	if !in => return in
+	if !in||!*in => return in
 	bad=0
 	head=in
 	for ;*in;in++
@@ -2235,6 +2249,14 @@ char* url_str(char* in){
 		else ret[i]=*in
 	return ret
 }
+char* map_amps(map* mp){
+	ret=''
+	mp.each v,n
+		if !v.str_len() => continue
+		if ret => ret.="&"
+		ret.=n.is_str().str_url().."="..v.str_url()
+	return ret
+}
 map* amps_map(char* in){
 	ret={}
 	in.str_split("&",0).each v,,i
@@ -2246,8 +2268,8 @@ map* parse_url(char* path){
 	ret={url: path}
 	two=path.str_split("?",2)
 	ret.path=two[0]
-	ret.param=two[1]
-	return ret.params=two[1].amps_map()
+	ret.gets=two[1].amps_map()
+	return ret
 }
 void load_theme(char* name=:dashboard){
 	if(!name.str_len()) return
@@ -2255,13 +2277,19 @@ void load_theme(char* name=:dashboard){
 	if !mp => "Can't read theme file $name.map".fox_error()
 	_globals.map_merge(mp)
 }
-void sess_load(){
-	char* sid=:cookie.header_vals().sessid
-	if(!sid) return
+map* sess_init(){
+	sid=env_vars().HTTP_COOKIE.header_map().sessid
+	sess={}
+	if !sid
+		sid=sess_newid()
+		:sessid.cookie_set(sid)
+	else
+		sess="/tmp/sess.$sid".fox_read_file(0).xjson_map()
 	_globals.sessid=sid
-	_globals.sess="/tmp/sess.$sid".fox_read_file(0).xjson_map()
+	_globals.sess=sess
+	return sess
 }
-void	sess_add(char* name, char* value) => _globals.res.sess[name]=value
+void	sess_add(char* name, char* value) => _globals.sess[name]=value
 char*	sess_id()		=> return _globals.sessid
 char*	sess_file()		=> return sess_id() ? "/tmp/sess.$(sess_id())" : NULL
 char*	sess_newid()	=> return rand_str(24)
@@ -2269,7 +2297,7 @@ void cookie_set(char* name,char* value,char* path="/",char* expire=NULL){
 	xexpire=''
 	if expire => xexpire="; expires=$expire"
 	ss="$name=$value; path=$path$xexpire"
-	_globals.res.cookie=ss
+	_globals.cookie[]=ss
 }
 void sess_delete(){
 	if !sess_file() => return
@@ -2346,10 +2374,6 @@ map* process_login(char* username,char* password){
 	:role.sess_add(:admin)
 	"../dump/".http_redirect()
 	return NULL
-}
-char* page_set_cookie(){
-	_globals.res.cookie.sessid=:helloworldsession
-	return "../dump/".http_out()
 }
 char* page_dump(){
 	return xcat(
@@ -2469,7 +2493,6 @@ map* header_val(char* line,map* mp){
 	mp[pair[0].str_trim().str_tolower()]=pair[1].str_trim()
 	return mp
 }
-map* header_vals(char* name) => return _globals.req[name].header_map()
 map* header_map(char* val){
 	if !val => return NULL
 	ret={}
@@ -2481,23 +2504,7 @@ map* header_map(char* val){
 }
 map* http_req(){
 	ret={}
-	line=''
-	header=''
 	env=env_vars()
-	if env.REQUEST_METHOD===:GET
-		ret=env.REQUEST_URI.parse_url()
-		ret.method=:get
-		ret.remote=env.REMOTE_ADDR
-		ret.server=env.HTTP_HOST
-		ret.protocol=env.REQUEST_SCHEME
-		ret.port=env.SERVER_PORT
-		char* home=env.SCRIPT_NAME.rtrim_upto('/',1)
-		ret.path={
-			full: ret.path
-			home: home
-			next: ret.path.sub_str(home.str_len()) or "/"
-		}
-		return ret
 	if !env.REQUEST_METHOD
 		path=_globals.args[1]
 		char* home="file:/"..cwd().."/"
@@ -2512,24 +2519,35 @@ map* http_req(){
 			home: home
 			next: ret.path.sub_str(home.str_len()) or "/"
 		}
+		_globals.req=ret
 		return ret
-
+	ret=env.REQUEST_URI.parse_url()
+	ret.remote=env.REMOTE_ADDR
+	ret.server=env.HTTP_HOST
+	ret.protocol=env.REQUEST_SCHEME
+	ret.port=env.SERVER_PORT
+	char* home=env.SCRIPT_NAME.rtrim_upto('/',1)
+	ret.path={
+		full: ret.path
+		home: home
+		next: ret.path.sub_str(home.str_len()) or "/"
+	}
+	if env.REQUEST_METHOD===:GET
+		ret.method=:get
+		_globals.req=ret
+		return ret
+	if env.REQUEST_METHOD!==:POST
+		"Method $(env.REQUEST_METHOD) not supported".http_error("405 Method not supported")
+	ret.method=:post
+	size=ret.CONTENT_LENGTH.to_int()
+//	"Content-Lenght was not provided".http_error("411 Length Required")
+	if size>2000000 => "Request should be with less than 2MB data".http_error("413 Request Entity Too Large")
+	line=''
+	header=''
 	while((line=stdin.read_line()))
 		header.=line
-		if "\r\n".strchr(line[0]) => break
-		if !ret->len
-			pair=line.str_trim().str_split(" ",3)
-			ret.method=pair[0]
-			ret.path=pair[1]
-			continue
-		line.header_val(ret)
-	if ret.method===:POST
-		int size=ret["content-length"].to_int()
-		if !size => "Content-Lenght was not provided".http_error("411 Length Required")
-		if size>2000000 => "Request should be with less than 2MB data".http_error("413 Request Entity Too Large")
-		ret.post=size.read_stdin()
-	ret.header=header
-	_globals.req=ret;
+	ret.post=header
+	_globals.req=ret
 	return ret
 }
 int ip_connect(char* host,int port,char** err=NULL){

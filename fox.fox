@@ -50,21 +50,21 @@ int make(map* files=source_files(),char* outdir="c"){
 	files.each v1 => if v1.file_time()>".version.txt".file_time() => req=1; break
 	return req ? files.compile(outdir) : 0
 }
-int cgi(char* infile="main.fox", char* outfile="index.cgi",int keepfiles=0) => return infile.cc(outfile, :cgi, keepfiles)
-int cc(char* infile, char* outfile=NULL, char* as="debug", int keepfiles=0){
+int cgi(char* infile="main.fox", char* outfile="index.cgi",char* opts=NULL,int keepfiles=0) => return infile.cc(outfile, :cgi, opts, keepfiles)
+int cc(char* infile, char* outfile=NULL, char* as="debug", char* opts=NULL, int keepfiles=0){
 	infile=infile.file_rename(,".fox")
 	if !outfile => outfile=infile
 	in=infile..".fox"
 	in.fox_c(infile..".c")
 	in.fox_h(infile..".h")
 	switches={
-		debug: "-O0 -lfox"
-		speed: "-Os -lfox"
-		static: "-lfoxstatic -lfoxcmdstatic -lsqlite3 -fdata-sections -ffunction-sections -Wl,-dead_strip"
-		cgi: "-lfoxstatic -lfoxcgistatic -lsqlite3 -fdata-sections -ffunction-sections -Wl,-dead_strip"
+		debug: "-O0 -lfox -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lcrypto"
+		speed: "-Os -lfox -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lcrypto"
+		static: "-lfoxstatic -lfoxcmdstatic -lsqlite3 -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lcrypto -fdata-sections -ffunction-sections -Wl,-dead_strip"
+		cgi: "-lfoxstatic -lfoxcgistatic -lsqlite3 -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lcrypto -fdata-sections -ffunction-sections -Wl,-dead_strip"
 	}
-	libs = as ? switches[as] : ''
-	ret="gcc $(infile).c -o $outfile $(libs) -std=gnu99 -Wno-logical-op-parentheses -lm 2>&1"
+	as = as ? switches[as] : ''
+	ret="gcc $infile.c -o $outfile $as $opts -std=gnu99 -Wno-logical-op-parentheses -lm 2>&1"
 		.px()
 		.exec()
 	if !keepfiles
@@ -199,14 +199,6 @@ char* int_human(int i,char* unit='',char* zero=""){
 	if ret && unit => ret.=unit
 	return ret
 }
-extern char **environ;
-map* env_vars(){
-	ret={}
-	for char **env=environ;*env;++env
-		mp=str_split(*env,"=",2)
-		ret[mp[0]]=mp[1]
-	return ret
-}
 char* substr(char* src,int from,int len) => return len ? src.sub_str(from,len) : NULL
 char* mstr(char* format, ...){
 	ret=''
@@ -264,7 +256,7 @@ char* cwd(){
 char* write_file(char* data,char* filename,int readonly=0){
 	if !filename => return data
 	if filename==="-" => return data.px()
-	"-> $filename".px()
+//	if !silent => "-> $filename".px()
 	if readonly && filename.is_file() => filename.chmod(0666)
 	FILE* fp=filename.fopen(:w)
 	if !fp => "writting to file $filename failed".fox_error()
@@ -1552,7 +1544,7 @@ char* char_str(char c){
 	ret[0]=c
 	ret[1]='\0'
 	str=ret.str_dup()
-	assert(str.str_len()==1)
+	assert(str.str_len()<=1)
 	return str
 }
 int map_has_word(map* mp,char* str){
@@ -2719,7 +2711,10 @@ char* func_ccall(map* fn){
 		if v==="char*" => post=".is_str()"
 		else if v==="char**" => preproc.="char* p$(k)_$(fn.name)=v.map_id($i).is_str(); "; mid="&p$(k)_$(fn.name)"
 		else if v==="map*" => post=".is_map()"
-		else if v.is_word("int long size_t char time_t") || v==="long long" => post=".to_int()"
+		else if v.is_word("int long size_t time_t") || v==="long long" => post=".to_int()"
+		else if v===:char
+			post=".is_str() ? $mid.is_str()[0] : $mid.to_int())"
+			pre="("
 		else if v.is_word("double float") => post=".to_double()"
 		else if k==="..."
 			mtype=''
@@ -2829,6 +2824,7 @@ char* foxh(){
 
 	#include <signal.h>
 	#include <sqlite3.h>
+	#include <openssl/md5.h>
 
 	enum Types {
 		Null,Int,Double,String,Blob,Map,Vector,Index,Keys,Cell,Cell2,Tail
@@ -3169,7 +3165,7 @@ char* write_phpconfig(){
 }
 char* write_meta(char* outfile){
 	map* funcs=source_funcs()
-	return ---
+	ret=---
 	/* This is a generated file. To change it, edit function write_meta() in fox.c */
 	#include "sqlite3.h"
 	#include "fox.h"
@@ -3193,6 +3189,8 @@ char* write_meta(char* outfile){
 	}
 
 	---.x_c().write_file(outfile,1)
+	mem_usage().px()
+	return ret
 }
 map* eval_params(map* sent,char* name,map* env=NULL){
 	name.assert()
@@ -3471,15 +3469,29 @@ char* read_line(FILE* fp){
 	
 	return ret
 }
+char* skip_paren(char* str){
+	char open=*str
+	char close=open.closing_paren()
+	level=1
+	str++
+	while *str && level
+		if "\"'`".str_chr(*str) => str=str.skip_quote(); continue;
+		else if *str==open => level++
+		else if *str==close => level--
+		else if *str=='\\' => str++; if !*str => break
+		str++
+	return str
+}
 char* skip_quote(char* str){
+	if !str || !*str => return str
 	char end=*str
+	str++
 	while *str && *str!=end
 		if *str=='\\'
 			str++
-			if(!*str||*str==end) break
-		
+			if !*str => break
 		str++
-	
+	if *str==end => str++
 	return str
 }
 char* str_toupper(char* str){
@@ -4160,6 +4172,7 @@ map* source_funcs(){
 map* file_funcs(char* filename,int withbody=0) => return filename.fox_read_file().x_funcs(withbody)
 char* help() => return funcs().funcs_cdecl()
 map* funcs(){
+	if !_globals.cache.reflect=>_globals.cache.reflect=reflect()
 	return _globals.cache.funcs ? _globals.cache.funcs : _globals.cache.reflect.funcs
 }
 void* run(char* in){
@@ -4662,6 +4675,7 @@ map* data_tokenizer(char** in,int level=0){
 		for i=space1.str_len()-1; i>=0; i--
 			if " \t".str_chr(space1[i]) => clevel++
 		if clevel<level
+			space1=NULL
 			str=temp
 			break
 
@@ -4676,6 +4690,7 @@ map* data_tokenizer(char** in,int level=0){
 		if " \t".str_chr(*str) => space2=read_over(&str,"\t "); str++
 
 		if str.str_start("---") => val=[read_heredoc(&str)]; str++
+		else if *str=='-' && " \t\n\r\0".str_chr(str[1]) => val=read_theline(&str).prop_toks(key); str++
 		else if !"\n\r".str_chr(*str) => val=read_theline(&str).data_quote(); str++
 		
 		if key && !val
@@ -4701,6 +4716,7 @@ map* data_tokenizer(char** in,int level=0){
 		else
 			space1.=space2
 			space2=NULL
+	mp[]=space1
 	*in=str
 	return mp
 }
@@ -4716,7 +4732,123 @@ map* data_quote(char* in){
 	if !in || !in.str_len() => return NULL
 	if "\"'`".str_chr(*in) => return [in]
 	if *in=='=' => return in.sub_str(1).x_map().vec_del(0,1).vec_compact()
-	if *in=='-'
-		
 	return [in.str_quote()]
+}
+map* prop_toks(char* in,map* name){
+	ret=[NULL,"\"name\"",","," "].vec_merge(name)
+	toks=split_by(in+1,',')
+	toks.each val, idx
+		val=val.split_by(' ',2)
+		if !val.map_len() => continue
+		if val.map_len()==1
+			if !idx
+				val[]=val[0]
+			else
+				temp=val[0]
+				val[0]=:type
+				val[1]=temp
+		if ret.map_len()
+			ret.vec_merge([NULL,","," "])
+		else
+			ret[]=NULL
+		ret.vec_merge(val[0].data_quote())
+		ret.vec_merge([NULL,","," "])
+		ret.vec_merge(val[1].data_quote())
+	return [:xmap,NULL,"(",NULL,ret,NULL,")"]
+}
+map* split_by(char* str, char term=',', int max=0){
+//	"spliting by $(term.char_str())".px()
+	if !*str => return NULL
+	ret=[]
+	head=str
+	if !" \t\n\r".str_chr(term) => head=head.skip_over(" \t\n\r")
+	while *str && (!max || ret.map_len()<max-1)
+		if "\"'`".strchr(*str) => str=str.skip_quote(); continue
+		else if "([{".strchr(*str) => str=str.skip_paren(); continue
+		else if *str==term
+			ret[]=head.sub_str(0,str-head)
+			head=str+1
+			if !" \t\n\r".str_chr(term) => head=head.skip_over(" \t\n\r")
+		str++
+	while *str => str++
+	if str>head => ret[]=head.sub_str(0,str-head)
+	return ret
+}
+char* str_hex(char* in){
+	ret=new_str(in.str_len()*2)
+	for i=0; i<in.str_len(); i++
+		sprintf(ret+i*2,"%02x",((unsigned char*)in)[i])
+	return ret
+}
+char* md5(char* in){
+	ret=new_blob(16)
+	MD5((unsigned char*)in,in.str_len(),(unsigned char*)ret)
+	return ret.str_hex()
+}
+map* data_map(char** in,int level=0){
+	if !in||!*in||!**in => return NULL
+	str=*in
+	ret={}
+	last=''
+	while *str
+		assert(last!=str)
+		last=str
+		tabstart=str.skip_over("\n\r")
+		if str.str_start("//") => str=skip_upto(str,"\n\r"); continue
+		keystart=tabstart.skip_over(" \t")
+		keyend=keystart.skip_code(" \r\n\t")
+		str=keyend
+		if keyend==keystart => continue
+		if keystart-tabstart<level => break
+		key=keystart.sub_str(0,keyend-keystart).data_unquote()
+		valstart=keyend.skip_over(" \t")
+		valend=valstart.skip_upto("\n\r")
+		str=valend
+		if valend==valstart
+			submap=data_map(&str,level+1)
+			if submap => ret[key]=submap
+			else ret[key]=NULL
+		else
+			val=valstart.sub_str(0,valend-valstart)
+			if val[0]=='-' && " \t".str_chr(val[1]) => ret[key]=val.prop_vals(key)
+			else ret[key]=val.data_unquote()
+	if ret.map_len()
+		*in=str
+		return ret
+	return NULL	
+}
+char* skip_code(char* in,char* terminator){
+	while *in
+		if "({[".str_chr(*in) => in=in.skip_paren(); continue
+		if "\"'`".str_chr(*in) => in=in.skip_quote(); continue
+		if terminator.str_chr(*in) => break
+		in++
+	return in
+}
+char* skip_upto(char* in,char* chars=" \t\n\r"){
+	while(*in && !chars.strchr(*in)) in++
+	return in
+}
+char* data_unquote(char* in){
+	if !in || !in.str_len() => return NULL
+	if "\"'`".str_chr(*in) => return in.str_unquote()
+	if *in=='=' => return in.sub_str(1).eval()
+	if in.str_start("---") => return in.substr(3,-3)
+	return in
+}
+map* prop_vals(char* in,char* name){
+	ret={name: name}
+	toks=split_by(in+1,',')
+	toks.each val, idx
+		val=val.split_by(' ',2)
+		if !val.map_len() => continue
+		if val.map_len()==1
+			if !idx
+				val[]=val[0].data_unquote()
+			else
+				temp=val[0].data_unquote()
+				val[0]=:type
+				val[1]=temp
+		ret[val[0].data_unquote()]=val[1].data_unquote()
+	return ret
 }

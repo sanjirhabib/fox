@@ -1,8 +1,6 @@
 index: main.fox
 	cd .. && make install
-	#fox cgi --keepfiles=1
-	fox cgi
-	index.cgi /
-	#printf "GET /hello/world/?hi=there&i=am HTTP/1.1\nhost: localhost\n\n" | index.cgi
+	fox cgi --opts="-I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lcrypto"
+	index.cgi login/
 debug:
 	fox cgi --keepfiles=1

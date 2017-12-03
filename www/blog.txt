@@ -1,0 +1,8 @@
+db
+	blog
+		cols
+			id=int
+			title=text
+			body=para
+			status=code
+			datetime=datetime
