@@ -43,7 +43,7 @@ int cc(char* infile, char* outfile, char* as, char* opts, int keepfiles){
 	char* in=xstr(infile,".fox", End);
 	fox_c(in,xstr(infile,".c", End));
 	fox_h(in,xstr(infile,".h", End));
-	char* libs="-I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lcrypto -lmarkdown -lcurl -lsqlite3";
+	char* libs="-I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lcrypto -lmarkdown -lcurl -lsqlite3 -Wno-unused-command-line-argument";
 	map* switches=xmap(
 		"debug", xstr("-O0 -lfox ", libs, End),
 		"speed", xstr("-Os -lfox ", libs, End),
@@ -4724,21 +4724,34 @@ map* data_quote(char* in){
 	if(!in || !str_len(in)){ return NULL; };
 	if(str_chr("\"'`",*in)){ return xvec(in, End); };
 	if(*in=='='){ return vec_compact(vec_del(x_map(sub_str(in,1,0)),0,1)); };
+	if(*in=='{'){ return prop_toks(substr(in,1,-1),NULL); };
+	if(*in=='['){ return prop_vec_toks(substr(in,1,-1)); };
 	return xvec(str_quote(in), End);
 };
+map* prop_vec_toks(char* in){
+	map* ret=new_vec();
+	map* toks=split_by(in,',',0);
+	for(int next1=next(ret,-1,NULL,NULL); has_id(ret,next1); next1++){ void* val=map_id(ret,next1); char* idx=map_key(ret, next1);
+		if(idx){ vec_merge(ret,xvec(NULL,","," ", End)); }
+		else {vec_add(ret,NULL);};
+		vec_merge(ret,data_quote(val)); };
+	return xvec("xvec",NULL,"(",NULL,ret,NULL,")", End);
+};
 map* prop_toks(char* in,map* name){
-	map* ret=vec_merge(xvec(NULL,"\"name\"",","," ", End),name);
-	map* toks=split_by(in+1,',',0);
-	for(int next1=next(toks,-1,NULL,NULL); has_id(toks,next1); next1++){ void* val=map_id(toks,next1); char*  idx=map_key(toks, next1);
+	map* ret=new_vec();
+	map* toks=split_by(in,',',0);
+	for(int  idx=next(toks,-1,NULL,NULL); has_id(toks, idx);  idx++){ void* val=map_id(toks, idx);
 		val=split_by(val,' ',2);
 		if(!map_len(val)){ continue; };
+		if(idx==0 && str_eq(map_id(val,0),"-")){
+			if(name){
+				vec_add(ret,NULL);
+				vec_merge(ret,data_quote("name"));
+				vec_merge(ret,xvec(NULL,","," ", End));
+				vec_merge(ret,name); };
+			set(val,0,"type"); };
 		if(map_len(val)==1){
-			if(!idx){
-				vec_add(val,map_id(val,0));
-			}else{
-				void* temp=map_id(val,0);
-				set(val,0,"type");
-				set(val,1,temp); }; };
+			vec_add(val,map_id(val,0)); };
 		if(map_len(ret)){
 			vec_merge(ret,xvec(NULL,","," ", End));
 		}else{
@@ -4792,7 +4805,7 @@ map* data_map(char** in,int level){
 		str=keyend;
 		if(keyend==keystart){ continue; };
 		if(keystart-tabstart<level){ break; };
-		char* key=data_unquote(sub_str(keystart,0,keyend-keystart));
+		void* key=data_unquote(sub_str(keystart,0,keyend-keystart));
 		char* valstart=skip_over(keyend," \t");
 		char* valend=skip_upto(valstart,"\n\r");
 		str=valend;
@@ -4802,7 +4815,7 @@ map* data_map(char** in,int level){
 			else {add(ret,key,NULL);};
 		}else{
 			char* val=sub_str(valstart,0,valend-valstart);
-			if(val[0]=='-' && str_chr(" \t",val[1])){ add(ret,key,prop_vals(val,key)); }
+			if(val[0]=='-' && str_chr(" \t",val[1])){ add(ret,key,prop_map(val,key)); }
 			else {add(ret,key,data_unquote(val));}; }; };
 	if(map_len(ret)){
 		*in=str;
@@ -4821,26 +4834,32 @@ char* skip_upto(char* in,char* chars){
 	while(*in && !strchr(chars,*in)) {in++;};
 	return in;
 };
-char* data_unquote(char* in){
+void* data_unquote(char* in){
 	if(!in || !str_len(in)){ return NULL; };
 	if(str_chr("\"'`",*in)){ return str_unquote(in); };
 	if(*in=='='){ return eval(sub_str(in,1,0),NULL); };
 	if(str_start(in,"---")){ return substr(in,3,-3); };
+	if(*in=='{'){ return prop_map(substr(in,1,-1),NULL); };
+	if(*in=='['){ return prop_vec(substr(in,1,-1)); };
 	return in;
 };
-map* prop_vals(char* in,char* name){
-	map* ret=xmap("name", name, End);
-	map* toks=split_by(in+1,',',0);
-	for(int next1=next(toks,-1,NULL,NULL); has_id(toks,next1); next1++){ void* val=map_id(toks,next1); char*  idx=map_key(toks, next1);
+map* prop_vec(char* in){
+	map* ret=split_by(in,',',0);
+	for(int next1=next(ret,-1,NULL,NULL); has_id(ret,next1); next1++){ void* val=map_id(ret,next1); char* idx=map_key(ret, next1);
+		add(ret,idx,data_unquote(val)); };
+	return ret;
+};
+map* prop_map(char* in,char* name){
+	map* ret=new_map();
+	map* toks=split_by(in,',',0);
+	for(int  idx=next(toks,-1,NULL,NULL); has_id(toks, idx);  idx++){ void* val=map_id(toks, idx);
 		val=split_by(val,' ',2);
 		if(!map_len(val)){ continue; };
+		if(idx==0 && str_eq(map_id(val,0),"-")){
+			if(name){ add(ret,"name",name); };
+			set(val,0,"type"); };
 		if(map_len(val)==1){
-			if(!idx){
-				vec_add(val,data_unquote(map_id(val,0)));
-			}else{
-				char* temp=data_unquote(map_id(val,0));
-				set(val,0,"type");
-				set(val,1,temp); }; };
+			vec_add(val,map_id(val,0)); };
 		add(ret,data_unquote(map_id(val,0)),data_unquote(map_id(val,1))); };
 	return ret;
 };

@@ -43,7 +43,7 @@ int cc(char* infile, char* outfile=NULL, char* as="debug", char* opts=NULL, int 
 	in=infile..".fox"
 	in.fox_c(infile..".c")
 	in.fox_h(infile..".h")
-	libs="-I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lcrypto -lmarkdown -lcurl -lsqlite3"
+	libs="-I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lcrypto -lmarkdown -lcurl -lsqlite3 -Wno-unused-command-line-argument"
 	switches={
 		debug: "-O0 -lfox $libs"
 		speed: "-Os -lfox $libs"
@@ -4724,21 +4724,34 @@ map* data_quote(char* in){
 	if !in || !in.str_len() => return NULL
 	if "\"'`".str_chr(*in) => return [in]
 	if *in=='=' => return in.sub_str(1).x_map().vec_del(0,1).vec_compact()
+	if *in=='{' => return in.substr(1,-1).prop_toks()
+	if *in=='[' => return in.substr(1,-1).prop_vec_toks()
 	return [in.str_quote()]
 }
-map* prop_toks(char* in,map* name){
-	ret=[NULL,"\"name\"",","," "].vec_merge(name)
-	toks=split_by(in+1,',')
-	toks.each val, idx
+map* prop_vec_toks(char* in){
+	ret=[]
+	toks=in.split_by(',')
+	ret.each val,idx
+		if idx => ret.vec_merge([NULL,","," "])
+		else ret[]=NULL
+		ret.vec_merge(val.data_quote())
+	return [:xvec,NULL,"(",NULL,ret,NULL,")"]
+}
+map* prop_toks(char* in,map* name=NULL){
+	ret=[]
+	toks=split_by(in,',')
+	toks.each val,, idx
 		val=val.split_by(' ',2)
 		if !val.map_len() => continue
+		if idx==0 && val[0]==="-"
+			if name
+				ret[]=NULL
+				ret.vec_merge(:name.data_quote())
+				ret.vec_merge([NULL,","," "])
+				ret.vec_merge(name)
+			val[0]=:type
 		if val.map_len()==1
-			if !idx
-				val[]=val[0]
-			else
-				temp=val[0]
-				val[0]=:type
-				val[1]=temp
+			val[]=val[0]
 		if ret.map_len()
 			ret.vec_merge([NULL,","," "])
 		else
@@ -4802,7 +4815,7 @@ map* data_map(char** in,int level=0){
 			else ret[key]=NULL
 		else
 			val=valstart.sub_str(0,valend-valstart)
-			if val[0]=='-' && " \t".str_chr(val[1]) => ret[key]=val.prop_vals(key)
+			if val[0]=='-' && " \t".str_chr(val[1]) => ret[key]=val.prop_map(key)
 			else ret[key]=val.data_unquote()
 	if ret.map_len()
 		*in=str
@@ -4821,26 +4834,32 @@ char* skip_upto(char* in,char* chars=" \t\n\r"){
 	while(*in && !chars.strchr(*in)) in++
 	return in
 }
-char* data_unquote(char* in){
+void* data_unquote(char* in){
 	if !in || !in.str_len() => return NULL
 	if "\"'`".str_chr(*in) => return in.str_unquote()
 	if *in=='=' => return in.sub_str(1).eval()
 	if in.str_start("---") => return in.substr(3,-3)
+	if *in=='{' => return in.substr(1,-1).prop_map()
+	if *in=='[' => return in.substr(1,-1).prop_vec()
 	return in
 }
-map* prop_vals(char* in,char* name){
-	ret={name: name}
-	toks=split_by(in+1,',')
-	toks.each val, idx
+map* prop_vec(char* in){
+	ret=in.split_by(',')
+	ret.each val,idx
+		ret[idx]=val.data_unquote()
+	return ret
+}
+map* prop_map(char* in,char* name=NULL){
+	ret={}
+	toks=in.split_by(',')
+	toks.each val,, idx
 		val=val.split_by(' ',2)
 		if !val.map_len() => continue
+		if idx==0 && val[0]==="-"
+			if name => ret.name=name
+			val[0]=:type
 		if val.map_len()==1
-			if !idx
-				val[]=val[0].data_unquote()
-			else
-				temp=val[0].data_unquote()
-				val[0]=:type
-				val[1]=temp
+			val[]=val[0]
 		ret[val[0].data_unquote()]=val[1].data_unquote()
 	return ret
 }

@@ -1,5 +1,6 @@
 #include <fox.h>
 __attribute__((destructor)) static void maindtor(void){
+	close_conns();
 	http_out(NULL,"200 OK","text/html; charset=utf-8",NULL);
 	gc_end();
 };

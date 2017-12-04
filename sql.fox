@@ -988,14 +988,15 @@ void* id_update(void* ids,char* tbl,char* db,map* row){
 		row["_old_$k2"]=v2
 	return "update $tbl set $(fld.map_join(', ')) where $(v1.map_join(' and '))".lite_exec(db,row)
 }
-map* row_insert(map* row,char* tbl,char* db){
+int row_insert(map* row,char* tbl,char* db){
 	cols=tbl.tbl_cols(db)
 	if !cols => return "Table $tbl not found".fox_error()
 	fld=[]
 	cols.each ,k,idx
 		if !row[k] => continue
 		fld[]=k
-	return "insert into $tbl ($(fld.map_join(', '))) values (:$(fld.map_join(', :')))".lite_exec(db,row)
+	"insert into $tbl ($(fld.map_join(', '))) values (:$(fld.map_join(', :')))".lite_exec(db,row)
+	return "select last_insert_rowid()".sql_value(db).to_int()
 }
 void* sql_error(char* sql,char* db,sqlite3* conn){
 	msg="$((char*)conn.sqlite3_errmsg()) $db/$sql"
@@ -1033,11 +1034,13 @@ map* lite_exec(char* sql,char* db,map* params=NULL){
 	cname=db
 	db=db.conn_db().name
 	if !db => "query() connection $(cname.str_quote()) not found $(_globals.dbs)".fox_error()
-	sqlite3* conn=NULL
+	sqlite3* conn=_globals.conn[db]
 	sqlite3_stmt* stm=NULL
 	start_time()
-	if db.sqlite3_open_v2(&conn,SQLITE_OPEN_READWRITE|SQLITE_OPEN_URI,NULL)!=SQLITE_OK
-		return sql.sql_error(db,conn)
+	if !conn
+		if db.sqlite3_open_v2(&conn,SQLITE_OPEN_READWRITE|SQLITE_OPEN_URI,NULL)!=SQLITE_OK
+			return sql.sql_error(db,conn)
+		_globals.conn[db]=conn
 	if conn.sqlite3_prepare_v2(sql,-1,&stm,NULL)!=SQLITE_OK
 		return sql.sql_error(db,conn)
 	int i=0
@@ -1061,9 +1064,14 @@ map* lite_exec(char* sql,char* db,map* params=NULL){
 		else if i==SQLITE_DONE => break
 		else return sql.sql_error(db,conn)
 	if stm.sqlite3_finalize()!=SQLITE_OK => return sql.sql_error(db,conn)
-	if conn.sqlite3_close_v2()!=SQLITE_OK => return sql.sql_error(db,conn)
 	end_time()
 	return ret
+}
+void close_conns(){
+	_globals.conn.each val,key
+		_globals.conn[key]=NULL
+		if !val => continue
+		val.sqlite3_close_v2()
 }
 map* db_table_names(char* db){
 	if _globals.schema._tbls
@@ -1540,7 +1548,7 @@ char* confirm(char* prompt=NULL,char* option1=NULL,char* option2=NULL,char* titl
 	}.call_func(:page)
 	return NULL		
 }
-char* sql_delete(void* ids,char* tbl,char* db){
+void* sql_delete(void* ids,char* tbl,char* db){
 	return ("delete from $tbl"..re_where(tbl.pkeys_where(db))).lite_exec(db,tbl.sql_id_ids(db,ids))
 }
 char* crud_delete(char* sql,char* db=_globals.ddb,char* back="../"){

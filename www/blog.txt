@@ -1,9 +1,0 @@
-db
-	blog
-		cols
-			id=int
-			title=text
-			body=para
-			html=para
-			status=code
-			datetime=datetime

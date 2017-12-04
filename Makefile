@@ -1,6 +1,6 @@
 CC=gcc
 INSTALL_DIR?=/usr/local
-CFLAGS=-Iinclude -std=gnu99 -Wno-logical-op-parentheses -Os -Wno-int-conversion -L/usr/lib64/ -fPIC
+CFLAGS=-Iinclude -std=gnu99 -Wno-logical-op-parentheses -Os -Wno-int-conversion -L/usr/lib64/ -fPIC -Wno-unused-command-line-argument
 FOXS=fox.fox core.fox sql.fox cgi.fox cmd.fox main.fox
 LIBS=-lsqlite3 -I/usr/local/opt/openssl/include -L/usr/local/lib -L/usr/local/opt/openssl/lib -lcrypto -lmarkdown -lcurl
 HEADERS=fox.h sql.h

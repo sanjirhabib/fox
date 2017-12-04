@@ -1,5 +1,6 @@
 #include <fox.h>
 __attribute__((destructor)) static void maindtor(void){
+	close_conns()
 	http_out()
 	gc_end()
 }

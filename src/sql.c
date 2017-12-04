@@ -988,14 +988,15 @@ void* id_update(void* ids,char* tbl,char* db,map* row){
 		add(row,xstr("_old_", k2, End),v2); };
 	return lite_exec(xstr("update ", tbl, " set ", map_join(fld,", "), " where ", map_join(v1," and "), End),db,row);
 };
-map* row_insert(map* row,char* tbl,char* db){
+int row_insert(map* row,char* tbl,char* db){
 	map* cols=tbl_cols(tbl,db);
 	if(!cols){ return fox_error(xstr("Table ", tbl, " not found", End),0); };
 	map* fld=new_vec();
 	for(int idx=next(cols,-1,NULL,NULL); has_id(cols,idx); idx++){ char* k=map_key(cols, idx);
 		if(!map_val(row,k)){ continue; };
 		vec_add(fld,k); };
-	return lite_exec(xstr("insert into ", tbl, " (", map_join(fld,", "), ") values (:", map_join(fld,", :"), ")", End),db,row);
+	lite_exec(xstr("insert into ", tbl, " (", map_join(fld,", "), ") values (:", map_join(fld,", :"), ")", End),db,row);
+	return to_int(sql_value("select last_insert_rowid()",db,NULL));
 };
 void* sql_error(char* sql,char* db,sqlite3* conn){
 	char* msg=xstr((char*)sqlite3_errmsg(conn), " ", db, "/", sql, End);
@@ -1033,11 +1034,13 @@ map* lite_exec(char* sql,char* db,map* params){
 	char* cname=db;
 	db=map_val(conn_db(db),"name");
 	if(!db){ fox_error(xstr("query() connection ", str_quote(cname), " not found ", map_val(_globals,"dbs"), End),0); };
-	sqlite3* conn=NULL;
+	sqlite3* conn=map_val(map_val(_globals,"conn"),db);
 	sqlite3_stmt* stm=NULL;
 	start_time();
-	if(sqlite3_open_v2(db,&conn,SQLITE_OPEN_READWRITE|SQLITE_OPEN_URI,NULL)!=SQLITE_OK){
-		return sql_error(sql,db,conn); };
+	if(!conn){
+		if(sqlite3_open_v2(db,&conn,SQLITE_OPEN_READWRITE|SQLITE_OPEN_URI,NULL)!=SQLITE_OK){
+			return sql_error(sql,db,conn); };
+		add(add_key(_globals,"conn",Map),db,conn); };
 	if(sqlite3_prepare_v2(conn,sql,-1,&stm,NULL)!=SQLITE_OK){
 		return sql_error(sql,db,conn); };
 	int i=0;
@@ -1061,10 +1064,15 @@ map* lite_exec(char* sql,char* db,map* params){
 		else if(i==SQLITE_DONE){ break; }
 		else {return sql_error(sql,db,conn);}; };
 	if(sqlite3_finalize(stm)!=SQLITE_OK){ return sql_error(sql,db,conn); };
-	if(sqlite3_close_v2(conn)!=SQLITE_OK){ return sql_error(sql,db,conn); };
 	end_time();
 	return ret;
 };
+void close_conns(){
+	map* map_1=map_val(_globals,"conn"); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* val=map_id(map_1,next1); char* key=map_key(map_1, next1);
+		add(add_key(_globals,"conn",Map),key,NULL);
+		if(!val){ continue; };
+		sqlite3_close_v2(val);
+	};};
 map* db_table_names(char* db){
 	if(map_val(map_val(_globals,"schema"),"_tbls")){
 		return map_val(map_val(_globals,"schema"),"_tbls"); };
@@ -1540,7 +1548,7 @@ char* confirm(char* prompt,char* option1,char* option2,char* title,map* data){
 	), End),"page",NULL);
 	return NULL;		
 };
-char* sql_delete(void* ids,char* tbl,char* db){
+void* sql_delete(void* ids,char* tbl,char* db){
 	return lite_exec((xstr(xstr("delete from ", tbl, End),re_where(pkeys_where(tbl,db)), End)),db,sql_id_ids(tbl,db,ids));
 };
 char* crud_delete(char* sql,char* db,char* back){
