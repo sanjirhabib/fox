@@ -159,12 +159,11 @@ Single quote, without variable substitution.
 No $variable substitution will occure.
 '
 ```
-You can add string terminators with single and double quote version
-Or extend the tripple dashes with more dashes and a matched closing.
+You can add any unique string terminator with single quote version
 ```
-".end1
+'END123
 Using an unique string terminator.
-.end1"
+END123'
 ```
 ### Function chaining
 ```

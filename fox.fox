@@ -260,7 +260,7 @@ char* write_file(char* data,char* filename,int readonly=0,int verbose=1){
 	if readonly => filename.chmod(0444)
 	return data
 }
-char* fox_read_file(char* filename,int error_on_fail=1){
+char* file_read(char* filename,int error_on_fail=1){
 	assert(filename)
 	FILE* fp=filename.fopen(:r)
 	size_t size=0
@@ -1596,12 +1596,12 @@ map* c_tokenizer(char** line,char term){
 		else if str.str_start("#") => read_theline(&str).add_ctok(mp,0)
 		else if " \t".strchr(*str) => read_space(&str).add_ctok(mp,0)
 		else if "\n\r".strchr(*str) => read_newline(&str).add_ctok(mp,0)
-		else if "\"'".strchr(*str) => read_multistr(&str).add_ctok(mp,1)
+		else if "\"`".strchr(*str) => read_quote(&str).add_ctok(mp,1)
+		else if *str=='\'' => read_multistr(&str).add_ctok(mp,1)
 		else if str.str_start("{{")
 			if !(mp->len%2) => mp[]=NULL
 			mp.vec_merge(read_data(&str))
 		else if str.str_start("---") => read_heredoc(&str).add_ctok(mp,1)
-		else if "\"'`".strchr(*str) => read_quote(&str).add_ctok(mp,1)
 		else if *str==':' => fox_read_symbol(&str).add_ctok(mp,1)
 		else if is_oper(*str) => fox_read_oper(&str,term).add_ctok(mp,1)
 		else if *str>='0' && *str<='9' => read_num(&str).add_ctok(mp,1)
@@ -1645,9 +1645,29 @@ int func_dot(map* mp,int idx){
 	mp.vec_compact()
 	return idx-3
 }
+map* multiline_parts(char* str){
+	lines=str.sub_str(1,-1).str_split("\n",0)
+	indent=0
+	end=str+str.str_len()-1
+	while(end>str){ if("\t\n\r".strchr(*end)) break; end--; }
+	while(end>str){ if(*end!='\t') break; end--; indent++; }
+	tabs="\t".str_times(indent).null_str()
+	parts=[]
+	lines.each v,,i
+		int cut=v.str_level()
+		if cut>indent => cut=indent;	
+		nl=""
+		if i<lines.map_len()-1
+			nl="\\n"
+		if i => parts[]="\n"..tabs
+		parts[]="\"%s%s\"".mstr(v.sub_str(cut,0).str_escape(),nl)
+	return parts
+}
 map* heredoc_parts(char* str){
-	if !str.is_str() => return NULL
+//	if !str.is_str() => return NULL
+	if !str || !str.is_str() ||!*str => return NULL
 	if !((*str=='\'' && str.strchr('\n'))||(*str=='"' && str[1]!='"' && str.strchr('\n'))||str.str_start("---")) => return NULL
+	if "\"'`".str_chr(*str) => return str.multiline_parts()
 	lines=str.str_split("\n",0)
 	indent=0
 	end=str+str.str_len()-1
@@ -2150,8 +2170,8 @@ map* syn_funcs(map* mp,int with_body=0){
 			ret[fn.name]=fn
 	return ret
 }
-map* file_vec(char* in) => return in.fox_read_file().str_vec()
-map* file_map(char* in) => return in.fox_read_file().str_map()
+map* file_vec(char* in) => return in.file_read().str_vec()
+map* file_map(char* in) => return in.file_read().str_map()
 map* map_keys(map* mp){
 	ret=[]
 	mp.each ,k => ret[]=k
@@ -2274,7 +2294,7 @@ map* call_count(map* toks,map* counter,char* infunc){
 	return counter
 }
 map* file_deadcode(char* file){
-	funcs=file.fox_read_file().x_funcs(1)
+	funcs=file.file_read().x_funcs(1)
 	ret={}
 	funcs.each v,k,i
 		v.body.call_count(ret,k)
@@ -2434,7 +2454,7 @@ char* head_type(map* toks, int idx, int upto, map* env,map* fs){
 }
 int expr_tail(map* toks,int idx=0,char* expr="."){
 	idx++
-	presid="= += -= /= *= %= ^= &&= ||= .= ? : && || == === !== != >= <= > < and or .. + - / * ++ -- ! -> ."
+	presid="= += -= /= *= %= ^= ||= &&= .= ? : || && == === !== != >= <= > < or and .. + - / * ++ -- ! -> ."
 	expr_presid=expr.is_word(presid)
 	while idx<toks.map_len()
 		v=toks[idx].is_str()
@@ -2453,7 +2473,7 @@ int expr_tail(map* toks,int idx=0,char* expr="."){
 }
 int expr_head(map* toks,int idx=0,char* expr="."){
 	idx++
-	presid="= += -= /= *= %= ^= &&= ||= .= ? : && || == === !== != >= <= > < and or .. + - / * ++ -- ! -> ."
+	presid="= += -= /= *= %= ^= ||= &&= .= ? : || && == === !== != >= <= > < or and .. + - / * ++ -- ! -> ."
 	expr_presid=expr.is_word(presid)
 	while idx>0
 		v=toks[idx].is_str()
@@ -2686,7 +2706,7 @@ int is_func_decl(map* syn){
 char* fox_h(char* infile,char* outfile=NULL){
 	return ("#include <fox.h>\n"..infile.file_funcs().funcs_cdecl(0)).write_file(outfile)
 }
-char* fox_c(char* infile, char* outfile=NULL) => return infile.fox_read_file().x_c().write_file(outfile)
+char* fox_c(char* infile, char* outfile=NULL) => return infile.file_read().x_c().write_file(outfile)
 map* x_map(char* in) => return c_tokenizer(&in,'\0')
 char* c_x(char* in) => return in.x_map().map_tox().toks_c()
 
@@ -3006,14 +3026,14 @@ char* fox_phpc(char* infile=NULL,char* outfile=NULL){
 				ret.="\tRETURN_ZVAL(&zret,0,0);\n"
 		ret.="}\n"
 
-	ret.=".end
+	ret.=---
 
 	static zend_function_entry $(name)_functions[] = {
 	$(reg)	{NULL, NULL, NULL}
 	};
 
-	.end"
-	ret.=".end
+	---;
+	ret.=---
 	PHP_RINIT_FUNCTION($(name)){
 		gc_start();
 		return SUCCESS;
@@ -3143,7 +3163,7 @@ char* fox_phpc(char* infile=NULL,char* outfile=NULL){
 		return ret;
 	}
 
-	.end"
+	---;
 	return ret.write_file(outfile)
 }
 char* write_phpconfig(){
@@ -3529,7 +3549,7 @@ int str_char_count(char* str,char c){
 }
 char* write_c(char* infile,char* outfile=NULL){
 	source_funcs()
-	return infile.fox_read_file().x_c().write_file(outfile,1)
+	return infile.file_read().x_c().write_file(outfile,1)
 }
 map* command_line(char* in,int argc,char** argv){
 	if argc==1 || (argc==2 && argv[1]==="-h") => in.px(); return NULL
@@ -3623,7 +3643,7 @@ int run_cmdline(map* args){
 	void* ret=NULL
 	if name.str_end(".fox")
 		_globals.args=_globals.args.vec_sub(1)
-		ret=name.fox_read_file().run()
+		ret=name.file_read().run()
 	else if !name.is_code() && !name.str_start("--")
 		ret=name.run()
 	else
@@ -3654,7 +3674,7 @@ char* file_path(char* file){
 	return file.substr(0,i)
 }
 map* load_global(char* file){
-	ret=file.fox_read_file().str_map()
+	ret=file.file_read().str_map()
 	_globals.map_merge(ret)
 	return ret
 }
@@ -3664,7 +3684,7 @@ int err_msg(char* msg,char** ptr){
 	return 0
 }
 char* tutorial(){
-	return '.end
+	return '-------
 	# Fox Language
 	Fox language. Transcompiles source into into human readable C.
 	Maintaining your original format, comment and indention and line number.
@@ -4110,7 +4130,7 @@ char* tutorial(){
 	str.is_word("hello helo hilo")
 	```
 
-	.end'
+	-------';
 }
 char* h(char* in){
 	return in.str_replace({
@@ -4161,7 +4181,7 @@ map* source_funcs(){
 		_globals.cache.funcs=mp
 	return _globals.cache.funcs
 }
-map* file_funcs(char* filename,int withbody=0) => return filename.fox_read_file().x_funcs(withbody)
+map* file_funcs(char* filename,int withbody=0) => return filename.file_read().x_funcs(withbody)
 char* help() => return funcs().funcs_cdecl()
 map* funcs(){
 	if !_globals.cache.reflect=>_globals.cache.reflect=reflect()
@@ -4275,7 +4295,7 @@ char* time_str(time_t timer=0){
 	strftime(buffer,20, "%Y-%m-%d %H:%M:%S",localtime(&timer))
 	return buffer.str_dup()
 }
-char* increase_version() => return (".version.txt".fox_read_file().atoi()+1).int_str().write_file(".version.txt")
+char* increase_version() => return (".version.txt".file_read().atoi()+1).int_str().write_file(".version.txt")
 int call_variadic_int(map* mp,void* fp,char* name){
 	int(*ptr)(void* param1,...)=fp
 	if !mp => return ptr(End)
@@ -4467,14 +4487,14 @@ map* string_operators(map* toks){
 			toks[i+1]="="
 			i=head
 		else if toks[i+1]===:and
-			head=toks.expr_head(i-2,"<")
+			head=toks.expr_head(i-2,"and")
 			tail=toks.expr_tail(i+2,"and")
 			left=toks.vec_sub(head+1,i-head-1)
 			right=toks.vec_sub(i+2,tail-i-2).string_operators()
 			mid=["(",NULL,[NULL].vec_merge(left).vec_merge([toks[i],"?"]).vec_merge(right).vec_merge([" ",":"," ",:NULL]),NULL,")"]
 			toks.vec_splice(head+1,tail-head-1,mid)
 		else if toks[i+1]===:or
-			head=toks.expr_head(i-2,"<")
+			head=toks.expr_head(i-2,"or")
 			tail=toks.expr_tail(i+2,"or")
 			left=toks.vec_sub(head+1,i-head-1)
 			right=toks.vec_sub(i+2,tail-i-2).string_operators()
@@ -4750,15 +4770,13 @@ map* prop_toks(char* in,map* name=NULL){
 				ret.vec_merge([NULL,","," "])
 				ret.vec_merge(name)
 			val[0]=:type
-		if val.map_len()==1
-			val[]=val[0]
 		if ret.map_len()
 			ret.vec_merge([NULL,","," "])
 		else
 			ret[]=NULL
 		ret.vec_merge(val[0].data_quote())
 		ret.vec_merge([NULL,","," "])
-		ret.vec_merge(val[1].data_quote())
+		ret.vec_merge(val[1] ? val[1].data_quote() : [:NULL])
 	return [:xmap,NULL,"(",NULL,ret,NULL,")"]
 }
 map* split_by(char* str, char term=',', int max=0){
@@ -4790,7 +4808,8 @@ char* md5(char* in){
 	MD5((unsigned char*)in,in.str_len(),(unsigned char*)ret)
 	return ret.str_hex()
 }
-map* data_map(char** in,int level=0){
+map* data_map(char* in) => return data_map2(&in)
+map* data_map2(char** in,int level=0){
 	if !in||!*in||!**in => return NULL
 	str=*in
 	ret={}
@@ -4810,7 +4829,7 @@ map* data_map(char** in,int level=0){
 		valend=valstart.skip_upto("\n\r")
 		str=valend
 		if valend==valstart
-			submap=data_map(&str,level+1)
+			submap=data_map2(&str,level+1)
 			if submap => ret[key]=submap
 			else ret[key]=NULL
 		else
@@ -4858,8 +4877,6 @@ map* prop_map(char* in,char* name=NULL){
 		if idx==0 && val[0]==="-"
 			if name => ret.name=name
 			val[0]=:type
-		if val.map_len()==1
-			val[]=val[0]
 		ret[val[0].data_unquote()]=val[1].data_unquote()
 	return ret
 }

@@ -693,7 +693,7 @@ int sql_utest(char* in,char* out){
 	return utest(ret,out,in,"");
 };
 int type_size(char* type){
-	return to_int(maptype(""
+	return to_int(maptype("\n"
 	"	text=128\n"
 	"	code=50\n"
 	"	guid=36\n"
@@ -701,13 +701,13 @@ int type_size(char* type){
 	"	bool=1\n"
 	"	para=256\n"
 	"	daymonth=5\n"
-	"	month=7"
+	"	month=7\n"
 	"",type));
 };
 char* lite_create_col(map* col){
 	long long size=to_int(map_val(col,"size"));
 	if(!size){ size=type_size(map_val(col,"type")); };
-	char* type=maptype(""
+	char* type=maptype("\n"
 	"	text=varchar\n"
 	"	para=clob\n"
 	"	file=blob\n"
@@ -717,7 +717,7 @@ char* lite_create_col(map* col){
 	"	time=time\n"
 	"	datetime=datetime\n"
 	"	daymonth=varchar\n"
-	"	month=varchar"
+	"	month=varchar\n"
 	"",map_val(col,"type"));
 	void* name=map_val(col,"name");
 	if(str_eq(type,"varchar")){ return xstr(name, " varchar(", size, ") collate nocase not null default ''", End); };
@@ -733,11 +733,11 @@ char* lite_create_col(map* col){
 	return NULL;
 };
 int is_indexed(char* type){
-	return to_int(maptype(""
+	return to_int(maptype("\n"
 	"	text=0\n"
 	"	code=1\n"
 	"	password=0\n"
-	"	email=0"
+	"	email=0\n"
 	"",type));
 };
 map* create_index_sqls(map* tbl){
@@ -815,19 +815,19 @@ map* table(char* tbl,char* db){
 	void* ret=NULL;
 	if((ret=cache(sign,"table",NULL))){ return ret; };
 	if(str_eq(tbl,"_schema")){
-		ret=cols_table(str_map(""
+		ret=cols_table(str_map("\n"
 			"type=:code pkey\n"
 			"name=:code pkey\n"
-			"data=:source"
+			"data=:source\n"
 			"",Map),"_schema",db); };
 	if(str_eq(tbl,"_fts")){
-		ret=cols_table(str_map(""
+		ret=cols_table(str_map("\n"
 			"id=code\n"
 			"id2=code\n"
 			"id3=code\n"
 			"id4=code\n"
 			"tbl=code\n"
-			"body=text"
+			"body=text\n"
 			"",Map),"_fts",db); };
 	if(!ret){ ret=db_has_schema(db) ? schema_table(db,tbl) :  db_table(db,tbl); };
 	return cache(sign,"table",ret);
@@ -1189,7 +1189,7 @@ char* str_show(char* value,char* type,map* op,int width){
 	if(!type){ return value; };
 	if(map_val(op,"list")){ return map_val(map_val(op,"list"),value) ? str_title(map_val(map_val(op,"list"),value)) : value; };
 	if(map_val(op,"sql") && map_val(op,"db")){ return fkey_show(map_val(op,"sql"),map_val(op,"db"),value); };
-	type=maptype(""
+	type=maptype("\n"
 	"	text=text\n"
 	"	para=para\n"
 	"	source=source\n"
@@ -1206,7 +1206,7 @@ char* str_show(char* value,char* type,map* op,int width){
 	"	quarter=quarter\n"
 	"	file=file\n"
 	"	jpeg=image\n"
-	"	duration=duration"
+	"	duration=duration\n"
 	"",type);
 	if(width && is_word(type,"source text para") && str_len(value)>width*256){ value=sub_str(value,0,width*256); };
 	if(str_eq(type,"bool")){ return is_int(value) ? "Yes" : "No"; };
@@ -1254,215 +1254,6 @@ map* rows_show(map* rows,map* cols,int width){
 };
 char* cols_show(map* cols,map* row,char* name,int width){
 	return str_show(map_val(row,name),map_val(map_val(cols,name),"type"),map_val(cols,name),width);
-};
-/*
-function duration($n){
-	if $n<60 => return "less than a minute";
-	$n/=60;
-	if $n<2 => return ((int)$n)." minute";
-	if $n<60 => return ((int)$n)." minutes";
-	$n/=60;
-	if $n<2 => return ((int)$n)." hour";
-	if $n<24 => return ((int)$n)." hours";
-	$n/=24;
-	if $n<2 => return ((int)$n)." day";
-	if $n<30 => return ((int)$n)." days";
-	if $n<60 => return ((int)($n/30))." month";
-	if $n<365 => return ((int)($n/30))." months";
-	$n/=365;
-	if $n<2 => return ((int)$n)." year";
-	return ((int)$n)." years";
-}
-char* text_action(char* action,void* value,map* op,char* ns=:form){
-	if action===:read
-		return value.trim()
-	if action==:html
-		return <input - input-medium name=ns.."-"..name id=ns_name.str_code().str_quote()>
-
-}
-char* val_trim(void* val,char* type){
-	if !val.is_map() => return val.to_str().trim()
-	type="
-		text=text
-		html=html
-		int=int
-		bool=bool
-		date=date
-		time=time
-		datetime=datetime
-		daymonth=daymonth
-		yearmonth=yearmonth
-		month=month
-		mins=mins
-		source=source
-		file=file
-		inline=array
-		intrange=intrange
-		multicheck=multicheck
-		duration=duration
-		".maptype(type)
-	if !type => fox_error("No type found for value $v")
-	if type=='multicheck' => return v
-	if type=='source' => return v
-	if type=='array' => return v
-	if type=='file' => return v
-	if type=='text' => return trim(v)
-	if type=='html' => return v
-	if type=='int' => return v ? enno($v) : ''
-	if type=='bool' => return v ? 1 : ''
-	if $type=='duration' =>{
-		if !is_array($v) => return $v;
-		$a=array(:sec=>1,:min=>60,:hour=>60*60,:day=>24*3600,:week=>7*86400,:month=>30*86400,:year=>365*86400);
-		if !@$v['amount'] => return 0;
-		return $v['amount']*@$a[$v['unit']];
-	}
-	if $type=='intrange' =>{
-		if is_array($v) =>{
-			if strlen(@$v['from'] && !is_numeric($v['from'])) => $v['from']='';
-			if strlen(@$v['upto'] && !is_numeric($v['upto'])) => $v['upto']='';
-			if !strlen(@$v['from']) && !strlen(@$v['upto']) => return '';
-			return sprintf("%s\t%s",$v['from'],$v['upto']);
-		}
-		if $v=="\t" => return '';
-		return $v;
-	}
-	if $type=='mins' =>{
-		if is_array($v) =>{
-			$h=$v['hour'];
-			$m=$v['min'];
-			return $h*60+$m;
-		}
-		return $v;
-	}
-	if $type=='datetime' =>{
-		if is_array($v) =>{
-			return trim_type('date',$v).' '.trim_type('time',$v);
-		}
-		return $v;
-	}
-	if $type=='time' =>{
-		if is_array($v) =>{
-			$h=$v['hour'];
-			$m=$v['min'];
-			$am=$v['ampm'];
-			if !$h || !$am => return '';
-			if $am=='am' && $h==12 => $h=0;
-			else if $am=='pm' && $h<12 => $h+=12;
-			return sprintf("%02d:%02d:00",$h,$m);
-		}
-		return $v;
-	}
-	if $type=='date'||$type=='month'||$type=='yearmonth'||$type=='daymonth' =>{
-		if is_string($v) =>{
-			if fox_str_has($v,'/') =>{
-				$a=explode('/',$v);
-				return trim_type('date',array('day'=>@$a[0],'month'=>@$a[1],'year'=>@$a[2]));
-			}
-			if $v=='0000-00-00 00:00:00' => return '';
-			if $v=='0000-00-00' => return '';
-			if $v=='00:00:00' => return '';
-			if $v=='0000-00' => return '';
-			if $v=='00-00' => return '';
-			if $v=='0000-00' => return '';
-			if strpos(' '.$v,"--") =>{
-				$a=explode("--",$v);
-				$a[0]=trim_type($type,@$a[0]);
-				$a[1]=trim_type($type,@$a[1]);
-				$v="$a[0]--$a[1]";
-				return $v=="--" ? '' : $v;
-			}
-			return $v;
-		}
-		if is_array($v) =>{
-			if @$v['from']||@$v['upto'] =>{
-				$v=trim_type('date',@$v['from'])."--".trim_type('date',@$v['upto']);
-				return $v=="--" ? '' : $v;
-			}
-			if !(@$v['day']+0) && !(@$v['month']+0) && !(@$v['year']+0) => return '';
-			if $type=='month' => return sprintf("%04d-%02d",$v['year'],$v['month']);
-			if $type=='yearmonth' => return sprintf("%04d-%02d",$v['year'],$v['month']);
-			else if $type=='daymonth' => return sprintf("%02d-%02d",$v['month'],$v['day']);
-			else return sprintf("%04d-%02d-%02d",$v['year'],$v['month'],$v['day']);
-		}
-		return $v;
-	}
-	fox_error("Type $type trimming failed");
-}
-*/
-char* buttons_html(map* buttons){
-	map* ret=new_vec();
-	for(int i=next(buttons,-1,NULL,NULL); has_id(buttons,i); i++){ void* v=map_id(buttons,i); char* k=map_key(buttons, i);
-		if(str_has(k,"/")){
-			vec_add(ret,render_template(xmap(
-				"text", v,
-				"url", k,
-				"css", "btn-default"
-				, End),"button-link"));
-		}else{
-			vec_add(ret,render_template(xmap(
-				"name", k,
-				"value", v,
-				"css", ""
-				, End),"button")); }; };
-	return render(ret,""
-		"--body\n"
-		"#{_val}"
-		"");
-};
-//char* cols_html(map* cols,map* buttons,char* title=NULL,map* vals=NULL,map* errs=NULL){
-//	cols=cols.cols_ctrls(vals,errs)
-//	cols.each v,k,i
-//		v.html=v.render_template(v.ctrl)
-//		v.html=v.render_template(:label)
-//	cols.dx()
-//	char* body=xmap(:cols,cols.render("
-//			--body
-//			#{html}
-//			"),
-//		:title,title).render_template(:group)
-//
-//	return xmap(
-//		:msg, errs.map_len() ? "Please correct these errors" : "",
-//		:state, errs.map_len() ? :fox_error : :help,
-//		:body, body,
-//		:button,buttons.buttons_html(),
-//		:method,:post
-//	).render_template(:form)
-//}
-//char* test_html(){
-//	return "
-//		name=:text
-//		age=:int
-//		".str_map().cols_html("
-//			save=Save
-//			cancel=Cancel
-//		".str_map())
-//}
-map* cols_list(map* cols,char* crud,int max){
-	map* ret=new_map();
-	char* aligns=""
-		"text=left\n"
-		"int=right"
-		"";
-	if(max && crud){ max--; };
-	for(int i=next(cols,-1,NULL,NULL); has_id(cols,i); i++){ void* v=map_id(cols,i); char* k=map_key(cols, i);
-		if(i>=max){ break; };
-		add(ret,k,xmap("title", map_val(v,"title") ? map_val(v,"title") : str_title(k),
-			"html", map_val(v,"html") ? map_val(v,"html") : xcat("#{row.",k,"}", End), End));
-		if(str_eq(maptype(aligns,map_val(v,"type")),"right")){
-			add(add_key(add_key(ret,k,Map),"css",Map),"text-align","right"); };
-		if(map_val(v,"link")){
-			add(add_key(ret,k,Map),"html",xstr("<a href='",map_val(v,"link"),"'>",map_val(map_val(ret,k),"html"),"</a>", End)); }; };
-	if(crud){
-		map* actions=new_map();
-		if(str_eq(crud,"crud")){ crud="add edit delete"; };
-		if(is_word("edit",crud)){
-			add(actions,"Edit",xstr("edit/?id=#{row.",map_join(cols_pkeys(cols),"}-#{row."),"}", End)); };
-		if(is_word("delete",crud)){
-			add(actions,"Delete",xstr("delete/?id=#{row.",map_join(cols_pkeys(cols),"}-#{row."),"}", End)); };
-		add(ret,"action",xmap("title","Actions", "html", render_template(actions,"button-dropdown"), End));
-	};
-	return ret;
 };
 map* map_table(map* mp,char* tbl,char* db){
 	map* ret=cols_table(map_val(mp,"cols"),tbl,db);
@@ -1521,107 +1312,8 @@ char* db_schema(char* db){
 		, End),"_schema",db); };
 	return db;
 };
-char* crud_tables(char* db){
-	map* data=new_vec();
-	map* map_1=table_names(db); for(int i=next(map_1,-1,NULL,NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i); char* k=map_key(map_1, i);
-		vec_add(data,xmap(
-			"table", v,
-			"rows", sql_value(xstr("select count(*) from ", v, End),db,NULL),
-			"cols",int_var( map_len(tbl_cols(v,db))
-		), End)); };
-	return render_table(data,cols_list(str_map(""
-	"	table=:text link='table-#{table}/'\n"
-	"	rows=:int\n"
-	"	cols=:int"
-	"",Map),NULL,12),"",NULL);
-};
-char* crud_list(char* sql,char* db,int limit,char* crud){
-	return render_table(sql_rows(sql_add_limit(sql,limit,0),db,NULL),cols_list(sql_select_cols(sql,db,NULL),crud,12),sql,crud);
-};
-char* confirm(char* prompt,char* option1,char* option2,char* title,map* data){
-	char* clicked=button_clicked(xmap((option1), NULL, (option2), NULL, End));
-	if(clicked){ return clicked; };
-	call_func(xmap(
-		"body", render_template(xmap("prompt",prompt,"option1",option1,"option2",option2,"title",title,"data",data, End),"confirm"),
-		"title", title,
-		"width",int_var( 2
-	), End),"page",NULL);
-	return NULL;		
-};
 void* sql_delete(void* ids,char* tbl,char* db){
 	return lite_exec((xstr(xstr("delete from ", tbl, End),re_where(pkeys_where(tbl,db)), End)),db,sql_id_ids(tbl,db,ids));
-};
-char* crud_delete(char* sql,char* db,char* back){
-	if(confirm("Delete this record?","Yes","No","Confirm",NULL)){
-		sql_delete(map_val(url_gets(),"id"),sql_table(sql),db); };
-	return http_redirect(back);
-};
-char* edit_schema(char* sql,char* db,map* cols,char* back){
-	char* tbl=sql_table(sql);
-	map* errs=process_post(xmap("save", xmap((NULL), "save_schema", "db", db, "tbl", tbl, "back", back, End), End));
-	map* vals=sql_id("_schema",db,xmap("type", "db","name", tbl, End));
-	return cols_html(tbl_cols("_schema",db),xmap("save", "Save", (back), "Cancel", End),"Edit Schema",vals,errs);
-};
-char* crud_add(char* sql,char* db,map* cols,char* back){
-	map* errs=process_post(xmap("save", xmap((NULL), "crud_save", "db", db, "sql", sql, "back", back, "cols", cols, End), End));
-	map* vals=new_map();
-	return cols_html(tbl_cols(sql_table(sql),db),xmap("save", "Save",(back), "Cancel", End),"Add New",vals,errs);
-};
-char* crud_edit(char* sql,char* db,map* cols,char* back){
-	map* errs=process_post(xmap("save", xmap((NULL), "crud_save", "db", db, "sql", sql, "back", back, "cols", cols, End), End));
-	map* vals=sql_id(sql,db,get_ids(sql,db));
-	return cols_html(tbl_cols(sql_table(sql),db),xmap("save", "Save", (back), "Cancel", End),"Edit Record",vals,errs);
-};
-char* render_table(map* rows,map* cols,char* sql,char* crud){
-	for(int i=next(cols,-1,NULL,NULL); has_id(cols,i); i++){ void* v=map_id(cols,i); char* k=map_key(cols, i);
-		if(!map_val(v,"css")){ continue; };
-		add(v,"tag",render(map_val(v,"css"),""
-			" style='\n"
-			"--body\n"
-			"#{_key}:#{_val};\n"
-			"--foot\n"
-			"'"
-			"")); };
-	char* th=render(cols,""
-			"<thead><tr>\n"
-			"--body\n"
-			"<th#{tag}>#{title}</th>\n"
-			"--foot\n"
-			"</tr></thead>"
-			"");
-	char* td=render(cols,""
-			"<tr>\n"
-			"--body\n"
-			"<td#{tag}>#{html}</td>\n"
-			"--foot\n"
-			"</tr>"
-			"");
-	if(crud){
-		if(str_eq(crud,"crud")){ crud="add edit delete"; };
-		map* actions=new_map();
-		if(is_word("add",crud)){
-			add(actions,"Add New","add/");	
-			add(actions,"Edit Schema","schema/"); };
-		crud=render_template(actions,"button-dropdown"); };
-	return render(rows, str_subst(map_val(map_val(_globals,"html"),"table"),xmap("td", td, "th", th, "sql", sql, "actions", crud, End)) );
-};
-char* cols_html(map* cols,map* buttons,char* title,map* vals,map* errs){
-	cols=cols_ctrls(cols,vals,errs);
-	for(int i=next(cols,-1,NULL,NULL); has_id(cols,i); i++){ void* v=map_id(cols,i); char* k=map_key(cols, i);
-		add(v,"html",render_template(v,map_val(v,"ctrl")));
-		add(v,"html",render_template(v,"label")); };
-	char* body=render_template(xmap("cols", render(cols,""
-			"--body\n"
-			"#{html}"
-			""),
-		"title", title, End),"group");
-	return render_template(xmap(
-		"msg",  map_len(errs) ? "Please correct these errors" : "",
-		"state",  map_len(errs) ? "fox_error" : "help",
-		"body",  body,
-		"button", buttons_html(buttons),
-		"method", "post"
-	, End),"form");
 };
 char* rename_sql(char* from,char* into){
 	return xstr("alter table ", from, " rename to ", into, End);
@@ -1635,14 +1327,14 @@ map* save_schema(char* db,char* tbl,map* data){
 	return NULL;
 };
 map* cols_ctrls(map* cols,map* vals,map* errs){
-	char* ctrls=""
+	char* ctrls="\n"
 	"	text=text\n"
 	"	para=para\n"
-	"	source=source"
+	"	source=source\n"
 	"";
-	char* input_types=""
+	char* input_types="\n"
 	"	text=text	\n"
-	"	password=password"
+	"	password=password\n"
 	"";
 	map* ret=new_map();
 	for(int i=next(cols,-1,NULL,NULL); has_id(cols,i); i++){ void* v=map_id(cols,i); char* k=map_key(cols, i);
@@ -1737,64 +1429,6 @@ char* date_show(char* in){
 		else if(h>12){ h-=12; };
 		return xstr(h, ":", map_id(vals,1), " ", to_int(map_id(vals,0))>=12 ? "pm" : "am", End); };
 	return in;
-};
-void* crud(char* sql,char* db,map* cols,char* crud,int limit,void* link,char* rest,char* table){
-	if(!sql){ sql=table; };
-	if(!sql){
-		return pages_exec(""
-		"	index\n"
-		"		page\n"
-		"		title=Tables\n"
-		"		body\n"
-		"			crud_tables\n"
-		"			db=#{db}\n"
-		"		width=2\n"
-		"	table-*/ **\n"
-		"		crud				"
-		"",rest,xmap("db", db, End)); };
-	return pages_exec(""
-	"index\n"
-	"	page\n"
-	"	title=Table List\n"
-	"	body\n"
-	"		crud_list\n"
-	"		db=#{db}\n"
-	"		sql=#{sql}\n"
-	"		crud=crud\n"
-	"	width=3\n"
-	"edit\n"
-	"	page\n"
-	"	title=Edit Table\n"
-	"	body\n"
-	"		crud_edit\n"
-	"		db=#{db}\n"
-	"		sql=#{sql}\n"
-	"	width=2\n"
-	"add\n"
-	"	page\n"
-	"	title=Add New\n"
-	"	body\n"
-	"		crud_add\n"
-	"		db=#{db}\n"
-	"		sql=#{sql}\n"
-	"	width=2\n"
-	"delete\n"
-	"	page\n"
-	"	title=Delete Record\n"
-	"	body\n"
-	"		crud_delete\n"
-	"		db=#{db}\n"
-	"		sql=#{sql}\n"
-	"	width=2\n"
-	"schema\n"
-	"	page\n"
-	"	title=Table Structure\n"
-	"	body\n"
-	"		edit_schema\n"
-	"		db=#{db}\n"
-	"		sql=#{sql}\n"
-	"	width=2"
-	"",rest,xmap("db", db, "sql", sql, End));
 };
 int cmp_ptr_reverse(const void* ptr1, const void* ptr2){ return cmp_ptr(ptr2,ptr1); };
 int cmp_ptr(const void* ptr1,const void* ptr2){
@@ -1966,9 +1600,9 @@ char* test_out(char* in){
 map* sql_sums(char* sql,char* db,map* cols,map* params){
 	map* sum=new_map();
 	for(int next1=next(cols,-1,NULL,NULL); has_id(cols,next1); next1++){ void* col=map_id(cols,next1); char* f=map_key(cols, next1);
-		if(!to_int(maptype(""
+		if(!to_int(maptype("\n"
 			"text=0\n"
-			"amount=1"
+			"amount=1\n"
 			"",map_val(col,"type")))){ continue; };
 		char* expr=sql_str(map_val(col,"expr"));
 		if(!map_val(col,"aggregate") && !str_start(expr,"sum(") && !str_start(expr,"count(")){ expr=xstr("sum(", expr, ")", End); };
@@ -2003,33 +1637,6 @@ map* regexp(char* in, char* pattern){
 	regfree(&re);
 	return ret;
 };
-//===
-char* read_token(char** line,char* terminators){
-	if(!*line || !**line){ return NULL; };
-	char* in=*line;
-	while(*in && strchr(terminators,*in)) {in++;};
-	char* head=in;
-	if(!*in){ *line=in; return NULL; };
-	int paren=0;
-	char term='\0';
-	while(*in){
-		if(term){
-			if(*in=='\\' && in[1]){
-				in++;
-			}else if(term==*in){
-				term='\0'; };
-		}else if(strchr("\"'`",*in)){
-			term=*in;
-		}else if(strchr("([{",*in)){
-			paren++;
-		}else if(strchr("}])",*in)){
-			paren--;
-		}else if(!paren && strchr(terminators,*in)){
-			break; };
-		in++; };
-	*line=in;
-	return sub_str(head,0,in-head);
-};
 char* read_textblock(map* lines, int* lineno,char* terminator,char** outline){
 	terminator=str_trim(terminator," \t\n\r");
 	int indent=str_level(map_id(lines,*lineno+1));
@@ -2043,140 +1650,9 @@ char* read_textblock(map* lines, int* lineno,char* terminator,char** outline){
 	*outline=NULL;
 	return ret;
 };
-map* mml_map(map* lines,int* from){
-	int level=str_level(map_id(lines,*from));
-	map* ret=new_vec();
-	for(int idx=next(lines,(from ? *from : 0)-1,NULL,NULL); has_id(lines,idx); idx++){ char* line=map_id(lines,idx);
-		int nidx=max(ret->len-1,0);
-		if(str_level(line)>level){
-			add(add_id(ret,nidx),"text",mml_map(lines,&idx));
-			continue; };
-		if(str_level(line)<level){
-			if(from){ *from=idx-1; };
-			return ret; };
-		line+=level;
-		if(*line=='<'){
-			vec_add(ret,line);
-			continue; };
-		if(str_start(line,"---")){
-			add(add_id(ret,nidx),"text",read_textblock(lines,&idx, line, &line));
-		};
-		map* sub=new_map();
-		char* tok=NULL;
-		nidx=0;
-		while((tok=read_token(&line," \t\n\r="))){
-			if(*line=='='){
-				line++;
-				add(sub,tok,read_token(&line, " \t\n\r"));
-				if(str_start(map_val(sub,tok),"---")){
-					add(sub,tok,read_textblock(lines,&idx, map_val(sub,tok), &line)); };
-			}else{
-				if(*tok=='-'){
-					tok=read_textblock(lines,&idx, tok, &line); };
-				char* tags[4]={"tag", "text", "class", "style"};
-				nidx=sub->len;
-				if(nidx>=1 && str_level(map_id(lines,idx+1))>level){ nidx++; };
-				if(nidx<4){ add(sub,tags[nidx],tok); }
-				else {add(sub,tok,tok);}; }; };
-		vec_add(ret,sub); };
-	return ret;
-};
-char* val_eval(void* in,map* params,int is_code){
-	char* str=in;
-	if(!in){ return NULL; }
-	else if(is_map(in)){ return map_html(in,params); }
-	else if(str_eq(in,"-")){ return NULL; }
-	else if(str_start(in,"---")){ return sub_str(in,3,-3); }
-	else if(strchr("\"'`",*str)){ return is_code ? str_unquote(in) : in; }
-	else if(str[0]=='('){ return eval(in,params); };
-	return is_code ? eval(in,params) : in;
-};
-char* load_mml(char* name){
-	map* mmls=NULL;
-	mmls=cache(NULL,"templates",NULL);
-	if(!mmls){ mmls=cache(NULL,"templates", str_map(call_php(NULL,"templates"),Map)); };
-	return map_val(mmls,name);
-};
-char* map_html(map* in,map* params){
-	char* ret=NULL;
-	for(int next1=next(in,-1,NULL,NULL); has_id(in,next1); next1++){ void* v=map_id(in,next1); char* k=map_key(in, next1);
-		if(is_str(v)){
-			if(*(char*)v=='<'){ ret=xcat(ret,str_eval(v,params), End); }
-			else {ret=xcat(ret,val_eval(v,params,0), End);};
-			continue; };
-		if(!map_val(v,"tag")){
-			ret=xcat(ret,val_eval(map_val(v,"text"),params,0), End);
-			continue; };
-		if(((char*)(map_val(v,"tag")))[0]=='+'){
-			map* nparams=new_map();
-			for(int next1=next(v,-1,NULL,NULL); has_id(v,next1); next1++){ void* val=map_id(v,next1); char* name=map_key(v, next1);
-				add(nparams,name,eval(val,params)); };
-			ret=xcat(ret,mml_html(load_mml(sub_str(map_val(v,"tag"),1,0)),nparams), End);
-			continue; };
-		ret=xcat(ret,"<",map_val(v,"tag"), End);
-		for(int next1=next(v,-1,NULL,NULL); has_id(v,next1); next1++){ void* val=map_id(v,next1); char* name=map_key(v, next1);
-			if(is_word(name,"tag text")){ continue; };
-			ret=xcat(ret,xstr(" ", name, "=", val_eval(val,params,0), End), End); };
-		if(str_eq(map_val(v,"text"),"+")){
-			ret=xcat(ret,">", End);
-			continue; };
-		ret=xcat(ret,xstr(">", val_eval(map_val(v,"text"),params,1), "</", map_val(v,"tag"), ">\n", End), End); };
-	return ret;
-};
-char* mml_html(char* str,map* params){
-	int no=0;
-	return map_html(mml_map(str_split(str,"\n",0),&no),params);
-};
-map* show_map(char* show){
-	return str_vec(show);
-};
-char* data_show(map* data,char* show){
-	return NULL;
-};
 char* http_moved(char* url){ return http_out(NULL,"301 Moved Permanently","text/html",xvec(xstr("Location: ", url, End), End)); };
 char* http_redirect(char* url){ return http_out(NULL,"302 Moved Temporarily","text/html",xvec(xstr("Location: ", url, End), End)); };
 void* http_error(char* msg,char* status){ http_out(msg,status,"text/html; charset=utf-8",NULL); xexit(0); return NULL; };
-map* compile_template(char* tem){
-	if(!tem) {return NULL;};
-	map* blks=str_split(tem,"\n--",0);
-	map* ret=new_map();
-	for(int i=next(blks,-1,NULL,NULL); has_id(blks,i); i++){ void* v=map_id(blks,i);
-		if(i==0 && !str_start(v,"--")){
-			add(ret,"head",str_vars(v));
-			continue; };
-		map* ret1=str_split(v,"\n",2);
-		char* name1=str_trim(map_id(ret1,0),"-- ");
-		if(!str_len(name1)){ name1="body"; };
-		add(ret,name1,str_vars(map_id(ret1,1))); };
-	return ret;
-};
-char* render_template(map* data, char* template_name){
-	char* tmp=map_val(map_val(_globals,"html"),template_name);
-	if(!tmp){ fox_error(xstr("Template :", template_name, " not found", End),0); };
-	return render(data,tmp);
-};
-char* render(map* data,void* tem){
-	map* mp1=tem;
-	if(is_str(tem)){ mp1=compile_template(tem); };
-	char* ret=NULL;
-	for(int i=next(mp1,-1,NULL,NULL); has_id(mp1,i); i++){ void* v=map_id(mp1,i); char* k=map_key(mp1, i);
-		if(str_eq(k,"body")){
-			for(int i2=next(data,-1,NULL,NULL); has_id(data,i2); i2++){ void* v2=map_id(data,i2); char* k2=map_key(data, i2);
-				ret=xcat(ret,render_data(v2,v,k2), End); };
-		}else {ret=xcat(ret,render_data(data,v,NULL), End);}; };
-	return ret;
-};
-char* render_data(void* data,map* tp,char* key){
-	if(!is_map(data)) {data=xmap("_val", data,"_key", key, End);};
-	map* flds=map_id(tp,1);
-	map* strs=map_id(tp,0);
-	char* ret=NULL;
-	for(int i=next(strs,-1,NULL,NULL); has_id(strs,i); i++){ void* v=map_id(strs,i);
-		ret=xcat(ret,v, End);
-		if(i==strs->len-1) {break;};
-		ret=xcat(ret,map_join(eval(map_id(flds,i),data),""), End); };
-	return ret;
-};
 char* file_mime(char* path){
 	map* map_1=map_val(_globals,"mime"); for(int i=next(map_1,-1,NULL,NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i); char* k=map_key(map_1, i);
 		if(str_end(path,k)) {return v;}; };
@@ -2218,7 +1694,7 @@ char* http_out(char* str,char* status,char* mime,map* headers){
 char* static_file(char* path){
 	if(has_word(path,"? ../ /.. \\")){ return NULL; };
 	if(!str_start(path,"/res/")){ return NULL; };
-	char* ret=fox_read_file(cat("/web/",str_trim(path,"/"),-1020),0);
+	char* ret=file_read(cat("/web/",str_trim(path,"/"),-1020),0);
 	if(ret){ return http_out(ret,"200 OK",file_mime(path),NULL); };
 	return NULL;
 };
@@ -2282,12 +1758,6 @@ map* parse_url(char* path){
 	return ret;
 };
 char* url_host(char* url){ return map_id(regexp(url,"://([^:/]+)"),1); };
-void load_theme(char* name){
-	if(!str_len(name)) {return;};
-	map* mp=file_map((xstr(name,".map", End)));
-	if(!mp){ fox_error(xstr("Can't read theme file ", name, ".map", End),0); };
-	map_merge(_globals,mp);
-};
 map* sess_init(){
 	void* sid=map_val(header_map(map_val(env_vars(),"HTTP_COOKIE")),"sessid");
 	map* sess=new_map();
@@ -2295,7 +1765,7 @@ map* sess_init(){
 		sid=sess_newid();
 		cookie_set("sessid",sid,"/",NULL);
 	}else{
-		sess=xjson_map(fox_read_file(xstr("/tmp/sess.", sid, End),0),Map); };
+		sess=xjson_map(file_read(xstr("/tmp/sess.", sid, End),0),Map); };
 	add(_globals,"sessid",sid);
 	add(_globals,"sess",sess);
 	return sess;
@@ -2325,184 +1795,6 @@ map* link_relative(map* links,char* url){
 		if(fox_at(v,0)=='/') {continue;};
 		set(links,i,xstr(prepad,v, End)); };
 	return links;
-};
-char* links_ul(map* mp,char* class){
-	if(!mp){ return NULL; };
-	char* ret=NULL;
-	if(is_vec(mp)){
-		for(int i=next(mp,-1,NULL,NULL); has_id(mp,i); i++){ void* v=map_id(mp,i);
-			ret=xcat(ret,links_ul(v,class), End); };
-		return ret; };
-	ret="<ul>";
-	if(class){ ret=xstr("<ul class=\"", class, "\">", End); };
-	for(int i=next(mp,-1,NULL,NULL); has_id(mp,i); i++){ void* v=map_id(mp,i); char* k=map_key(mp, i);
-		if(is_map(v)){ ret=xcat(ret,"<li>",links_ul(v,class),"</li>", End); }
-		else {ret=xcat(ret,"<li><a href=",v,">",k,"</a></li>", End);}; };
-	ret=xcat(ret,"</ul>", End);
-	return ret;
-};
-map* post_data(){
-	map* mime=header_map(map_val(map_val(_globals,"req"),"content-type"));
-	if(!str_eq(map_id(mime,0),"multipart/form-data")){
-		return amps_map(map_val(map_val(_globals,"req"),"post")); };
-	map* ret=new_map();
-	void* seperator=map_val(mime,"boundary");
-	map* map_1=str_split(map_val(map_val(_globals,"req"),"post"),seperator,0); for(int i=next(map_1,-1,NULL,NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i);
-		map* mp3=str_split(v,"\r\n\r\n",2);
-		if(map_len(mp3)!=2){ continue; };
-		map* map_1=str_split(map_id(mp3,0),"\r\n",0); for(int i2=next(map_1,-1,NULL,NULL); has_id(map_1,i2); i2++){ void* v2=map_id(map_1,i2); char* k2=map_key(map_1, i2);
-			char* name=map_val(header_map(v2),"name");
-			if(name){
-				add(ret,name,substr(map_id(mp3,1),0,-4));
-				break; }; }; };
-	return ret;
-};
-char* button_clicked(map* process){
-	if(!str_eq(map_val(map_val(_globals,"req"),"method"),"POST")) {return NULL;};
-	map* data=post_data();
-	for(int i=next(process,-1,NULL,NULL); has_id(process,i); i++){ void* v =map_id(process,i); char* k=map_key(process, i); if(map_val(data,k)){ return k; }; };
-	return NULL;
-};
-map* process_post(map* process){
-	char* clicked=button_clicked(process);
-	if(!clicked){ return NULL; };
-	void* v=map_val(process,clicked);
-	if(is_str(v)){
-		if(str_has(v,"/")){ http_redirect(v); }
-		else {v=xmap(NULL,v, End);}; };
-	map* data=post_data();
-	return data_exec(add(v,"data",data),data);
-};
-char* process_logout(char* redirect){
-	sess_delete();
-	return http_redirect(redirect);
-};
-map* process_login(char* username,char* password){
-	char* sid=sess_newid();
-	add(_globals,"sessid",sid);
-	cookie_set("sessid",sid,"/",NULL);
-	sess_add("user",str_tolower(username));
-	sess_add("role","admin");
-	http_redirect("../dump/");
-	return NULL;
-};
-char* page_dump(){
-	return http_out(xcat(
-			map_val(map_val(_globals,"req"),"header"),
-			to_str(map_val(_globals,"req"),"",0),
-			map_val(_globals,"sess")
-		, End),"200 OK","text/pain",NULL);
-};
-map* url_data(char* url,char* match){
-	map* pathsig=str_split(str_trim(match,"/"),"/",0);
-	map* urls=str_split(str_trim(url,"/"),"/",0);
-	if(!urls){ return NULL; };
-	map* ret=new_map();
-	for(int i=next(pathsig,-1,NULL,NULL); has_id(pathsig,i); i++){ void* v=map_id(pathsig,i);
-		if(str_eq(v,"**")){
-			if(urls->len>i){
-				add(ret,"rest",map_join(vec_sub(urls,i,0),"/")); };
-			return ret; };
-		if(urls->len<=i){ return NULL; };
-		if(str_eq(v,"*")){
-			vec_add(ret,map_id(urls,i));
-			continue; };
-		if(fox_at(v,-1)=='*'){
-			if(str_start(map_id(urls,i),sub_str(v,0,-1))){
-				add(ret,sub_str(v,0,-2),sub_str(map_id(urls,i),str_len(v)-1,0));
-				continue; }; };
-		if(str_eq(map_id(urls,i),v)){ continue; };
-		return NULL; };
-	return urls->len==pathsig->len ? ret : NULL;
-};
-map* path_params(char* url,char* path){
-	map* paths=str_split(str_trim(path,"/"),"/",0);
-	map* urlp=str_split(str_trim(url,"/"),"/",0);
-	int urli=0;
-	map* ids=new_vec();
-	map* ret=xmap("ids",ids, End);
-	for(int i=next(paths,-1,NULL,NULL); has_id(paths,i); i++){ void* v=map_id(paths,i);
-		urli++;
-		if(str_eq(v,"**")){
-			if(urlp->len>=urli){
-				add(ret,"rest",map_join(vec_sub(urlp,urli-1,0),"/")); };
-			return ret; };
-		if(urlp->len<urli) {return NULL;};
-		if(str_eq(v,"*")){
-			vec_add(ids,map_id(urlp,urli-1));
-			continue; };
-		if(fox_at(v,-1)=='*'){
-			if(str_start(map_id(urlp,urli-1),sub_str(v,0,-1))){
-				vec_add(ids,sub_str(map_id(urlp,urli-1),str_len(v)-1,0));
-				continue; }; };
-		if(str_eq(map_id(urlp,urli-1),v)) {continue;};
-		return NULL; };
-	return urlp->len==urli ? ret : NULL;
-};
-int path_matches(char* match,void* url){
-	if(is_str(url)){ url=str_split(str_trim(url,"/"),"/",0); };
-	map* paths=str_split(str_trim(match,"/"),"/",0);
-	for(int i=next(paths,-1,NULL,NULL); has_id(paths,i); i++){ void* v=map_id(paths,i);
-		if(str_eq(map_id(url,i),v)){ continue; };
-		if(str_eq(v,"**")){ return 1; };
-		if(map_len(url)<=i){ return 0; };
-		if(str_eq(v,"*")){ continue; };
-		if(fox_at(v,-1)=='*'){ if(str_start(map_id(url,i),sub_str(v,0,-1))){ continue; }; };
-		return 0; };
-	return map_len(url)==map_len(paths);
-};
-char* pages_match(map* pages,char* path){
-	if(!str_len(path)){ return map_val(pages,"index") ? "index" : NULL; };
-	map* paths=str_split(str_trim(path,"/"),"/",0);
-	for(int i=next(pages,-1,NULL,NULL); has_id(pages,i); i++){ char* k=map_key(pages, i); if(path_matches(k,paths)){ return k; }; };
-	return NULL;
-};
-void* pages_exec(void* pages,char* path,map* env){
-	if(is_str(pages)){ pages=str_map(pages,Map); };
-	char* page=pages_match(pages,path);
-	if(!page){ return 0; };
-	void* data=map_val(pages,page);
-	if(env){ data=map_eval(data,env); };
-	if(is_str(data)){ http_out(data,"200 OK","text/html; charset=utf-8",NULL); return "ok"; };
-	return data_exec(data,map_merge(url_data(path,page),env));
-};
-char* map_template(map* mp,char* template){ return render(mp,xstr("--body\n",template, End)); };
-map* str_vars(char* str){
-	char* cur=str;
-	map* ret=xvec(new_vec(),new_vec(), End);
-	char* from=cur;
-	while(*cur){
-		if(*cur=='#' && cur[1]=='#') {cur++;}
-		else if(*cur=='#' && cur[1]=='{'){
-			vec_add(add_id(ret,0),substr(from,0,cur-from));
-			from=cur;
-			while(*cur && *cur!='}'){
-				if(*cur=='\\') {cur++;}
-				else if(strchr("\"'`",*cur)) {cur=skip_quote(cur);};
-				if(!*cur||*cur=='}') {break;};
-				cur++; };
-			vec_add(add_id(ret,1),substr(from,2,cur-from-2));
-			from=cur+1; };
-		cur++; };
-	vec_add(add_id(ret,0),substr(from,0,cur-from));
-	return ret;
-};
-char* str_subst(char* in,map* data){ return render(data,xmap("head", str_vars(in), End)); };
-void* map_eval(void* mp,map* env){
-	if(!env){ return mp; };
-	assert(is_map(env));
-	if(is_str(mp)){ return render(env,mp); };
-	if(!is_map(mp)){ return mp; };
-	for(int i=next(mp,-1,NULL,NULL); has_id(mp,i); i++){ void* v=map_id(mp,i); char* k=map_key(mp, i);
-		if(is_map(v)){ map_eval(v,env); }
-		else if(is_str(v)){ set(mp,i,render(env,v)); }; };
-	return mp;
-};
-char* str_eval(char* in,map* env){ return render(env,in); };
-map* header_val(char* line,map* mp){
-	map* pair=str_split(line,":",2);
-	add(mp,str_tolower(str_trim(map_id(pair,0)," \t\n\r")),str_trim(map_id(pair,1)," \t\n\r"));
-	return mp;
 };
 map* header_map(char* val){
 	if(!val){ return NULL; };
@@ -2680,7 +1972,7 @@ char* md_url(char* in,int len,void* junk){
 	if(data){ write_file(data,file,0,0); return home_url(file); }
 	else {return xstr("BAD--",url, End);};
 };
-char* file_markdown(char* infile,char* outfile){ return write_file(fox_markdown(fox_read_file(infile,1)),outfile,0,1); };
+char* file_markdown(char* infile,char* outfile){ return write_file(fox_markdown(file_read(infile,1)),outfile,0,1); };
 char* fox_markdown(char* in){
 	FILE* out;
 	char* outbuff;
@@ -2719,4 +2011,95 @@ char* show_port(){
 	if(str_eq(map_val(map_val(_globals,"req"),"protocol"),"http") && str_eq(map_val(map_val(_globals,"req"),"port"),"80")){ return NULL; };
 	if(str_eq(map_val(map_val(_globals,"req"),"protocol"),"https") && str_eq(map_val(map_val(_globals,"req"),"port"),"443")){ return NULL; };
 	return xstr(":",map_val(map_val(_globals,"req"),"port"), End);
+};
+map* lite_trigger_slno(char* name, char* pkey, char* by){
+	char* nby=(by ? xstr(" and ", by, "=new.", by, End) : NULL);
+	char* oby=(by ? xstr(" and ", by, "=old.", by, End) : NULL);
+	if(by){by=xstr(" where ", by, "=new.", by, End);};
+	return xvec(
+		xstr("drop trigger if exists ", name, "_slno_insert_null;", End),
+		xstr("create trigger ", name, "_slno_insert_null after insert on ", name, " when new.slno+0=0 or abs(new.slno+0)>(select count(*) from ", name, by, ") begin\n", 
+		"\tupdate ", name, " set slno=1+(select count(*) from ", name, " where ", pkey, "!=new.", pkey, nby, ") where ", pkey, "=new.", pkey, ";\n", 
+		"end;", End),
+		xstr("drop trigger if exists ", name, "_slno_insert_negetive;", End),
+		xstr("create trigger ", name, "_slno_insert_negetive after insert on ", name, " when new.slno<0 and abs(new.slno)<=(select count(*) from ", name, by, ") begin\n", 
+		"\tupdate ", name, " set slno=slno+.5 where slno>=(select count(*) from ", name, by, ")+new.slno", nby, ";\n", 
+		"\tupdate ", name, " set slno=slno+.5 where slno>=(select count(*) from ", name, by, ")+new.slno", nby, ";\n", 
+		"\tupdate ", name, " set slno=(select count(*) from ", name, by, ")+new.slno+1 where ", pkey, "=new.", pkey, ";\n", 
+		"end;", End),
+		xstr("drop trigger if exists ", name, "_slno_insert_positive;", End),
+		xstr("create trigger ", name, "_slno_insert_positive after insert on ", name, " when new.slno>0 and new.slno<=(select count(*) from ", name, by, ") begin\n", 
+		"\tupdate ", name, " set slno=slno+.5 where slno>=new.slno and ", pkey, "!=new.", pkey, nby, ";\n", 
+		"\tupdate ", name, " set slno=slno+.5 where slno>=new.slno and ", pkey, "!=new.", pkey, nby, ";\n", 
+		"end;", End),
+		xstr("create trigger ", name, "_slno_delete after delete on ", name, " begin\n", 
+		"\tupdate ", name, " set slno=slno-.5 where slno>old.slno", oby, ";\n", 
+		"\tupdate ", name, " set slno=slno-.5 where slno>old.slno", oby, ";\n", 
+		"end;", End),
+		xstr("create trigger ", name, "_slno_update_null after update on ", name, " when new.slno is null or new.slno=0 or new.slno='' or abs(new.slno)>(select count(*) from ", name, by, ") begin\n", 
+		"\tupdate ", name, " set slno=slno-.5 where slno>old.slno", oby, ";\n", 
+		"\tupdate ", name, " set slno=slno-.5 where slno>old.slno", oby, ";\n", 
+		"\tupdate ", name, " set slno=(select count(*) from ", name, by, ") where ", pkey, "=new.", pkey, ";\n", 
+		"end;", End),
+		xstr("create trigger ", name, "_slno_update_negetive after update on ", name, " when new.slno<0 and new.slno>=-1*(select count(*) from ", name, by, ") begin\n", 
+		"\tupdate ", name, " set slno=slno-.5 where slno>old.slno", oby, ";\n", 
+		"\tupdate ", name, " set slno=slno-.5 where slno>old.slno", oby, ";\n", 
+		"\tupdate ", name, " set slno=slno+.5 where slno>=(select count(*) from ", name, by, ")+new.slno", nby, ";\n", 
+		"\tupdate ", name, " set slno=slno+.5 where slno>=(select count(*) from ", name, by, ")+new.slno", nby, ";\n", 
+		"\tupdate ", name, " set slno=(select count(*) from ", name, by, ")+new.slno where ", pkey, "=new.", pkey, ";\n", 
+		"end;", End),
+		xstr("create trigger ", name, "_slno_update_positive after update on ", name, " when new.slno>0 and old.slno>0 and abs(new.slno-old.slno)>=1 and new.slno<=(select count(*) from ", name, by, ") begin\n", 
+		"\tupdate ", name, " set slno=slno-.5 where slno>old.slno and ", pkey, "!=new.", pkey, oby, ";\n", 
+		"\tupdate ", name, " set slno=slno-.5 where slno>old.slno and ", pkey, "!=new.", pkey, oby, ";\n", 
+		"\tupdate ", name, " set slno=slno+.5 where slno>=new.slno and ", pkey, "!=new.", pkey, nby, ";\n", 
+		"\tupdate ", name, " set slno=slno+.5 where slno>=new.slno and ", pkey, "!=new.", pkey, nby, ";\n", 
+		"end;\n", 
+		"", End), End);
+};
+map* lite_trigger_tree(char* name,char* pkey){
+	return xvec(
+		xstr("drop trigger if exists ", name, "_tree_insert_null;", End),
+		
+		xstr("create trigger ", name, "_tree_insert_null after insert on ", name, " when new.parent is null or new.parent='' begin\n", 
+		"update ", name, " set lft=(select coalesce(max(rgt),0) from ", name, " where ", pkey, "!=new.", pkey, ")+1,rgt=(select coalesce(max(rgt),0) from ", name, " where ", pkey, "!=new.", pkey, ")+2 where ", pkey, "=new.", pkey, ";\n", 
+		"end;", End),
+	
+		xstr("drop trigger if exists ", name, "_tree_insert;", End),
+
+		xstr("create trigger ", name, "_tree_insert after insert on ", name, " when new.parent is not null and length(new.parent)>0 begin\n", 
+		"update ", name, " set lft=(select rgt from ", name, " where ", pkey, "=new.parent),rgt=(select rgt from ", name, " where ", pkey, "=new.parent)+1 where ", pkey, "=new.", pkey, ";\n", 
+		"update ", name, " set lft=lft+2 where lft>(select rgt from ", name, " where ", pkey, "=new.parent);\n", 
+		"update ", name, " set rgt=rgt+2 where rgt>=(select rgt from ", name, " where ", pkey, "=new.parent) and ", pkey, "!=new.", pkey, ";\n", 
+		"end;", End),
+
+		xstr("drop trigger if exists ", name, "_tree_delete;", End),
+
+		xstr("create trigger ", name, "_tree_delete before delete on ", name, " begin\n", 
+		"update ", name, " set lft=lft-(old.rgt-old.lft)-1 where lft>old.rgt;\n", 
+		"update ", name, " set rgt=rgt-(old.rgt-old.lft)-1 where rgt>old.rgt;\n", 
+		"delete from ", name, " where lft>old.lft and lft<old.rgt;\n", 
+		"end;", End),
+
+		xstr("drop trigger if exists ", name, "_tree_update_null;", End),
+
+		xstr("create trigger ", name, "_tree_update_null after update of parent on ", name, " when new.parent is null or length(new.parent)=0 begin\n", 
+		"update ", name, " set lft=lft+(select max(rgt) from ", name, ")-old.lft+1,rgt=rgt+(select max(rgt) from ", name, ")-old.lft+1 where lft>=old.lft and lft<=old.rgt;\n", 
+		"update ", name, " set lft=lft-(old.rgt-old.lft)-1 where lft>old.rgt;\n", 
+		"update ", name, " set rgt=rgt-(old.rgt-old.lft)-1 where rgt>old.rgt;\n", 
+		"end;", End),
+	
+		xstr("drop trigger if exists ", name, "_tree_update_right;", End),
+
+		xstr("create trigger ", name, "_tree_update_right after update of parent on ", name, " when new.parent is not null and length(new.parent)>0 and old.lft<(select lft from ", name, " where ", pkey, "=new.parent) begin\n", 
+		"update ", name, " set lft=case when lft>old.rgt and lft<(select rgt from ", name, " where ", pkey, "=new.parent) then lft-old.rgt+old.lft-1 when lft>=old.lft and lft<=old.rgt then lft+(select rgt from ", name, " where ", pkey, "=new.parent)-old.rgt-1 else lft end;\n", 
+		"update ", name, " set rgt=case when rgt>old.rgt and rgt<(select rgt from ", name, " where ", pkey, "=new.parent) then rgt-old.rgt+old.lft-1 when rgt>=old.lft and rgt<=old.rgt then rgt+(select rgt from ", name, " where ", pkey, "=new.parent)-old.rgt-1 else rgt end;\n", 
+		"end;", End),
+		
+		xstr("drop trigger if exists ", name, "_tree_update_left;", End),
+
+		xstr("create trigger ", name, "_tree_update_left after update of parent on ", name, " when new.parent is not null and length(new.parent)>0 and old.lft>(select lft from ", name, " where ", pkey, "=new.parent) begin\n", 
+		"update ", name, " set lft=case when lft<old.lft and lft>=(select rgt from ", name, " where ", pkey, "=new.parent) then lft+old.rgt-old.lft+1 when lft>=old.lft and lft<=old.rgt then lft-old.lft+(select rgt from ", name, " where ", pkey, "=new.parent) else lft end;\n", 
+		"update ", name, " set rgt=case when rgt<old.lft and rgt>=(select lft from ", name, " where ", pkey, "=old.", pkey, ") then rgt+old.rgt-old.lft+1 when rgt>=old.lft and rgt<=old.rgt then rgt-old.lft+(select lft from ", name, " where ", pkey, "=old.", pkey, ") else rgt end;\n", 
+		"end;", End)
+	, End);
 };

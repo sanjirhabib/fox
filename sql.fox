@@ -1255,215 +1255,6 @@ map* rows_show(map* rows,map* cols,int width=2){
 char* cols_show(map* cols,map* row,char* name,int width=2){
 	return row[name].str_show(cols[name].type,cols[name],width)
 }
-/*
-function duration($n){
-	if $n<60 => return "less than a minute";
-	$n/=60;
-	if $n<2 => return ((int)$n)." minute";
-	if $n<60 => return ((int)$n)." minutes";
-	$n/=60;
-	if $n<2 => return ((int)$n)." hour";
-	if $n<24 => return ((int)$n)." hours";
-	$n/=24;
-	if $n<2 => return ((int)$n)." day";
-	if $n<30 => return ((int)$n)." days";
-	if $n<60 => return ((int)($n/30))." month";
-	if $n<365 => return ((int)($n/30))." months";
-	$n/=365;
-	if $n<2 => return ((int)$n)." year";
-	return ((int)$n)." years";
-}
-char* text_action(char* action,void* value,map* op,char* ns=:form){
-	if action===:read
-		return value.trim()
-	if action==:html
-		return <input - input-medium name=ns.."-"..name id=ns_name.str_code().str_quote()>
-
-}
-char* val_trim(void* val,char* type){
-	if !val.is_map() => return val.to_str().trim()
-	type="
-		text=text
-		html=html
-		int=int
-		bool=bool
-		date=date
-		time=time
-		datetime=datetime
-		daymonth=daymonth
-		yearmonth=yearmonth
-		month=month
-		mins=mins
-		source=source
-		file=file
-		inline=array
-		intrange=intrange
-		multicheck=multicheck
-		duration=duration
-		".maptype(type)
-	if !type => fox_error("No type found for value $v")
-	if type=='multicheck' => return v
-	if type=='source' => return v
-	if type=='array' => return v
-	if type=='file' => return v
-	if type=='text' => return trim(v)
-	if type=='html' => return v
-	if type=='int' => return v ? enno($v) : ''
-	if type=='bool' => return v ? 1 : ''
-	if $type=='duration' =>{
-		if !is_array($v) => return $v;
-		$a=array(:sec=>1,:min=>60,:hour=>60*60,:day=>24*3600,:week=>7*86400,:month=>30*86400,:year=>365*86400);
-		if !@$v['amount'] => return 0;
-		return $v['amount']*@$a[$v['unit']];
-	}
-	if $type=='intrange' =>{
-		if is_array($v) =>{
-			if strlen(@$v['from'] && !is_numeric($v['from'])) => $v['from']='';
-			if strlen(@$v['upto'] && !is_numeric($v['upto'])) => $v['upto']='';
-			if !strlen(@$v['from']) && !strlen(@$v['upto']) => return '';
-			return sprintf("%s\t%s",$v['from'],$v['upto']);
-		}
-		if $v=="\t" => return '';
-		return $v;
-	}
-	if $type=='mins' =>{
-		if is_array($v) =>{
-			$h=$v['hour'];
-			$m=$v['min'];
-			return $h*60+$m;
-		}
-		return $v;
-	}
-	if $type=='datetime' =>{
-		if is_array($v) =>{
-			return trim_type('date',$v).' '.trim_type('time',$v);
-		}
-		return $v;
-	}
-	if $type=='time' =>{
-		if is_array($v) =>{
-			$h=$v['hour'];
-			$m=$v['min'];
-			$am=$v['ampm'];
-			if !$h || !$am => return '';
-			if $am=='am' && $h==12 => $h=0;
-			else if $am=='pm' && $h<12 => $h+=12;
-			return sprintf("%02d:%02d:00",$h,$m);
-		}
-		return $v;
-	}
-	if $type=='date'||$type=='month'||$type=='yearmonth'||$type=='daymonth' =>{
-		if is_string($v) =>{
-			if fox_str_has($v,'/') =>{
-				$a=explode('/',$v);
-				return trim_type('date',array('day'=>@$a[0],'month'=>@$a[1],'year'=>@$a[2]));
-			}
-			if $v=='0000-00-00 00:00:00' => return '';
-			if $v=='0000-00-00' => return '';
-			if $v=='00:00:00' => return '';
-			if $v=='0000-00' => return '';
-			if $v=='00-00' => return '';
-			if $v=='0000-00' => return '';
-			if strpos(' '.$v,"--") =>{
-				$a=explode("--",$v);
-				$a[0]=trim_type($type,@$a[0]);
-				$a[1]=trim_type($type,@$a[1]);
-				$v="$a[0]--$a[1]";
-				return $v=="--" ? '' : $v;
-			}
-			return $v;
-		}
-		if is_array($v) =>{
-			if @$v['from']||@$v['upto'] =>{
-				$v=trim_type('date',@$v['from'])."--".trim_type('date',@$v['upto']);
-				return $v=="--" ? '' : $v;
-			}
-			if !(@$v['day']+0) && !(@$v['month']+0) && !(@$v['year']+0) => return '';
-			if $type=='month' => return sprintf("%04d-%02d",$v['year'],$v['month']);
-			if $type=='yearmonth' => return sprintf("%04d-%02d",$v['year'],$v['month']);
-			else if $type=='daymonth' => return sprintf("%02d-%02d",$v['month'],$v['day']);
-			else return sprintf("%04d-%02d-%02d",$v['year'],$v['month'],$v['day']);
-		}
-		return $v;
-	}
-	fox_error("Type $type trimming failed");
-}
-*/
-char* buttons_html(map* buttons){
-	ret=[]
-	buttons.each v,k,i
-		if k.str_has("/")
-			ret[]={
-				text: v,
-				url: k,
-				css: :btn\-default
-				}.render_template(:button\-link)
-		else
-			ret[]={
-				name: k,
-				value: v,
-				css: ""
-				}.render_template(:button)
-	return ret.render("
-		--body
-		#{_val}
-		")
-}
-//char* cols_html(map* cols,map* buttons,char* title=NULL,map* vals=NULL,map* errs=NULL){
-//	cols=cols.cols_ctrls(vals,errs)
-//	cols.each v,k,i
-//		v.html=v.render_template(v.ctrl)
-//		v.html=v.render_template(:label)
-//	cols.dx()
-//	char* body=xmap(:cols,cols.render("
-//			--body
-//			#{html}
-//			"),
-//		:title,title).render_template(:group)
-//
-//	return xmap(
-//		:msg, errs.map_len() ? "Please correct these errors" : "",
-//		:state, errs.map_len() ? :fox_error : :help,
-//		:body, body,
-//		:button,buttons.buttons_html(),
-//		:method,:post
-//	).render_template(:form)
-//}
-//char* test_html(){
-//	return "
-//		name=:text
-//		age=:int
-//		".str_map().cols_html("
-//			save=Save
-//			cancel=Cancel
-//		".str_map())
-//}
-map* cols_list(map* cols,char* crud=NULL,int max=12){
-	ret={}
-	aligns="
-		text=left
-		int=right
-		"
-	if max && crud => max--
-	cols.each v,k,i
-		if i>=max => break
-		ret[k]={title: v.title ? v.title : k.str_title(),
-			html: v.html ? v.html : xcat("#{row.",k,"}")}
-		if aligns.maptype(v.type)===:right
-			ret[k].css[:text\-align]=:right
-		if v.link
-			ret[k].html="<a href='"..v.link.."'>"..ret[k].html.."</a>"
-	if crud
-		actions={}
-		if crud===:crud => crud="add edit delete"
-		if :edit.is_word(crud)
-			actions.Edit="edit/?id=#{row."..cols.cols_pkeys().map_join("}-#{row.").."}"
-		if :delete.is_word(crud)
-			actions.Delete="delete/?id=#{row."..cols.cols_pkeys().map_join("}-#{row.").."}"
-		ret.action={title::Actions, html: actions.render_template("button-dropdown")}
-
-	return ret
-}
 map* map_table(map* mp,char* tbl,char* db){
 	ret=mp.cols.cols_table(tbl,db)
 	mp.each v ,k,i=> if k!==:cols => ret[k]=v
@@ -1521,107 +1312,8 @@ char* db_schema(char* db){
 		}.row_insert(:_schema,db)
 	return db
 }
-char* crud_tables(char* db){
-	data=[]
-	db.table_names().each v,k,i
-		data[]={
-			table: v,
-			rows: "select count(*) from $v".sql_value(db),
-			cols: v.tbl_cols(db).map_len()
-		}
-	return data.render_table("
-		table=:text link='table-#{table}/'
-		rows=:int
-		cols=:int
-	".str_map().cols_list())
-}
-char* crud_list(char* sql,char* db,int limit=50,char* crud=NULL){
-	return sql.sql_add_limit(limit).sql_rows(db).render_table(sql.sql_select_cols(db).cols_list(crud),sql,crud)
-}
-char* confirm(char* prompt=NULL,char* option1=NULL,char* option2=NULL,char* title="Confirm",map* data=NULL){
-	clicked={(option1): NULL, (option2): NULL}.button_clicked()
-	if clicked => return clicked
-	{
-		body: args_map().render_template(:confirm),
-		title: title,
-		width: 2
-	}.call_func(:page)
-	return NULL		
-}
 void* sql_delete(void* ids,char* tbl,char* db){
 	return ("delete from $tbl"..re_where(tbl.pkeys_where(db))).lite_exec(db,tbl.sql_id_ids(db,ids))
-}
-char* crud_delete(char* sql,char* db=_globals.ddb,char* back="../"){
-	if "Delete this record?".confirm(:Yes,:No)
-		url_gets().id.sql_delete(sql.sql_table(),db)
-	return back.http_redirect()
-}
-char* edit_schema(char* sql,char* db=_globals.ddb,map* cols=NULL,char* back="../"){
-	tbl=sql.sql_table()
-	errs={save: {(NULL): :save_schema, db: db, tbl: tbl, back: back}}.process_post()
-	vals=:_schema.sql_id(db,{type: :db,name: tbl})
-	return :_schema.tbl_cols(db).cols_html({save: :Save, (back): :Cancel},"Edit Schema",vals,errs)
-}
-char* crud_add(char* sql,char* db=_globals.ddb,map* cols=NULL,char* back="../"){
-	errs={save: {(NULL): :crud_save, db: db, sql: sql, back: back, cols: cols}}.process_post()
-	vals={}
-	return sql.sql_table().tbl_cols(db).cols_html({save: :Save,(back): :Cancel},"Add New",vals,errs)
-}
-char* crud_edit(char* sql,char* db=_globals.ddb,map* cols=NULL,char* back="../"){
-	errs={save: {(NULL): :crud_save, db: db, sql: sql, back: back, cols: cols}}.process_post()
-	vals=sql.sql_id(db,sql.get_ids(db))
-	return sql.sql_table().tbl_cols(db).cols_html({save: :Save, (back): :Cancel},"Edit Record",vals,errs)
-}
-char* render_table(map* rows,map* cols,char* sql="",char* crud=NULL){
-	cols.each v,k,i
-		if !v.css => continue
-		v.tag=v.css.render(".end
-			 style='
-			--body
-			#{_key}:#{_val};
-			--foot
-			'
-			.end")
-	th=cols.render("
-			<thead><tr>
-			--body
-			<th#{tag}>#{title}</th>
-			--foot
-			</tr></thead>
-			")
-	td=cols.render("
-			<tr>
-			--body
-			<td#{tag}>#{html}</td>
-			--foot
-			</tr>
-			")
-	if crud
-		if crud===:crud => crud="add edit delete"
-		actions={}
-		if :add.is_word(crud)
-			actions."Add New"="add/"	
-			actions."Edit Schema"="schema/"
-		crud=actions.render_template("button-dropdown")
-	return rows.render( _globals.html.table.str_subst({td: td, th: th, sql: sql, actions: crud}) )
-}
-char* cols_html(map* cols,map* buttons,char* title=NULL,map* vals=NULL,map* errs=NULL){
-	cols=cols.cols_ctrls(vals,errs)
-	cols.each v,k,i
-		v.html=v.render_template(v.ctrl)
-		v.html=v.render_template(:label)
-	body={cols: cols.render("
-			--body
-			#{html}
-			"),
-		title: title}.render_template(:group)
-	return {
-		msg:  errs.map_len() ? "Please correct these errors" : "",
-		state:  errs.map_len() ? :fox_error : :help,
-		body:  body,
-		button: buttons.buttons_html(),
-		method: :post
-	}.render_template(:form)
 }
 char* rename_sql(char* from,char* into){
 	return "alter table $from rename to $into"
@@ -1737,64 +1429,6 @@ char* date_show(char* in){
 		else if h>12 => h-=12
 		return "$h:$(vals[1]) $(vals[0].to_int()>=12 ? 'pm' : 'am')"
 	return in
-}
-void* crud(char* sql=NULL,char* db=_globals.ddb,map* cols=NULL,char* crud=NULL,int limit=50,void* link=NULL,char* rest=NULL,char* table=NULL){
-	if !sql => sql=table
-	if !sql
-		return ---
-			index
-				page
-				title=Tables
-				body
-					crud_tables
-					db=#{db}
-				width=2
-			table-*/ **
-				crud				
-		---.pages_exec(rest,{db: db})
-	return ---
-	index
-		page
-		title=Table List
-		body
-			crud_list
-			db=#{db}
-			sql=#{sql}
-			crud=crud
-		width=3
-	edit
-		page
-		title=Edit Table
-		body
-			crud_edit
-			db=#{db}
-			sql=#{sql}
-		width=2
-	add
-		page
-		title=Add New
-		body
-			crud_add
-			db=#{db}
-			sql=#{sql}
-		width=2
-	delete
-		page
-		title=Delete Record
-		body
-			crud_delete
-			db=#{db}
-			sql=#{sql}
-		width=2
-	schema
-		page
-		title=Table Structure
-		body
-			edit_schema
-			db=#{db}
-			sql=#{sql}
-		width=2
-	---.pages_exec(rest,{db: db, sql: sql})
 }
 int cmp_ptr_reverse(const void* ptr1, const void* ptr2) => return ptr2.cmp_ptr(ptr1)
 int cmp_ptr(const void* ptr1,const void* ptr2){
@@ -2003,33 +1637,6 @@ map* regexp(char* in, char* pattern){
 	regfree(&re);
 	return ret
 }
-//===
-char* read_token(char** line,char* terminators=" \t"){
-	if !*line || !**line => return ''
-	in=*line
-	while(*in && terminators.strchr(*in)) in++
-	head=in
-	if !*in => *line=in; return NULL
-	paren=0
-	term='\0'
-	while *in
-		if term
-			if *in=='\\' && in[1]
-				in++
-			else if term==*in
-				term='\0'
-		else if "\"'`".strchr(*in)
-			term=*in
-		else if "([{".strchr(*in)
-			paren++
-		else if "}])".strchr(*in)
-			paren--
-		else if !paren && terminators.strchr(*in)
-			break
-		in++
-	*line=in
-	return head.sub_str(0,in-head)
-}
 char* read_textblock(map* lines, int* lineno,char* terminator,char** outline){
 	terminator=terminator.str_trim()
 	int indent=lines[*lineno+1].str_level()
@@ -2043,140 +1650,9 @@ char* read_textblock(map* lines, int* lineno,char* terminator,char** outline){
 	*outline=''
 	return ret
 }
-map* mml_map(map* lines,int* from=NULL){
-	level=lines[*from].str_level()
-	ret=[]
-	lines.each char* line,,idx=(from ? *from : 0)
-		int nidx=max(ret->len-1,0)
-		if line.str_level()>level
-			ret[nidx].text=lines.mml_map(&idx)
-			continue
-		if line.str_level()<level
-			if from => *from=idx-1
-			return ret
-		line+=level
-		if *line=='<'
-			ret[]=line
-			continue
-		if line.str_start('---')
-			ret[nidx].text=lines.read_textblock(&idx, line, &line)
-
-		sub={}
-		tok=''
-		nidx=0
-		while (tok=read_token(&line," \t\n\r="))
-			if *line=='='
-				line++
-				sub[tok]=read_token(&line, " \t\n\r")
-				if sub[tok].str_start('---')
-					sub[tok]=lines.read_textblock(&idx, sub[tok], &line)
-			else
-				if *tok=='-'
-					tok=lines.read_textblock(&idx, tok, &line)
-				char* tags[4]={:tag, :text, :class, :style}
-				nidx=sub->len
-				if nidx>=1 && lines[idx+1].str_level()>level => nidx++
-				if nidx<4 => sub[tags[nidx]]=tok
-				else sub[tok]=tok
-		ret[]=sub
-	return ret
-}
-char* val_eval(void* in,map* params=NULL,int is_code=0){
-	char* str=in
-	if !in => return ''
-	else if in.is_map() => return in.map_html(params)
-	else if in==="-" => return ''
-	else if in.str_start('---') => return in.sub_str(3,-3)
-	else if "\"'`".strchr(*str) => return is_code ? in.str_unquote() : in
-	else if str[0]=='(' => return in.eval(params)
-	return is_code ? in.eval(params) : in
-}
-char* load_mml(char* name){
-	map* mmls=NULL
-	mmls=NULL.cache(:templates)
-	if !mmls => mmls=NULL.cache(:templates, NULL.call_php(:templates).str_map())
-	return mmls[name]
-}
-char* map_html(map* in,map* params=NULL){
-	ret=''
-	in.each v,k
-		if v.is_str()
-			if *(char*)v=='<' => ret.=v.str_eval(params)
-			else ret.=v.val_eval(params)
-			continue
-		if !v.tag
-			ret.=v.text.val_eval(params)
-			continue
-		if ((char*)(v.tag))[0]=='+'
-			nparams={}
-			v.each val,name
-				nparams[name]=val.eval(params)
-			ret.=v.tag.sub_str(1).load_mml().mml_html(nparams)
-			continue
-		ret.="<"..v.tag
-		v.each val,name
-			if name.is_word("tag text") => continue
-			ret.=" $name=$(val.val_eval(params))"
-		if v.text==="+"
-			ret.=">"
-			continue
-		ret.=">$(v.text.val_eval(params,1))</$(v.tag)>\n"
-	return ret
-}
-char* mml_html(char* str,map* params=NULL){
-	no=0
-	return str.str_split("\n").mml_map(&no).map_html(params)
-}
-map* show_map(char* show){
-	return show.str_vec()
-}
-char* data_show(map* data,char* show){
-	return NULL
-}
 char* http_moved(char* url) => return NULL.http_out("301 Moved Permanently","text/html",["Location: $url"])
 char* http_redirect(char* url) => return NULL.http_out("302 Moved Temporarily","text/html",["Location: $url"])
 void* http_error(char* msg,char* status) => msg.http_out(status); xexit(0); return NULL
-map* compile_template(char* tem){
-	if(!tem) return NULL
-	blks=tem.str_split("\n--",0)
-	ret={}
-	blks.each v,,i
-		if i==0 && !v.str_start("--")
-			ret.head=v.str_vars()
-			continue
-		ret1=v.str_split("\n",2)
-		name1=ret1[0].str_trim("-- ")
-		if !name1.str_len() => name1=:body
-		ret[name1]=ret1[1].str_vars()
-	return ret
-}
-char* render_template(map* data, char* template_name){
-	char* tmp=_globals.html[template_name]
-	if !tmp => "Template :$template_name not found".fox_error()
-	return data.render(tmp)
-}
-char* render(map* data,void* tem){
-	map* mp1=tem
-	if tem.is_str() => mp1=tem.compile_template()
-	ret=''
-	mp1.each v,k,i
-		if k===:body
-			data.each v2,k2,i2
-				ret.=v2.render_data(v,k2)
-		else ret.=data.render_data(v,NULL)
-	return ret
-}
-char* render_data(void* data,map* tp,char* key){
-	if(!data.is_map()) data={_val: data,_key: key}
-	map* flds=tp[1]
-	map* strs=tp[0]
-	ret=''
-	strs.each v,,i
-		ret.=v
-		if(i==strs->len-1) break
-		ret.=flds[i].eval(data).map_join()
-	return ret
-}
 char* file_mime(char* path){
 	_globals.mime.each v,k,i
 		if(path.str_end(k)) return v
@@ -2218,7 +1694,7 @@ char* http_out(char* str=NULL,char* status="200 OK",char* mime="text/html; chars
 char* static_file(char* path){
 	if path.has_word("? ../ /.. \\") => return NULL
 	if !path.str_start("/res/") => return NULL
-	ret="/web/".cat(path.str_trim("/")).fox_read_file(0)
+	ret="/web/".cat(path.str_trim("/")).file_read(0)
 	if ret => return ret.http_out("200 OK",path.file_mime())
 	return NULL
 }
@@ -2282,12 +1758,6 @@ map* parse_url(char* path){
 	return ret
 }
 char* url_host(char* url) => return url.regexp("://([^:/]+)")[1]
-void load_theme(char* name=:dashboard){
-	if(!name.str_len()) return
-	mp=(name..".map").file_map()
-	if !mp => "Can't read theme file $name.map".fox_error()
-	_globals.map_merge(mp)
-}
 map* sess_init(){
 	sid=env_vars().HTTP_COOKIE.header_map().sessid
 	sess={}
@@ -2295,7 +1765,7 @@ map* sess_init(){
 		sid=sess_newid()
 		:sessid.cookie_set(sid)
 	else
-		sess="/tmp/sess.$sid".fox_read_file(0).xjson_map()
+		sess="/tmp/sess.$sid".file_read(0).xjson_map()
 	_globals.sessid=sid
 	_globals.sess=sess
 	return sess
@@ -2325,184 +1795,6 @@ map* link_relative(map* links,char* url){
 		if(v.fox_at(0)=='/') continue
 		links[i]=prepad..v
 	return links
-}
-char* links_ul(map* mp,char* class=NULL){
-	if !mp => return NULL
-	ret=''
-	if mp.is_vec()
-		mp.each v,,i
-			ret.=v.links_ul(class)
-		return ret
-	ret="<ul>"
-	if class => ret="<ul class=\"$class\">"
-	mp.each v,k,i
-		if v.is_map() => ret=ret.xcat("<li>",v.links_ul(class),"</li>")
-		else ret=ret.xcat("<li><a href=",v,">",k,"</a></li>")
-	ret.="</ul>"
-	return ret
-}
-map* post_data(){
-	mime=_globals.req["content-type"].header_map()
-	if mime[0]!=="multipart/form-data"
-		return _globals.req.post.amps_map()
-	ret={}
-	seperator=mime.boundary
-	_globals.req.post.str_split(seperator).each v,,i
-		mp3=v.str_split("\r\n\r\n",2)
-		if mp3.map_len()!=2 => continue
-		mp3.map_id(0).str_split("\r\n").each v2,k2,i2
-			char* name=v2.header_map().name
-			if name
-				ret.add(name,mp3.map_id(1).substr(0,-4))
-				break
-	return ret
-}
-char* button_clicked(map* process){
-	if(_globals.req.method!==:POST) return NULL
-	data=post_data()
-	process.each v ,k,i=> if data[k] => return k
-	return NULL
-}
-map* process_post(map* process){
-	clicked=process.button_clicked()
-	if !clicked => return NULL
-	v=process[clicked]
-	if v.is_str()
-		if v.str_has("/") => v.http_redirect()
-		else v={NULL,v}
-	data=post_data()
-	return v.add(:data,data).data_exec(data)
-}
-char* process_logout(char* redirect="../login/"){
-	sess_delete()
-	return redirect.http_redirect()
-}
-map* process_login(char* username,char* password){
-	sid=sess_newid()
-	_globals.sessid=sid
-	:sessid.cookie_set(sid)
-	:user.sess_add(username.str_tolower())
-	:role.sess_add(:admin)
-	"../dump/".http_redirect()
-	return NULL
-}
-char* page_dump(){
-	return xcat(
-			_globals.req.header,
-			_globals.req.to_str(),
-			_globals.sess
-		).http_out(,"text/pain")
-}
-map* url_data(char* url,char* match){
-	pathsig=match.str_trim("/").str_split("/")
-	urls=url.str_trim("/").str_split("/")
-	if !urls => return NULL
-	ret={}
-	pathsig.each v,,i
-		if v==="**"
-			if urls->len>i
-				ret.rest=urls.vec_sub(i).map_join("/")
-			return ret
-		if urls->len<=i => return NULL
-		if v==="*"
-			ret[]=urls[i]
-			continue
-		if v.fox_at(-1)=='*'
-			if urls[i].str_start(v.sub_str(0,-1))
-				ret[v.sub_str(0,-2)]=urls[i].sub_str(v.str_len()-1)
-				continue
-		if urls[i]===v => continue
-		return NULL
-	return urls->len==pathsig->len ? ret : NULL
-}
-map* path_params(char* url,char* path){
-	paths=path.str_trim("/").str_split("/")
-	urlp=url.str_trim("/").str_split("/")
-	int urli=0
-	ids=[]
-	ret={:ids,ids}
-	paths.each v,,i
-		urli++
-		if(v==="**")
-			if urlp->len>=urli
-				ret.rest=urlp.vec_sub(urli-1,0).map_join("/")
-			return ret
-		if(urlp->len<urli) return NULL
-		if(v==="*")
-			ids[]=urlp[urli-1]
-			continue
-		if v.fox_at(-1)=='*'
-			if(urlp[urli-1].str_start(v.sub_str(0,-1)))
-				ids[]=urlp[urli-1].sub_str(v.str_len()-1)
-				continue
-		if(urlp[urli-1]===v) continue
-		return NULL
-	return urlp->len==urli ? ret : NULL
-}
-int path_matches(char* match,void* url){
-	if url.is_str() => url=url.str_trim("/").str_split("/")
-	paths=match.str_trim("/").str_split("/")
-	paths.each v,,i
-		if url[i]===v => continue
-		if v==="**" => return 1
-		if url.map_len()<=i => return 0
-		if v==="*" => continue
-		if v.fox_at(-1)=='*' => if url[i].str_start(v.sub_str(0,-1)) => continue
-		return 0
-	return url.map_len()==paths.map_len()
-}
-char* pages_match(map* pages,char* path){
-	if !path.str_len() => return pages.index ? :index : NULL
-	paths=path.str_trim("/").str_split("/")
-	pages.each ,k,i => if k.path_matches(paths) => return k
-	return NULL
-}
-void* pages_exec(void* pages,char* path,map* env=NULL){
-	if pages.is_str() => pages=pages.str_map()
-	page=pages.pages_match(path)
-	if !page => return 0
-	data=pages[page]
-	if env => data=data.map_eval(env)
-	if data.is_str() => data.http_out(); return :ok
-	return data.data_exec(path.url_data(page).map_merge(env))
-}
-char* map_template(map* mp,char* template) => return mp.render("--body\n"..template)
-map* str_vars(char* str){
-	cur=str
-	ret=[[],[]]
-	from=cur
-	while *cur
-		if(*cur=='#' && cur[1]=='#') cur++
-		else if *cur=='#' && cur[1]=='{'
-			ret[0][]=from.substr(0,cur-from)
-			from=cur
-			while *cur && *cur!='}'
-				if(*cur=='\\') cur++
-				else if("\"'`".strchr(*cur)) cur=cur.skip_quote()
-				if(!*cur||*cur=='}') break
-				cur++
-			ret[1][]=from.substr(2,cur-from-2)
-			from=cur+1
-		cur++
-	ret[0][]=from.substr(0,cur-from)
-	return ret
-}
-char* str_subst(char* in,map* data) => return data.render({head: in.str_vars()})
-void* map_eval(void* mp,map* env){
-	if !env => return mp
-	assert(env.is_map())
-	if mp.is_str() => return env.render(mp)
-	if !mp.is_map() => return mp
-	mp.each v,k,i
-		if v.is_map() => v.map_eval(env)
-		else if v.is_str() => mp[i]=env.render(v)
-	return mp
-}
-char* str_eval(char* in,map* env) => return env.render(in)
-map* header_val(char* line,map* mp){
-	pair=line.str_split(":",2)
-	mp[pair[0].str_trim().str_tolower()]=pair[1].str_trim()
-	return mp
 }
 map* header_map(char* val){
 	if !val => return NULL
@@ -2680,7 +1972,7 @@ char* md_url(char* in,int len,void* junk){
 	if data => data.write_file(file,0,0); return file.home_url()
 	else return "BAD--"..url
 }
-char* file_markdown(char* infile,char* outfile=NULL) => return infile.fox_read_file().fox_markdown().write_file(outfile)
+char* file_markdown(char* infile,char* outfile=NULL) => return infile.file_read().fox_markdown().write_file(outfile)
 char* fox_markdown(char* in){
 	FILE* out
 	char* outbuff
@@ -2719,4 +2011,95 @@ char* show_port(){
 	if _globals.req.protocol===:http && _globals.req.port==="80" => return ''
 	if _globals.req.protocol===:https && _globals.req.port==="443" => return ''
 	return ":".._globals.req.port
+}
+map* lite_trigger_slno(char* name, char* pkey, char* by=NULL){
+	nby=by and " and $by=new.$by"
+	oby=by and " and $by=old.$by"
+	by&&=" where $by=new.$by"
+	return [
+		"drop trigger if exists $(name)_slno_insert_null;",
+		"create trigger $(name)_slno_insert_null after insert on $name when new.slno+0=0 or abs(new.slno+0)>(select count(*) from $name$by) begin
+			update $name set slno=1+(select count(*) from $name where $pkey!=new.$pkey$nby) where $pkey=new.$pkey;
+		end;",
+		"drop trigger if exists $(name)_slno_insert_negetive;",
+		"create trigger $(name)_slno_insert_negetive after insert on $name when new.slno<0 and abs(new.slno)<=(select count(*) from $name$by) begin
+			update $name set slno=slno+.5 where slno>=(select count(*) from $name$by)+new.slno$nby;
+			update $name set slno=slno+.5 where slno>=(select count(*) from $name$by)+new.slno$nby;
+			update $name set slno=(select count(*) from $name$by)+new.slno+1 where $pkey=new.$pkey;
+		end;",
+		"drop trigger if exists $(name)_slno_insert_positive;",
+		"create trigger $(name)_slno_insert_positive after insert on $name when new.slno>0 and new.slno<=(select count(*) from $name$by) begin
+			update $name set slno=slno+.5 where slno>=new.slno and $pkey!=new.$pkey$nby;
+			update $name set slno=slno+.5 where slno>=new.slno and $pkey!=new.$pkey$nby;
+		end;",
+		"create trigger $(name)_slno_delete after delete on $name begin
+			update $name set slno=slno-.5 where slno>old.slno$oby;
+			update $name set slno=slno-.5 where slno>old.slno$oby;
+		end;",
+		"create trigger $(name)_slno_update_null after update on $name when new.slno is null or new.slno=0 or new.slno='' or abs(new.slno)>(select count(*) from $name$by) begin
+			update $name set slno=slno-.5 where slno>old.slno$oby;
+			update $name set slno=slno-.5 where slno>old.slno$oby;
+			update $name set slno=(select count(*) from $name$by) where $pkey=new.$pkey;
+		end;",
+		"create trigger $(name)_slno_update_negetive after update on $name when new.slno<0 and new.slno>=-1*(select count(*) from $name$by) begin
+			update $name set slno=slno-.5 where slno>old.slno$oby;
+			update $name set slno=slno-.5 where slno>old.slno$oby;
+			update $name set slno=slno+.5 where slno>=(select count(*) from $name$by)+new.slno$nby;
+			update $name set slno=slno+.5 where slno>=(select count(*) from $name$by)+new.slno$nby;
+			update $name set slno=(select count(*) from $name$by)+new.slno where $pkey=new.$pkey;
+		end;",
+		"create trigger $(name)_slno_update_positive after update on $name when new.slno>0 and old.slno>0 and abs(new.slno-old.slno)>=1 and new.slno<=(select count(*) from $name$by) begin
+			update $name set slno=slno-.5 where slno>old.slno and $pkey!=new.$pkey$oby;
+			update $name set slno=slno-.5 where slno>old.slno and $pkey!=new.$pkey$oby;
+			update $name set slno=slno+.5 where slno>=new.slno and $pkey!=new.$pkey$nby;
+			update $name set slno=slno+.5 where slno>=new.slno and $pkey!=new.$pkey$nby;
+		end;
+		"]
+}
+map* lite_trigger_tree(char* name,char* pkey){
+	return [
+		"drop trigger if exists $(name)_tree_insert_null;",
+		
+		"create trigger $(name)_tree_insert_null after insert on $name when new.parent is null or new.parent='' begin
+		update $name set lft=(select coalesce(max(rgt),0) from $name where $pkey!=new.$pkey)+1,rgt=(select coalesce(max(rgt),0) from $name where $pkey!=new.$pkey)+2 where $pkey=new.$pkey;
+		end;",
+	
+		"drop trigger if exists $(name)_tree_insert;",
+
+		"create trigger $(name)_tree_insert after insert on $name when new.parent is not null and length(new.parent)>0 begin
+		update $name set lft=(select rgt from $name where $pkey=new.parent),rgt=(select rgt from $name where $pkey=new.parent)+1 where $pkey=new.$pkey;
+		update $name set lft=lft+2 where lft>(select rgt from $name where $pkey=new.parent);
+		update $name set rgt=rgt+2 where rgt>=(select rgt from $name where $pkey=new.parent) and $pkey!=new.$pkey;
+		end;",
+
+		"drop trigger if exists $(name)_tree_delete;",
+
+		"create trigger $(name)_tree_delete before delete on $name begin
+		update $name set lft=lft-(old.rgt-old.lft)-1 where lft>old.rgt;
+		update $name set rgt=rgt-(old.rgt-old.lft)-1 where rgt>old.rgt;
+		delete from $name where lft>old.lft and lft<old.rgt;
+		end;",
+
+		"drop trigger if exists $(name)_tree_update_null;",
+
+		"create trigger $(name)_tree_update_null after update of parent on $name when new.parent is null or length(new.parent)=0 begin
+		update $name set lft=lft+(select max(rgt) from $name)-old.lft+1,rgt=rgt+(select max(rgt) from $name)-old.lft+1 where lft>=old.lft and lft<=old.rgt;
+		update $name set lft=lft-(old.rgt-old.lft)-1 where lft>old.rgt;
+		update $name set rgt=rgt-(old.rgt-old.lft)-1 where rgt>old.rgt;
+		end;",
+	
+		"drop trigger if exists $(name)_tree_update_right;",
+
+		"create trigger $(name)_tree_update_right after update of parent on $name when new.parent is not null and length(new.parent)>0 and old.lft<(select lft from $name where $pkey=new.parent) begin
+		update $name set lft=case when lft>old.rgt and lft<(select rgt from $name where $pkey=new.parent) then lft-old.rgt+old.lft-1 when lft>=old.lft and lft<=old.rgt then lft+(select rgt from $name where $pkey=new.parent)-old.rgt-1 else lft end;
+		update $name set rgt=case when rgt>old.rgt and rgt<(select rgt from $name where $pkey=new.parent) then rgt-old.rgt+old.lft-1 when rgt>=old.lft and rgt<=old.rgt then rgt+(select rgt from $name where $pkey=new.parent)-old.rgt-1 else rgt end;
+		end;",
+		
+		"drop trigger if exists $(name)_tree_update_left;",
+
+		"create trigger $(name)_tree_update_left after update of parent on $name when new.parent is not null and length(new.parent)>0 and old.lft>(select lft from $name where $pkey=new.parent) begin
+		update $name set lft=case when lft<old.lft and lft>=(select rgt from $name where $pkey=new.parent) then lft+old.rgt-old.lft+1 when lft>=old.lft and lft<=old.rgt then lft-old.lft+(select rgt from $name where $pkey=new.parent) else lft end;
+		update $name set rgt=case when rgt<old.lft and rgt>=(select lft from $name where $pkey=old.$pkey) then rgt+old.rgt-old.lft+1 when rgt>=old.lft and rgt<=old.rgt then rgt-old.lft+(select lft from $name where $pkey=old.$pkey) else rgt end;
+		end;"
+	]
 }
