@@ -1,3 +1,4 @@
+#line 2 "sql.fox"
 #include <fox.h>
 #include <regex.h>
 #include <mkdio.h>
@@ -6,6 +7,7 @@
 int _is_web=0;
 
 map* sql_toks(char* line) => return sql_tokenizer(&line)
+	
 map* split_keywords(map* mp,char* words){
 	if !mp => return mp
 	ret={}
@@ -446,7 +448,7 @@ char* sql_add_filter(char* sql,map* filter){
 	return dsql.map_sql()
 }
 char* name_type(char* name){
-	_globals.types.each ,type
+	types().each ,type
 		if name.str_has(type) => return type
 	"name=text,desc=para,title=text".str_map().each val,key
 		if name.str_has(key) => return val
@@ -521,10 +523,6 @@ map* sql_list_cols(char* sql,char* db,map* cols=NULL){
 		if op.type===:password => continue
 		ret[f]=op
 	return ret
-}
-char* table_name(char* tbl,char* db){
-	ret=tbl.table(db).name
-	return ret ? ret : tbl.str_title()
 }
 char* sql_add_cls(char* sql,char* cls,map* vals){
 	dsql=sql.sql_map()
@@ -719,6 +717,7 @@ char* lite_create_col(map* col){
 		daymonth=varchar
 		month=varchar
 	".maptype(col.type)
+	if !type => "col.type=$(col.type) not matched".fox_error()
 	name=col.name
 	if type===:varchar => return "$name varchar($size) collate nocase not null default ''"
 	if type===:number => return "$name integer not null default 0"
@@ -729,7 +728,7 @@ char* lite_create_col(map* col){
 	if type===:time => return "$name time not null default ''"
 	if type===:datetime => return "$name datetime not null default ''"
 	if type===:yearmonth => return "$name varchar(7) not null default ''"
-	assert(0)
+	"litecreate() type $type not supported".fox_error()
 	return NULL
 }
 int is_indexed(char* type){
@@ -755,7 +754,8 @@ char* create_sql(map* tbl,char* name=NULL){
 	pkeys=tbl.cols.cols_pkeys()
 	if pkeys.map_len()==1 && tbl.cols[pkeys[0]].type.is_word("int integer")
 		cls[pkeys[0]]="$(pkeys[0]) integer primary key autoincrement"
-	else cls[]="primary key ($(pkeys.map_join(\",\")))"
+	else
+		cls[]="primary key ($(pkeys.map_join(\",\")))"
 	return "create table $name ($(cls.map_join(\",\")))"
 }
 char* meta_type(char* type,int size){
@@ -795,58 +795,29 @@ map* cols_table(map* cols,char* tbl,char* db){
 		item: tbl.str_title()
 	}
 }
-map* tables(char* db){
-	ret={}
-	db.table_names().each tbl,,i
-		ret[tbl]=tbl.table(db)	
-	return ret
-}
 int db_has_schema(char* db){
 	if !_globals.cache.has_schema.map_has_key(db)
 		_globals.cache.has_schema[db]=db.has_table(:_schema)
 	return _globals.cache.has_schema[db].is_int()
 }
-map* tbl_cols(char* tbl,char* db){
-	return tbl.table(db).cols
-}
-map* table(char* tbl,char* db){
-	if !db => return NULL
-	sign=db..tbl
-	ret=NULL
-	if (ret=sign.cache(:table)) => return ret
-	if tbl===:_schema
-		ret="
-			type=:code pkey
-			name=:code pkey
-			data=:source
-			".str_map().cols_table(:_schema,db)
-	if tbl===:_fts
-		ret="
-			id=code
-			id2=code
-			id3=code
-			id4=code
-			tbl=code
-			body=text
-			".str_map().cols_table(:_fts,db)
-	if !ret => ret=db.db_has_schema() ? db.schema_table(tbl) :  db.db_table(tbl)
-	return sign.cache(:table,ret)
-}
-map* schema_tables(char* db){
-	ret={}
-	db.schema_list(:table).each tbl
-		ret[tbl]=db.schema_table(tbl)
-	return ret
-}
-map* schema_table(char* db,char* tbl){
-	return "select data from _schema where type='table' and name=:name".sql_value(db,{name: tbl}).str_map().map_table(tbl,db)
+map* pre_tables(){
+	return {{
+		_fts
+			cols
+				id=code
+				id2=code
+				id3=code
+				id4=code
+				tbl=code
+				body=text
+	}}
 }
 map* db_table(char* db,char* tbl){
 	return db.db_cols(tbl).cols_table(tbl,db)
 }
 map* db_tables(char* db){
 	ret={}
-	db.db_table_names().user_tables().each v,,i
+	db.db_table_names().each v,,i
 		ret[v]=db.db_table(v)
 	return ret
 }
@@ -860,7 +831,8 @@ map* db_cols(char* db,char* tbl){
 		name=mp.name.str_lower()
 		col.name=name
 		func=mp.type.sql_toks().get_func(1)
-		if !func => col.type=mp.type.meta_type(0)
+		if !func
+			col.type=mp.type.meta_type(0)
 		else
 			int size=func[1][0].stoi()
 			col.size=size
@@ -952,20 +924,21 @@ char* sql_drop(char* tbl){
 char* to_sql(char* sql){
 	return sql.sql_map().map_sql()
 }
-map* schema_fkeys(char* db){
-	if NULL.cache(:schema_fkeys) => return NULL.cache(:schema_fkeys)
-	ret=[]
-	db.schema_tables().each tbl,name
-		tbl.cols.each col,f
-			if col.sql
-				sql=col.sql.fkey_sql(db)
-				ret[]={table: name, f: f, table2: sql.sql_table(), f2: sql.sql_cols(db)[0].name, db: col.db}
-				ret.dx()
-	return NULL.cache(:schema_fkeys,ret)
+map* meta_fkeys(char* db){
+	ret=_globals.meta.fkeys[db]
+	if !ret
+		ret=[]
+		_globals.meta.db.each tbl,name
+			tbl.cols.each col,f
+				if col.sql
+					sql=col.sql.fkey_sql(db)
+					ret[]={table: name, f: f, table2: sql.sql_table(), f2: sql.sql_cols(db)[0].name, db: col.db}
+		_globals.meta.fkeys[db]=ret
+	return ret
 }
 map* tbl_referred_by(char* tbl,char* db){
 	ret=[]
-	db.schema_fkeys().each rel
+	db.meta_fkeys().each rel
 		if rel.table2===tbl
 			ret[]={table: rel.table, f: rel.f, f2: rel.f2}
 	return ret
@@ -1007,24 +980,9 @@ map* sqls_exec(map* sqls,char* db){
 	sqls.each sql=> sql.lite_exec(db)
 	return sqls
 }
-map* parse_connection2(char* in){
-	if !in.str_has(",") => return { type: :lite, name: in, desc: in }
-	ret=in.str_split(",")
-	return { type: ret[0], host: ret[1], user: ret[2], pass: ret[3], name: ret[4], desc: in }
-}
-map* parse_connection(char* in){
-	ret=in.str_split(";")
-	ret=ret[0].parse_connection2()
-	ret.map_merge({
-		ddb: ret[1] ? ret[1] : ret[0],
-		module: ret[2],
-		dd: ret[3].str_split(","),
-		fulldesc: in
-	})
-	return ret
-}
+map* parse_connection(char* in) => return {type: :lite, file: in}
 map* conn_db(char* db){
-	if !db.is_code() => return db.parse_connection().db
+	if !db.is_code() => return db.parse_connection()
 	ret=_globals.dbs[db]
 	if !ret => "SQLite connection $db not found".fox_error()
 	if ret.is_str() => _globals.dbs[db]=ret.parse_connection()
@@ -1032,7 +990,7 @@ map* conn_db(char* db){
 }
 map* lite_exec(char* sql,char* db,map* params=NULL){
 	cname=db
-	db=db.conn_db().name
+	db=db.conn_db().file
 	if !db => "query() connection $(cname.str_quote()) not found $(_globals.dbs)".fox_error()
 	sqlite3* conn=_globals.conn[db]
 	sqlite3_stmt* stm=NULL
@@ -1073,29 +1031,18 @@ void close_conns(){
 		if !val => continue
 		val.sqlite3_close_v2()
 }
+map* vec_map(map* in){
+	if !in.is_vec() => return in
+	ret={}
+	in.each val
+		ret[val]=val
+	return ret
+}
 map* db_table_names(char* db){
 	if _globals.schema._tbls
 		return _globals.schema._tbls
-	_globals.schema._tbls="select name from sqlite_master where type='table' order by 1".sql_pairs(db)
+	_globals.schema._tbls="select name from sqlite_master where type='table' and name not in ('sqlite_sequence','_fts') order by 1".sql_pairs(db)
 	return _globals.schema._tbls
-}
-map* schema_table_names(char* db){
-	return "select name from _schema where type='table' order by name".sql_vector(db)
-}
-map* user_tables(map* tbls){
-	ret=[]
-	tbls.each ,k,i
-		if k.fox_at(0)=='_' || k.is_word(:sqlite_sequence)
-			continue
-		ret[]=k
-	return ret
-}
-map* table_names(char* db){
-	if db.db_has_schema() => return db.schema_table_names()
-	return db.db_table_names().user_tables()
-}
-char* col_title(map* col){
-	return col.name.str_title()
 }
 map* cols_pkeys(map* cols){
 	ret={}
@@ -1110,11 +1057,81 @@ map* crud_save(char* sql,char* db,map* cols,char* back,map* data){
 	back.http_redirect()
 	return NULL
 }
+map* types(){
+	return {{
+		text
+		tinytext text
+		code text
+		name text
+		fold text
+		html text
+		link html
+		para text
+		source para
+		password code
+		email text
+		phone text
+		imagelink text
+		guid code
+		hidden code
+		list code
+		radio list
+		multicheck list
+		grid multicheck
+		fkey list
+		combo fkey
+		user code
+		ip code
+		flist fkey
+		inline fkey
+		int code
+		smallint int
+		bigint int
+		integer int
+		number int
+		intrange int
+		amount number
+		currency amount
+		debit amount
+		credit amount
+		float int
+		duration amount
+		mins amount
+		date int
+		pastdate date
+		futuredate date
+		time date
+		hour time
+		datetime date
+		timestamp datetime
+		daterange date
+		datefrom date
+		dateupto date
+		daymonth date
+		yearmonth date
+		month yearmonth
+		quarter yearmonth
+		bool int
+		check bool
+		checkbox check
+		file para
+		jpeg file
+		imagefile jpeg
+		bmp jpeg
+		wsq jpeg
+		clob para
+		blob file
+		tinyblob blob
+		longtext blob
+		raw blob
+		largefile file
+	}}
+}
 char* maptype(char* type_map,char* type){
 	mp=type_map.str_map()
 	while(type)
 		if mp[type] => return mp[type].to_str()
-		type=_globals.types[type]
+		type=types()[type]
 	return type
 }
 /*
@@ -1223,10 +1240,20 @@ char* str_show(char* value,char* type,map* op=NULL,int width=0){
 	if type===:guid => return '<ID>'.str_html()
 	if type===:mins => n=value.to_int(); return mstr("%d:%02d",n/60,n%60)
 	if type===:duration => return 'Duration/Pending'
-	if type===:date => return value.date_show()
+	if type===:date => return value.human_time()
 	if type===:quarter => return 'Pending-Qurter'
 	if type===:image => return value ? "<img src=".._globals.base_url.."/"..value.thumb_name().."></img>" : "--"
 	return value
+}
+char* cols_show(map* cols,map* row,char* name,int width=2){
+	return row[name].str_show(cols[name].type,cols[name],width)
+}
+char* human_time(char* in){
+	if !in => return ''
+	char buffer[64]
+	time_t time=in.str_time()
+	strftime(buffer,buffer.sizeof(), "%a %e-%b-%Y %l:%M %p",localtime(&time))
+	return buffer.str_dup()
 }
 char* thumb_name(char* name){
 	parts=name.str_split("/")
@@ -1252,114 +1279,14 @@ map* rows_show(map* rows,map* cols,int width=2){
 		ret[]=r
 	return ret
 }
-char* cols_show(map* cols,map* row,char* name,int width=2){
-	return row[name].str_show(cols[name].type,cols[name],width)
-}
-map* map_table(map* mp,char* tbl,char* db){
-	ret=mp.cols.cols_table(tbl,db)
-	mp.each v ,k,i=> if k!==:cols => ret[k]=v
-	return ret
-}
-map* table_map(map* tbl){
-	tbl.map_del_key(:name).map_del_key(:db).map_compact()
-	tbl.cols.each v2,k2,i2
-		v2.map_del_key(:table).map_del_key(:db)
-		if v2.size.is_int()==v2.type.type_size()
-			v2.map_del_key(:size)
-		v2.map_compact()
-	return tbl
-}
-map* tables_map(map* tbls){
-	tbls.each v ,k,i=> v.table_map()
-	return tbls
-}
-char* db_file(char* db,char* file){
-	return {db: db.db_tables().tables_map()}.map_str().write_file(file)
-}
-char* schema_file(char* db,char* file=NULL){
-	ret={}
-	:_schema.sql_rows(db).each row,,i
-		ret[row.type][row.name]=row.data.str_map()
-	return ret.map_str().write_file(file)
-}
-map* file_compile(char* file,char* db,int go=0){
-	ret=file.file_sync_schema(db,go)
-	if go => file.file_schema(db)
-	return ret
-}
-char* file_schema(char* file,char* db){
-	db.init_schema()
-	"delete from _schema".lite_exec(db)
-	file.file_map().each vals,type,i
-		vals.each data,name,i2
-			{type: type,name: name,data: data}.row_insert(:_schema,db)
-	return file	
-}
-char* init_schema(char* db){
-	if !db.has_table(:_schema)
-		:_schema.table(db).create_sql().lite_exec(db)
-		:_schema.table(db).create_index_sqls().sqls_exec(db)	
-	else "delete from _schema where type='table'".lite_exec(db)
-	return db
-}
-char* db_schema(char* db){
-	db.init_schema()
-	db.db_tables().each data,name,i
-		{
-		type: :db,
-		name: name,
-		data: data.table_map().map_str()
-		}.row_insert(:_schema,db)
-	return db
-}
-void* sql_delete(void* ids,char* tbl,char* db){
-	return ("delete from $tbl"..re_where(tbl.pkeys_where(db))).lite_exec(db,tbl.sql_id_ids(db,ids))
-}
-char* rename_sql(char* from,char* into){
-	return "alter table $from rename to $into"
-}
-map* save_schema(char* db,char* tbl,map* data){
-	if tbl!==data.name
-		if db.has_table(data.name) => return {name: "Table exists"}
-//		from.rename_sql(into)
-//		xmap(:type,:db,:name,tbl).sql_delete(tbl,db)
-//		xmap(:type,:db,:name,tbl,:data,data).sql_insert(tbl,db)
-	return NULL
-}
-map* cols_ctrls(map* cols,map* vals=NULL,map* errs=NULL){
-	ctrls="
-		text=text
-		para=para
-		source=source
-	"
-	input_types="
-		text=text	
-		password=password
-	"
-	ret={}
-	cols.each v,k,i
-		ctrl={
-		name: k,
-		id: k,
-		value: vals[k],
-		placeholder: "",
-		ctrl: ctrls.maptype(v.type),
-		label: v.label ? v.label : k.str_title(),
-		msg: errs[k] ? errs[k] : v.req ? "<strong>* </strong>"..v.help : v.help,
-		state: errs[k] ? "has-fox_error" : "",
-		icon: errs[k] ? :remove : v.req ? :asterisk : ""
-		}
-		if ctrl.ctrl===:text
-			ctrl.type=input_types.maptype(v.type)
-		ret[k]=ctrl
-	return ret
-}
+void* sql_delete(void* ids,char* tbl,char* db) => return ("delete from $tbl"..re_where(tbl.pkeys_where(db))).lite_exec(db,tbl.sql_id_ids(db,ids))
+char* sql_rename(char* from,char* into) => return "alter table $from rename to $into"
 map* subtypes(char* type){
 	ret=[]
-	parent=_globals.types[type]
+	parent=types()[type]
 	while parent
 		ret[]=parent
-		parent=_globals.types[parent]
+		parent=types()[parent]
 	return ret.vec_reverse()
 }
 int type_distance(char* type1,char* type2){
@@ -1395,41 +1322,7 @@ map* cols_match(map* from, map* into){
 			
 	return ret
 }
-map* schema_list(char* db,char* type) => return "select name from _schema where type=:type".sql_pairs(db,{type: type})
-map* schema_item(char* db,char* type,char* name){
-	sign=db..type..name		
-	ret=NULL
-	if (ret=sign.cache(:schema_item)) => return ret
-	return sign.cache(:schema_item,"select data from _schema where type=:type and name=:name".sql_value(db,{type: type,name: name}).str_map())
-}
-char* month_name(int month){
-	char* names[]={:Jan,:Feb,:Mar,:Apr,:May,:Jun,:Jul,:Aug,:Sep,:Oct,:Nov,:Dec}
-	return names[abs(month-1)%12]
-}
-char* date_show(char* in){
-	if !in || !in.str_len() => return ""
-	if in.str_has("--")
-		vals=in.str_split("--",2)
-		return "From $(vals[0].date_show()) Upto $(vals[0].date_show())"
-	len=in.str_len()
-	if len==4 => return in
-	if len==7
-		vals=in.str_split("-")
-		return vals[1].to_int().month_name().. "-".. vals[0]
-	if len==10
-		vals=in.str_split("-")
-		return "$(vals[2].to_int().int_str())/$(vals[1].to_int().int_str())/$(vals[0])"
-	if len==19
-		vals=in.str_split(" ")
-		return "$(vals[0].date_show()) $(vals[1].date_show())"
-	if len==5 || len==8
-		vals=in.str_split(":")
-		h=vals[0].to_int()
-		if !h => h=12
-		else if h>12 => h-=12
-		return "$h:$(vals[1]) $(vals[0].to_int()>=12 ? 'pm' : 'am')"
-	return in
-}
+char* month_name(int month) => return {:Jan,:Feb,:Mar,:Apr,:May,:Jun,:Jul,:Aug,:Sep,:Oct,:Nov,:Dec}[abs(month-1)%12]
 int cmp_ptr_reverse(const void* ptr1, const void* ptr2) => return ptr2.cmp_ptr(ptr1)
 int cmp_ptr(const void* ptr1,const void* ptr2){
 	void* p1=(void*)ptr1
@@ -1488,30 +1381,26 @@ map* tbls_sync_sqls(map* new_tbls,map* old_tbls){
 	newtbls.each newt
 		sqls[]=new_tbls[newt].create_sql()
 	oldtbls.each oldt
-		sqls[]=oldt.drop_sql()
+		sqls[]=oldt.name.drop_sql()
 	return sqls
 }
-map* schema_sync_db(char* file,char* db,int go=0){
-	ret=db.schema_tables().tbls_sync_sqls(db.db_tables())
-	if go && ret->len => ret.sqls_exec(db)
+map* db_meta(char* db){
+	if !db => return NULL
+	if !_globals.meta
+		_globals.meta=(db.file_rename(NULL,".db")..".meta").file_read().data_map()
+		_globals.meta.db.each val,key
+			val.name=key
+	return _globals.meta
+}
+map* tbl_cols(char* table,char* db) => return db.db_meta().db[table].cols
+map* db_sync(char* db,int go=0){
+	ret=db.db_meta().db.tbls_sync_sqls(db.db_tables())
+	if go==1 && ret->len => ret.sqls_exec(db)
+	else if go==2
+		ret.map_join(";\n").px(0)
+		if ret.map_len() => ";".px()
 	return ret
 }
-map* file_tables(char* file){
-	ret=file.file_map().table
-	ret.each tbl,name => ret[name]=tbl.map_table(name,NULL)
-	return ret
-}
-map* file_sync_schema(char* file,char* db,int go=0){
-	ret=file.file_tables().tbls_sync_sqls(db.schema_tables())
-	if go && ret->len => ret.sqls_exec(db)
-	return ret
-}
-map* file_sync_db(char* file,char* db,int go=0){
-	ret=file.file_tables().tbls_sync_sqls(db.db_tables())
-	if go && ret->len => ret.sqls_exec(db)
-	return ret
-}
-
 map* sync_sqls(map* newt,map* oldt){
 	if oldt.create_sql()===newt.create_sql() => return NULL	
 	match=oldt.cols.cols_match(newt.cols)
@@ -1520,7 +1409,7 @@ map* sync_sqls(map* newt,map* oldt){
 	ret[]=newt.create_sql(:_syncing)
 	ret[]="insert into _syncing ("..match.map_keys().map_join(".. ")..") select "..match.map_join(".. ").." from "..oldt.name
 	ret[]=oldt.name.drop_sql()
-	ret[]=:_syncing.rename_sql(newt.name)
+	ret[]=:_syncing.sql_rename(newt.name)
 	return ret	
 }
 int utf8_strlen(char* in){
@@ -2012,94 +1901,94 @@ char* show_port(){
 	if _globals.req.protocol===:https && _globals.req.port==="443" => return ''
 	return ":".._globals.req.port
 }
-map* lite_trigger_slno(char* name, char* pkey, char* by=NULL){
-	nby=by and " and $by=new.$by"
-	oby=by and " and $by=old.$by"
-	by&&=" where $by=new.$by"
-	return [
-		"drop trigger if exists $(name)_slno_insert_null;",
-		"create trigger $(name)_slno_insert_null after insert on $name when new.slno+0=0 or abs(new.slno+0)>(select count(*) from $name$by) begin
-			update $name set slno=1+(select count(*) from $name where $pkey!=new.$pkey$nby) where $pkey=new.$pkey;
-		end;",
-		"drop trigger if exists $(name)_slno_insert_negetive;",
-		"create trigger $(name)_slno_insert_negetive after insert on $name when new.slno<0 and abs(new.slno)<=(select count(*) from $name$by) begin
-			update $name set slno=slno+.5 where slno>=(select count(*) from $name$by)+new.slno$nby;
-			update $name set slno=slno+.5 where slno>=(select count(*) from $name$by)+new.slno$nby;
-			update $name set slno=(select count(*) from $name$by)+new.slno+1 where $pkey=new.$pkey;
-		end;",
-		"drop trigger if exists $(name)_slno_insert_positive;",
-		"create trigger $(name)_slno_insert_positive after insert on $name when new.slno>0 and new.slno<=(select count(*) from $name$by) begin
-			update $name set slno=slno+.5 where slno>=new.slno and $pkey!=new.$pkey$nby;
-			update $name set slno=slno+.5 where slno>=new.slno and $pkey!=new.$pkey$nby;
-		end;",
-		"create trigger $(name)_slno_delete after delete on $name begin
-			update $name set slno=slno-.5 where slno>old.slno$oby;
-			update $name set slno=slno-.5 where slno>old.slno$oby;
-		end;",
-		"create trigger $(name)_slno_update_null after update on $name when new.slno is null or new.slno=0 or new.slno='' or abs(new.slno)>(select count(*) from $name$by) begin
-			update $name set slno=slno-.5 where slno>old.slno$oby;
-			update $name set slno=slno-.5 where slno>old.slno$oby;
-			update $name set slno=(select count(*) from $name$by) where $pkey=new.$pkey;
-		end;",
-		"create trigger $(name)_slno_update_negetive after update on $name when new.slno<0 and new.slno>=-1*(select count(*) from $name$by) begin
-			update $name set slno=slno-.5 where slno>old.slno$oby;
-			update $name set slno=slno-.5 where slno>old.slno$oby;
-			update $name set slno=slno+.5 where slno>=(select count(*) from $name$by)+new.slno$nby;
-			update $name set slno=slno+.5 where slno>=(select count(*) from $name$by)+new.slno$nby;
-			update $name set slno=(select count(*) from $name$by)+new.slno where $pkey=new.$pkey;
-		end;",
-		"create trigger $(name)_slno_update_positive after update on $name when new.slno>0 and old.slno>0 and abs(new.slno-old.slno)>=1 and new.slno<=(select count(*) from $name$by) begin
-			update $name set slno=slno-.5 where slno>old.slno and $pkey!=new.$pkey$oby;
-			update $name set slno=slno-.5 where slno>old.slno and $pkey!=new.$pkey$oby;
-			update $name set slno=slno+.5 where slno>=new.slno and $pkey!=new.$pkey$nby;
-			update $name set slno=slno+.5 where slno>=new.slno and $pkey!=new.$pkey$nby;
-		end;
-		"]
-}
-map* lite_trigger_tree(char* name,char* pkey){
-	return [
-		"drop trigger if exists $(name)_tree_insert_null;",
-		
-		"create trigger $(name)_tree_insert_null after insert on $name when new.parent is null or new.parent='' begin
-		update $name set lft=(select coalesce(max(rgt),0) from $name where $pkey!=new.$pkey)+1,rgt=(select coalesce(max(rgt),0) from $name where $pkey!=new.$pkey)+2 where $pkey=new.$pkey;
-		end;",
-	
-		"drop trigger if exists $(name)_tree_insert;",
-
-		"create trigger $(name)_tree_insert after insert on $name when new.parent is not null and length(new.parent)>0 begin
-		update $name set lft=(select rgt from $name where $pkey=new.parent),rgt=(select rgt from $name where $pkey=new.parent)+1 where $pkey=new.$pkey;
-		update $name set lft=lft+2 where lft>(select rgt from $name where $pkey=new.parent);
-		update $name set rgt=rgt+2 where rgt>=(select rgt from $name where $pkey=new.parent) and $pkey!=new.$pkey;
-		end;",
-
-		"drop trigger if exists $(name)_tree_delete;",
-
-		"create trigger $(name)_tree_delete before delete on $name begin
-		update $name set lft=lft-(old.rgt-old.lft)-1 where lft>old.rgt;
-		update $name set rgt=rgt-(old.rgt-old.lft)-1 where rgt>old.rgt;
-		delete from $name where lft>old.lft and lft<old.rgt;
-		end;",
-
-		"drop trigger if exists $(name)_tree_update_null;",
-
-		"create trigger $(name)_tree_update_null after update of parent on $name when new.parent is null or length(new.parent)=0 begin
-		update $name set lft=lft+(select max(rgt) from $name)-old.lft+1,rgt=rgt+(select max(rgt) from $name)-old.lft+1 where lft>=old.lft and lft<=old.rgt;
-		update $name set lft=lft-(old.rgt-old.lft)-1 where lft>old.rgt;
-		update $name set rgt=rgt-(old.rgt-old.lft)-1 where rgt>old.rgt;
-		end;",
-	
-		"drop trigger if exists $(name)_tree_update_right;",
-
-		"create trigger $(name)_tree_update_right after update of parent on $name when new.parent is not null and length(new.parent)>0 and old.lft<(select lft from $name where $pkey=new.parent) begin
-		update $name set lft=case when lft>old.rgt and lft<(select rgt from $name where $pkey=new.parent) then lft-old.rgt+old.lft-1 when lft>=old.lft and lft<=old.rgt then lft+(select rgt from $name where $pkey=new.parent)-old.rgt-1 else lft end;
-		update $name set rgt=case when rgt>old.rgt and rgt<(select rgt from $name where $pkey=new.parent) then rgt-old.rgt+old.lft-1 when rgt>=old.lft and rgt<=old.rgt then rgt+(select rgt from $name where $pkey=new.parent)-old.rgt-1 else rgt end;
-		end;",
-		
-		"drop trigger if exists $(name)_tree_update_left;",
-
-		"create trigger $(name)_tree_update_left after update of parent on $name when new.parent is not null and length(new.parent)>0 and old.lft>(select lft from $name where $pkey=new.parent) begin
-		update $name set lft=case when lft<old.lft and lft>=(select rgt from $name where $pkey=new.parent) then lft+old.rgt-old.lft+1 when lft>=old.lft and lft<=old.rgt then lft-old.lft+(select rgt from $name where $pkey=new.parent) else lft end;
-		update $name set rgt=case when rgt<old.lft and rgt>=(select lft from $name where $pkey=old.$pkey) then rgt+old.rgt-old.lft+1 when rgt>=old.lft and rgt<=old.rgt then rgt-old.lft+(select lft from $name where $pkey=old.$pkey) else rgt end;
-		end;"
-	]
-}
+//map* lite_trigger_slno(char* name, char* pkey, char* by=NULL){
+//	nby=by and " and $by=new.$by"
+//	oby=by and " and $by=old.$by"
+//	by&&=" where $by=new.$by"
+//	return [
+//		"drop trigger if exists $(name)_slno_insert_null;",
+//		"create trigger $(name)_slno_insert_null after insert on $name when new.slno+0=0 or abs(new.slno+0)>(select count(*) from $name$by) begin
+//			update $name set slno=1+(select count(*) from $name where $pkey!=new.$pkey$nby) where $pkey=new.$pkey;
+//		end;",
+//		"drop trigger if exists $(name)_slno_insert_negetive;",
+//		"create trigger $(name)_slno_insert_negetive after insert on $name when new.slno<0 and abs(new.slno)<=(select count(*) from $name$by) begin
+//			update $name set slno=slno+.5 where slno>=(select count(*) from $name$by)+new.slno$nby;
+//			update $name set slno=slno+.5 where slno>=(select count(*) from $name$by)+new.slno$nby;
+//			update $name set slno=(select count(*) from $name$by)+new.slno+1 where $pkey=new.$pkey;
+//		end;",
+//		"drop trigger if exists $(name)_slno_insert_positive;",
+//		"create trigger $(name)_slno_insert_positive after insert on $name when new.slno>0 and new.slno<=(select count(*) from $name$by) begin
+//			update $name set slno=slno+.5 where slno>=new.slno and $pkey!=new.$pkey$nby;
+//			update $name set slno=slno+.5 where slno>=new.slno and $pkey!=new.$pkey$nby;
+//		end;",
+//		"create trigger $(name)_slno_delete after delete on $name begin
+//			update $name set slno=slno-.5 where slno>old.slno$oby;
+//			update $name set slno=slno-.5 where slno>old.slno$oby;
+//		end;",
+//		"create trigger $(name)_slno_update_null after update on $name when new.slno is null or new.slno=0 or new.slno='' or abs(new.slno)>(select count(*) from $name$by) begin
+//			update $name set slno=slno-.5 where slno>old.slno$oby;
+//			update $name set slno=slno-.5 where slno>old.slno$oby;
+//			update $name set slno=(select count(*) from $name$by) where $pkey=new.$pkey;
+//		end;",
+//		"create trigger $(name)_slno_update_negetive after update on $name when new.slno<0 and new.slno>=-1*(select count(*) from $name$by) begin
+//			update $name set slno=slno-.5 where slno>old.slno$oby;
+//			update $name set slno=slno-.5 where slno>old.slno$oby;
+//			update $name set slno=slno+.5 where slno>=(select count(*) from $name$by)+new.slno$nby;
+//			update $name set slno=slno+.5 where slno>=(select count(*) from $name$by)+new.slno$nby;
+//			update $name set slno=(select count(*) from $name$by)+new.slno where $pkey=new.$pkey;
+//		end;",
+//		"create trigger $(name)_slno_update_positive after update on $name when new.slno>0 and old.slno>0 and abs(new.slno-old.slno)>=1 and new.slno<=(select count(*) from $name$by) begin
+//			update $name set slno=slno-.5 where slno>old.slno and $pkey!=new.$pkey$oby;
+//			update $name set slno=slno-.5 where slno>old.slno and $pkey!=new.$pkey$oby;
+//			update $name set slno=slno+.5 where slno>=new.slno and $pkey!=new.$pkey$nby;
+//			update $name set slno=slno+.5 where slno>=new.slno and $pkey!=new.$pkey$nby;
+//		end;
+//		"]
+//}
+//map* lite_trigger_tree(char* name,char* pkey){
+//	return [
+//		"drop trigger if exists $(name)_tree_insert_null;",
+//		
+//		"create trigger $(name)_tree_insert_null after insert on $name when new.parent is null or new.parent='' begin
+//		update $name set lft=(select coalesce(max(rgt),0) from $name where $pkey!=new.$pkey)+1,rgt=(select coalesce(max(rgt),0) from $name where $pkey!=new.$pkey)+2 where $pkey=new.$pkey;
+//		end;",
+//	
+//		"drop trigger if exists $(name)_tree_insert;",
+//
+//		"create trigger $(name)_tree_insert after insert on $name when new.parent is not null and length(new.parent)>0 begin
+//		update $name set lft=(select rgt from $name where $pkey=new.parent),rgt=(select rgt from $name where $pkey=new.parent)+1 where $pkey=new.$pkey;
+//		update $name set lft=lft+2 where lft>(select rgt from $name where $pkey=new.parent);
+//		update $name set rgt=rgt+2 where rgt>=(select rgt from $name where $pkey=new.parent) and $pkey!=new.$pkey;
+//		end;",
+//
+//		"drop trigger if exists $(name)_tree_delete;",
+//
+//		"create trigger $(name)_tree_delete before delete on $name begin
+//		update $name set lft=lft-(old.rgt-old.lft)-1 where lft>old.rgt;
+//		update $name set rgt=rgt-(old.rgt-old.lft)-1 where rgt>old.rgt;
+//		delete from $name where lft>old.lft and lft<old.rgt;
+//		end;",
+//
+//		"drop trigger if exists $(name)_tree_update_null;",
+//
+//		"create trigger $(name)_tree_update_null after update of parent on $name when new.parent is null or length(new.parent)=0 begin
+//		update $name set lft=lft+(select max(rgt) from $name)-old.lft+1,rgt=rgt+(select max(rgt) from $name)-old.lft+1 where lft>=old.lft and lft<=old.rgt;
+//		update $name set lft=lft-(old.rgt-old.lft)-1 where lft>old.rgt;
+//		update $name set rgt=rgt-(old.rgt-old.lft)-1 where rgt>old.rgt;
+//		end;",
+//	
+//		"drop trigger if exists $(name)_tree_update_right;",
+//
+//		"create trigger $(name)_tree_update_right after update of parent on $name when new.parent is not null and length(new.parent)>0 and old.lft<(select lft from $name where $pkey=new.parent) begin
+//		update $name set lft=case when lft>old.rgt and lft<(select rgt from $name where $pkey=new.parent) then lft-old.rgt+old.lft-1 when lft>=old.lft and lft<=old.rgt then lft+(select rgt from $name where $pkey=new.parent)-old.rgt-1 else lft end;
+//		update $name set rgt=case when rgt>old.rgt and rgt<(select rgt from $name where $pkey=new.parent) then rgt-old.rgt+old.lft-1 when rgt>=old.lft and rgt<=old.rgt then rgt+(select rgt from $name where $pkey=new.parent)-old.rgt-1 else rgt end;
+//		end;",
+//		
+//		"drop trigger if exists $(name)_tree_update_left;",
+//
+//		"create trigger $(name)_tree_update_left after update of parent on $name when new.parent is not null and length(new.parent)>0 and old.lft>(select lft from $name where $pkey=new.parent) begin
+//		update $name set lft=case when lft<old.lft and lft>=(select rgt from $name where $pkey=new.parent) then lft+old.rgt-old.lft+1 when lft>=old.lft and lft<=old.rgt then lft-old.lft+(select rgt from $name where $pkey=new.parent) else lft end;
+//		update $name set rgt=case when rgt<old.lft and rgt>=(select lft from $name where $pkey=old.$pkey) then rgt+old.rgt-old.lft+1 when rgt>=old.lft and rgt<=old.rgt then rgt-old.lft+(select lft from $name where $pkey=old.$pkey) else rgt end;
+//		end;"
+//	]
+//}

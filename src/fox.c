@@ -1167,7 +1167,7 @@ char* map_str_indent(map* mp,int indent){
 						ret=xcat(ret," ",k2,"=",v2, End);
 					}else if(is_num(v2)){
 						if(is_int(v2)){
-							ret=xcat(ret," ",k2,"=#",is_int(v2), End);
+							ret=xcat(ret," ",k2,"=#",int_str(is_int(v2)), End);
 						}else {is_double(v2);};
 							ret=xcat(ret," ",k2,"=#",double_str(is_double(v2)), End);
 					}else{
@@ -1185,7 +1185,7 @@ char* map_str_indent(map* mp,int indent){
 				if(bl){ ret=xcat(ret,"\n",bl, End); }; };
 		}else if(type==Vector||is_int(k)){
 			ret=xcat(ret,to_str(v,"",0),"\n", End);
-		}else if(is_i(v)){ ret=xcat(ret,k,"=#",is_int(v),"\n", End); }
+		}else if(is_i(v)){ ret=xcat(ret,k,"=#",int_str(is_int(v)),"\n", End); }
 		else if(is_double(v)){ ret=xcat(ret,k,"=#",double_str(is_double(v)),"\n", End); }
 		else if(is_str(v)){
 			if(strchr(v,'\n')){
@@ -1667,7 +1667,7 @@ map* heredoc_parts(char* str){
 //	if !str.is_str() => return NULL
 	if(!str || !is_str(str) ||!*str){ return NULL; };
 	if(!((*str=='\'' && strchr(str,'\n'))||(*str=='"' && str[1]!='"' && strchr(str,'\n'))||str_start(str,"---"))){ return NULL; };
-	if(str_chr("\"'`",*str)){ return multiline_parts(str); };
+	if(str_chr("\"`",*str)){ return multiline_parts(str); };
 	map* lines=str_split(str,"\n",0);
 	int indent=0;
 	char* end=str+str_len(str)-1;
@@ -2496,12 +2496,13 @@ map* add_return(map* toks){
 map* wrap_call(map* tok,char* func){
 	return xvec(NULL,func,NULL,"(",NULL,tok,NULL,")", End);
 };
+char* int_str2(long long value){ return int_str(value); };
 map* type_convert(map* tok,char* outtype,map* env,map* fs,map* fn){
 	if(!outtype){ return tok; };
 	char* intype=expr_type(tok,0,0,env,fs);	
 	if(!intype){ return tok; };
 	if(str_eq(intype,outtype)){ return tok; };
-	if(str_eq(intype,"int")){
+	if(is_word(intype,"int long size_t") || str_eq(intype,"long long")){
 		if(str_eq(outtype,"void*")){ return wrap_call(tok,"int_var"); }
 		else if(str_eq(outtype,"char*")){ return wrap_call(tok,"int_str"); }; };
 	if(str_eq(intype,"double")){
@@ -2806,7 +2807,7 @@ char* funcs_cdecl(map* fns,int show_default){
 	return ret;
 };
 char* foxh(){
-	return "---\n"
+	return ""
 	"/* This is a generated file. To change it, edit function foxh() in fox.c */\n"
 	"#define _XOPEN_SOURCE\n"
 	"#ifndef _GNU_SOURCE\n"
@@ -2912,8 +2913,8 @@ char* foxh(){
 	"#define End (char*)(0x0FF1B14E059AD3BA)\n"
 	"\n"
 	"void* php_global(char* name);\n"
-	"\n"
-	"---";
+	""
+	"";
 };
 char* write_foxh(char* outfile){
 	return write_file((xstr(foxh(),funcs_cdecl(source_funcs(),0), End)),outfile,0,1);
@@ -3167,7 +3168,7 @@ char* fox_phpc(char* infile,char* outfile){
 	return write_file(ret,outfile,0,1);
 };
 char* write_phpconfig(){
-	return write_file("---\n"
+	return write_file(""
 	"PHP_ARG_ENABLE(foxphp, whether to enable FoxPHP library support,\n"
 	"[ --enable-foxphp   Enable FoxPHP library support])\n"
 	"if test \"$PHP_FOXPHP\" = \"yes\"; then\n"
@@ -3175,8 +3176,8 @@ char* write_phpconfig(){
 	"  AC_DEFINE(HAVE_FOXPHP, 1, [Whether you have FoxPHP Library])\n"
 	"  PHP_NEW_EXTENSION(foxphp, foxphp.c fox.c sql.c extern.c callfunc.c, $ext_shared,,-Wno-logical-op-parentheses -DPHP_MOD)\n"
 	"fi\n"
-	"\n"
-	"---","config.m4",0,1);
+	""
+	"","config.m4",0,1);
 };
 char* write_meta(char* outfile){
 	map* funcs=source_funcs();
@@ -3203,7 +3204,7 @@ char* write_meta(char* outfile){
 	"	}\n", 
 	"}\n", 
 	"", 
-	"", End)),outfile,1,1);
+	"", End)),outfile,0,1);
 	px(mem_usage(),1);
 	return ret;
 };
@@ -3684,7 +3685,7 @@ int err_msg(char* msg,char** ptr){
 	return 0;
 };
 char* tutorial(){
-	return "-------\n"
+	return ""
 	"# Fox Language\n"
 	"Fox language. Transcompiles source into into human readable C.\n"
 	"Maintaining your original format, comment and indention and line number.\n"
@@ -4129,8 +4130,8 @@ char* tutorial(){
 	"str===:hello\n"
 	"str.is_word(\"hello helo hilo\")\n"
 	"```\n"
-	"\n"
-	"-------";
+	""
+	"";
 };
 char* h(char* in){
 	return str_replace(in,xmap(

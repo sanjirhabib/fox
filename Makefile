@@ -34,6 +34,9 @@ safe:
 	ar rcs lib/libfoxstatic.a $(OBJ)
 	gcc -o bin/fox obj/main.o $(CFLAGS) -Llib -lm $(LIBS) -lfoxstatic -lfoxcmdstatic
 
+temp: obj/main.o $(DEPS) $(OBJ) $(FOXS) $(XLIBS)
+	gcc -o $@ obj/main.o $(CFLAGS) -Llib -lm $(LIBS) -lfoxstatic -lfoxcmdstatic
+
 bin/fox: obj/main.o $(DEPS) $(OBJ) $(FOXS) $(XLIBS)
 	gcc -o $@ obj/main.o $(CFLAGS) -Llib -lm $(LIBS) -lfoxstatic -lfoxcmdstatic
 	cd tests && ../bin/fox utests
@@ -67,6 +70,7 @@ src/meta.c: $(FOXS) include/fox.h
 
 install: bin/fox lib/libfoxstatic.a lib/libfoxcgistatic.a
 	cd tests && ../bin/fox utests
+	cp /usr/local/bin/fox /tmp/fox.`now`
 	cp include/fox.h $(INSTALL_DIR)/include/fox.h
 	cp bin/fox $(INSTALL_DIR)/bin/fox
 	cp lib/libfoxstatic.a $(INSTALL_DIR)/lib/

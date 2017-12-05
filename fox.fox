@@ -1667,7 +1667,7 @@ map* heredoc_parts(char* str){
 //	if !str.is_str() => return NULL
 	if !str || !str.is_str() ||!*str => return NULL
 	if !((*str=='\'' && str.strchr('\n'))||(*str=='"' && str[1]!='"' && str.strchr('\n'))||str.str_start("---")) => return NULL
-	if "\"'`".str_chr(*str) => return str.multiline_parts()
+	if "\"`".str_chr(*str) => return str.multiline_parts()
 	lines=str.str_split("\n",0)
 	indent=0
 	end=str+str.str_len()-1
@@ -2496,12 +2496,13 @@ map* add_return(map* toks){
 map* wrap_call(map* tok,char* func){
 	return [NULL,func,NULL,"(",NULL,tok,NULL,")"]
 }
+char* int_str2(long long value) => return value.int_str()
 map* type_convert(map* tok,char* outtype,map* env,map* fs,map* fn){
 	if !outtype => return tok
 	intype=tok.expr_type(0,0,env,fs)	
 	if !intype => return tok
 	if intype===outtype => return tok
-	if intype===:int
+	if intype.is_word("int long size_t") || intype==="long long"
 		if outtype==="void*" => return tok.wrap_call(:int_var)
 		else if outtype==="char*" => return tok.wrap_call(:int_str)
 	if intype===:double
@@ -3203,7 +3204,7 @@ char* write_meta(char* outfile){
 		}
 	}
 
-	---.x_c().write_file(outfile,1)
+	---.x_c().write_file(outfile,0)
 	mem_usage().px()
 	return ret
 }
