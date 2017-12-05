@@ -691,32 +691,32 @@ int sql_utest(char* in,char* out){
 	return ret.utest(out,in)
 }
 int type_size(char* type){
-	return "
-		text=128
-		code=50
-		guid=36
-		int=18
-		bool=1
-		para=256
-		daymonth=5
-		month=7
-	".maptype(type).to_int()
+	return {{
+		text 129
+		code 50
+		guid 36
+		int 18
+		bool 1
+		para 256
+		daymonth 5
+		month 7
+	}}.maptype(type).to_int()
 }
 char* lite_create_col(map* col){
 	size=col.size.to_int()
 	if !size => size=col.type.type_size()
-	type="
-		text=varchar
-		para=clob
-		file=blob
-		int=number
-		float=float
-		date=date
-		time=time
-		datetime=datetime
-		daymonth=varchar
-		month=varchar
-	".maptype(col.type)
+	type={{
+		text varchar
+		para clob
+		file blob
+		int number
+		float float
+		date date
+		time time
+		datetime datetime
+		daymonth varchar
+		month varchar
+	}}.maptype(col.type)
 	if !type => "col.type=$(col.type) not matched".fox_error()
 	name=col.name
 	if type===:varchar => return "$name varchar($size) collate nocase not null default ''"
@@ -732,12 +732,12 @@ char* lite_create_col(map* col){
 	return NULL
 }
 int is_indexed(char* type){
-	return "
-		text=0
-		code=1
-		password=0
-		email=0
-	".maptype(type).to_int()
+	return {{
+		text 0
+		code 1
+		password 0
+		email 0
+	}}.maptype(type).to_int()
 }
 map* create_index_sqls(map* tbl){
 	ret=[]
@@ -1127,8 +1127,7 @@ map* types(){
 		largefile file
 	}}
 }
-char* maptype(char* type_map,char* type){
-	mp=type_map.str_map()
+char* maptype(map* mp,char* type){
 	while(type)
 		if mp[type] => return mp[type].to_str()
 		type=types()[type]
@@ -1206,25 +1205,25 @@ char* str_show(char* value,char* type,map* op=NULL,int width=0){
 	if !type => return value
 	if op.list => return op.list[value] ? op.list[value].str_title() : value
 	if op.sql && op.db => return op.sql.fkey_show(op.db,value)
-	type="
-		text=text
-		para=para
-		source=source
-		password=password
-		html=html
-		guid=guid
-		amount=number
-		mins=mins
-		debit=debit
-		credit=credit
-		bool=bool
-		email=email
-		date=date
-		quarter=quarter
-		file=file
-		jpeg=image
-		duration=duration
-	".maptype(type)
+	type={{
+		text text
+		para para
+		source source
+		password password
+		html html
+		guid guid
+		amount number
+		mins mins
+		debit debit
+		credit credit
+		bool bool
+		email email
+		date date
+		quarter quarter
+		file file
+		jpeg image
+		duration duration
+	}}.maptype(type)
 	if width && type.is_word("source text para") && value.str_len()>width*256 => value=value.sub_str(0,width*256)
 	if type===:bool => return value.is_int() ? 'Yes' : 'No'
 	if type===:text => return value.str_html()
@@ -1489,10 +1488,10 @@ char* test_out(char* in){
 map* sql_sums(char* sql,char* db,map* cols,map* params){
 	sum={}
 	cols.each col,f
-		if !"
-			text=0
-			amount=1
-			".maptype(col.type).to_int() => continue
+		if !{{
+			text 0
+			amount 1
+		}}.maptype(col.type).to_int() => continue
 		expr=col.expr.sql_str()
 		if !col.aggregate && !expr.str_start("sum(") && !expr.str_start("count(") => expr="sum($expr)"
 		sum[f]=expr.sql_toks()

@@ -37,21 +37,23 @@ int make(map* files=source_files(),char* outdir="c"){
 	return req ? files.compile(outdir) : 0
 }
 int cgi(char* infile="main.fox", char* outfile="index.cgi",char* opts=NULL,int keepfiles=0) => return infile.cc(outfile, :cgi, opts, keepfiles)
-int cc(char* infile, char* outfile=NULL, char* as="debug", char* opts=NULL, int keepfiles=0){
+int cc(char* infile, char* outfile=NULL, char* profile="debug", char* opts=NULL, int keepfiles=0){
 	infile=infile.file_rename(,".fox")
 	if !outfile => outfile=infile
 	in=infile..".fox"
 	in.fox_c(infile..".c")
 	in.fox_h(infile..".h")
-	libs="-I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lcrypto -lmarkdown -lcurl -lsqlite3 -Wno-unused-command-line-argument"
+	cflags="-I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -Wno-unused-command-line-argument"
+	xlibs=" -lcrypto -lmarkdown -lcurl -lsqlite3"
 	switches={
-		debug: "-O0 -lfox $libs"
-		speed: "-Os -lfox $libs"
-		static: "-lfoxstatic -lfoxcmdstatic $libs -fdata-sections -ffunction-sections -Wl,-dead_strip"
-		cgi: "-Os -lfoxstatic -lfoxcgistatic $libs -fdata-sections -ffunction-sections"
+		debug: "-O0 -lfox $cflags $xlibs"
+		speed: "-O3 -lfox $cflags $xlibs"
+		size: "-Os -lfox $cflags"
+		static: "-lfoxstatic -lfoxcmdstatic $cflags -fdata-sections -ffunction-sections -Wl,-dead_strip"
+		cgi: "-Os -lfoxstatic -lfoxcgistatic $cflags $xlibs -fdata-sections -ffunction-sections"
 	}
-	as = as ? switches[as] : ''
-	ret="gcc $infile.c -o $outfile $as $opts -std=gnu99 -Wno-logical-op-parentheses -lm 2>&1"
+	profile = switches[profile] or switches[:debug]
+	ret="gcc $infile.c -o $outfile $profile $opts -std=gnu99 -Wno-logical-op-parentheses -lm 2>&1"
 		.px()
 		.exec()
 	if !keepfiles

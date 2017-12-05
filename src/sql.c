@@ -691,32 +691,32 @@ int sql_utest(char* in,char* out){
 	return utest(ret,out,in,"");
 };
 int type_size(char* type){
-	return to_int(maptype("\n"
-	"	text=128\n"
-	"	code=50\n"
-	"	guid=36\n"
-	"	int=18\n"
-	"	bool=1\n"
-	"	para=256\n"
-	"	daymonth=5\n"
-	"	month=7\n"
-	"",type));
+	return to_int(maptype(xmap(
+		"text", "129",
+		"code", "50",
+		"guid", "36",
+		"int", "18",
+		"bool", "1",
+		"para", "256",
+		"daymonth", "5",
+		"month", "7"
+	, End),type));
 };
 char* lite_create_col(map* col){
 	long long size=to_int(map_val(col,"size"));
 	if(!size){ size=type_size(map_val(col,"type")); };
-	char* type=maptype("\n"
-	"	text=varchar\n"
-	"	para=clob\n"
-	"	file=blob\n"
-	"	int=number\n"
-	"	float=float\n"
-	"	date=date\n"
-	"	time=time\n"
-	"	datetime=datetime\n"
-	"	daymonth=varchar\n"
-	"	month=varchar\n"
-	"",map_val(col,"type"));
+	char* type=maptype(xmap(
+		"text", "varchar",
+		"para", "clob",
+		"file", "blob",
+		"int", "number",
+		"float", "float",
+		"date", "date",
+		"time", "time",
+		"datetime", "datetime",
+		"daymonth", "varchar",
+		"month", "varchar"
+	, End),map_val(col,"type"));
 	if(!type){ fox_error(xstr("col.type=", map_val(col,"type"), " not matched", End),0); };
 	void* name=map_val(col,"name");
 	if(str_eq(type,"varchar")){ return xstr(name, " varchar(",int_str( size), ") collate nocase not null default ''", End); };
@@ -732,12 +732,12 @@ char* lite_create_col(map* col){
 	return NULL;
 };
 int is_indexed(char* type){
-	return to_int(maptype("\n"
-	"	text=0\n"
-	"	code=1\n"
-	"	password=0\n"
-	"	email=0\n"
-	"",type));
+	return to_int(maptype(xmap(
+		"text", "0",
+		"code", "1",
+		"password", "0",
+		"email", "0"
+	, End),type));
 };
 map* create_index_sqls(map* tbl){
 	map* ret=new_vec();
@@ -809,8 +809,8 @@ map* pre_tables(){
 				"id3=code",xmap(End),
 				"id4=code",xmap(End),
 				"tbl=code",xmap(End),
-				"body=text",xmap(End), End), End)
-	, End);
+				"body=text",xmap(End), End), End),
+	"options",NULL, End);
 };
 map* db_table(char* db,char* tbl){
 	return cols_table(db_cols(db,tbl),tbl,db);
@@ -1127,8 +1127,7 @@ map* types(){
 		"largefile", "file"
 	, End);
 };
-char* maptype(char* type_map,char* type){
-	map* mp=str_map(type_map,Map);
+char* maptype(map* mp,char* type){
 	while(type){
 		if(map_val(mp,type)){ return to_str(map_val(mp,type),"",0); };
 		type=map_val(types(),type); };
@@ -1206,25 +1205,25 @@ char* str_show(char* value,char* type,map* op,int width){
 	if(!type){ return value; };
 	if(map_val(op,"list")){ return map_val(map_val(op,"list"),value) ? str_title(map_val(map_val(op,"list"),value)) : value; };
 	if(map_val(op,"sql") && map_val(op,"db")){ return fkey_show(map_val(op,"sql"),map_val(op,"db"),value); };
-	type=maptype("\n"
-	"	text=text\n"
-	"	para=para\n"
-	"	source=source\n"
-	"	password=password\n"
-	"	html=html\n"
-	"	guid=guid\n"
-	"	amount=number\n"
-	"	mins=mins\n"
-	"	debit=debit\n"
-	"	credit=credit\n"
-	"	bool=bool\n"
-	"	email=email\n"
-	"	date=date\n"
-	"	quarter=quarter\n"
-	"	file=file\n"
-	"	jpeg=image\n"
-	"	duration=duration\n"
-	"",type);
+	type=maptype(xmap(
+		"text", "text",
+		"para", "para",
+		"source", "source",
+		"password", "password",
+		"html", "html",
+		"guid", "guid",
+		"amount", "number",
+		"mins", "mins",
+		"debit", "debit",
+		"credit", "credit",
+		"bool", "bool",
+		"email", "email",
+		"date", "date",
+		"quarter", "quarter",
+		"file", "file",
+		"jpeg", "image",
+		"duration", "duration"
+	, End),type);
 	if(width && is_word(type,"source text para") && str_len(value)>width*256){ value=sub_str(value,0,width*256); };
 	if(str_eq(type,"bool")){ return is_int(value) ? "Yes" : "No"; };
 	if(str_eq(type,"text")){ return str_html(value); };
@@ -1489,10 +1488,10 @@ char* test_out(char* in){
 map* sql_sums(char* sql,char* db,map* cols,map* params){
 	map* sum=new_map();
 	for(int next1=next(cols,-1,NULL,NULL); has_id(cols,next1); next1++){ void* col=map_id(cols,next1); char* f=map_key(cols, next1);
-		if(!to_int(maptype("\n"
-			"text=0\n"
-			"amount=1\n"
-			"",map_val(col,"type")))){ continue; };
+		if(!to_int(maptype(xmap(
+			"text", "0",
+			"amount", "1"
+		, End),map_val(col,"type")))){ continue; };
 		char* expr=sql_str(map_val(col,"expr"));
 		if(!map_val(col,"aggregate") && !str_start(expr,"sum(") && !str_start(expr,"count(")){ expr=xstr("sum(", expr, ")", End); };
 		add(sum,f,sql_toks(expr)); };

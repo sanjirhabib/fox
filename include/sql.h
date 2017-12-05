@@ -110,7 +110,7 @@ map* db_table_names(char* db);
 map* cols_pkeys(map* cols);
 map* crud_save(char* sql, char* db, map* cols, char* back, map* data);
 map* types();
-char* maptype(char* type_map, char* type);
+char* maptype(map* mp, char* type);
 map* tbl_pkeys(char* tbl, char* db);
 map* tbl_skeys(char* tbl, char* db);
 map* cols_skeys(map* cols);

@@ -37,23 +37,25 @@ int make(map* files,char* outdir){
 	return req ? compile(files,outdir,"fox","",0,0) : 0;
 };
 int cgi(char* infile, char* outfile,char* opts,int keepfiles){ return cc(infile,outfile, "cgi", opts, keepfiles); };
-int cc(char* infile, char* outfile, char* as, char* opts, int keepfiles){
+int cc(char* infile, char* outfile, char* profile, char* opts, int keepfiles){
 	infile=file_rename(infile,NULL,".fox",NULL,NULL,NULL);
 	if(!outfile){ outfile=infile; };
 	char* in=xstr(infile,".fox", End);
 	fox_c(in,xstr(infile,".c", End));
 	fox_h(in,xstr(infile,".h", End));
-	char* libs="-I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lcrypto -lmarkdown -lcurl -lsqlite3 -Wno-unused-command-line-argument";
+	char* cflags="-I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -Wno-unused-command-line-argument";
+	char* xlibs=" -lcrypto -lmarkdown -lcurl -lsqlite3";
 	map* switches=xmap(
-		"debug", xstr("-O0 -lfox ", libs, End),
-		"speed", xstr("-Os -lfox ", libs, End),
-		"static", xstr("-lfoxstatic -lfoxcmdstatic ", libs, " -fdata-sections -ffunction-sections -Wl,-dead_strip", End),
-		"cgi", xstr("-Os -lfoxstatic -lfoxcgistatic ", libs, " -fdata-sections -ffunction-sections", End)
+		"debug", xstr("-O0 -lfox ", cflags, " ", xlibs, End),
+		"speed", xstr("-O3 -lfox ", cflags, " ", xlibs, End),
+		"size", xstr("-Os -lfox ", cflags, End),
+		"static", xstr("-lfoxstatic -lfoxcmdstatic ", cflags, " -fdata-sections -ffunction-sections -Wl,-dead_strip", End),
+		"cgi", xstr("-Os -lfoxstatic -lfoxcgistatic ", cflags, " ", xlibs, " -fdata-sections -ffunction-sections", End)
 	, End);
-	as = as ? map_val(switches,as) : NULL;
+	profile = (map_val(switches,profile) ? map_val(switches,profile) : map_val(switches,"debug"));
 	int ret=exec(
 		px(
-		xstr("gcc ", infile, ".c -o ", outfile, " ", as, " ", opts, " -std=gnu99 -Wno-logical-op-parentheses -lm 2>&1", End),1),NULL);
+		xstr("gcc ", infile, ".c -o ", outfile, " ", profile, " ", opts, " -std=gnu99 -Wno-logical-op-parentheses -lm 2>&1", End),1),NULL);
 	if(!keepfiles){
 		remove((xstr(infile,".c", End)));	
 		remove((xstr(infile,".h", End))); };	
