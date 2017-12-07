@@ -4,10 +4,10 @@ CFLAGS=-Iinclude -std=gnu99 -Wno-logical-op-parentheses -Os -Wno-int-conversion 
 FOXS=fox.fox core.fox sql.fox cgi.fox cmd.fox main.fox
 LIBS=-lsqlite3 -I/usr/local/opt/openssl/include -L/usr/local/lib -L/usr/local/opt/openssl/lib -lcrypto -lmarkdown -lcurl
 HEADERS=fox.h sql.h
-_XLIBS=libfoxstatic.a libfox.so libfoxcgi.so libfoxcgistatic.a libfoxcmdstatic.a
+_XLIBS=libfoxstatic.a libfox.so libfoxcgi.so libfoxcgistatic.a libfoxcmdstatic.a libfoxastro.a
 XLIBS=$(patsubst %,lib/%,$(_XLIBS))
 DEPS=$(patsubst %,include/%,$(HEADERS))
-_OBJ=core.o meta.o fox.o memsize.o sql.o
+_OBJ=core.o meta.o fox.o memsize.o sql.o astro.o
 OBJ = $(patsubst %,obj/%,$(_OBJ))
 _OCMD=cmd.o
 OCMD = $(patsubst %,obj/%,$(_OCMD))
@@ -38,8 +38,8 @@ temp: obj/main.o $(DEPS) $(OBJ) $(FOXS) $(XLIBS)
 	gcc -o $@ obj/main.o $(CFLAGS) -Llib -lm $(LIBS) -lfoxstatic -lfoxcmdstatic
 
 bin/fox: obj/main.o $(DEPS) $(OBJ) $(FOXS) $(XLIBS)
-	gcc -o $@ obj/main.o $(CFLAGS) -Llib -lm $(LIBS) -lfoxstatic -lfoxcmdstatic
-	cd tests && ../bin/fox utests
+	gcc -o $@ obj/main.o $(CFLAGS) -Llib -lm $(LIBS) -lfoxstatic -lfoxcmdstatic -lfoxastro
+	bin/fox utests
 
 src/core.c src/fox.c src/sql.c src/cgi.c src/cmd.c: $(FOXS)
 	fox write_source
@@ -61,6 +61,9 @@ lib/libfoxcmdstatic.a: obj/cmd.o
 	rm -f $@
 	ar rcs $@ $^
 
+lib/libfoxastro.a: obj/astro.o
+	rm -f $@
+	ar rcs $@ $^
 lib/libfoxstatic.a: $(OBJ)
 	rm -f $@
 	ar rcs $@ $^
@@ -68,16 +71,15 @@ lib/libfoxstatic.a: $(OBJ)
 src/meta.c: $(FOXS) include/fox.h
 	fox write_meta src/meta.c
 
-install: bin/fox lib/libfoxstatic.a lib/libfoxcgistatic.a
-	cd tests && ../bin/fox utests
-	cp /usr/local/bin/fox /tmp/fox.`now`
+obj/astro.o: astro/astro.c
+	cd astro && make
+
+install: bin/fox lib/libfoxstatic.a lib/libfoxcgistatic.a lib/libfoxastro.a
+	bin/fox utests
 	cp include/fox.h $(INSTALL_DIR)/include/fox.h
 	cp bin/fox $(INSTALL_DIR)/bin/fox
-	cp lib/libfoxstatic.a $(INSTALL_DIR)/lib/
-	cp lib/libfoxcmdstatic.a $(INSTALL_DIR)/lib/
-	cp lib/libfoxcgistatic.a $(INSTALL_DIR)/lib/
-	cp lib/libfox.so $(INSTALL_DIR)/lib/
-	cp lib/libfoxcgi.so $(INSTALL_DIR)/lib/
+	cp lib/*.a $(INSTALL_DIR)/lib/
+	cp lib/*.so $(INSTALL_DIR)/lib/
 
 php: install 
 	fox fox_phpc habib.fox php/habibphp.c
@@ -90,6 +92,6 @@ clean:
 	rm -f obj/*.o lib/*.a lib/*.so bin/fox
 
 tests: bin/fox
-	cd tests && ../bin/fox utests
+	bin/fox utests
 www:
 	cd www && make

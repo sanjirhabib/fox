@@ -272,7 +272,7 @@ map* sql_col(char* sql,char* db,map* exp){
 			add(ret,"exp",sql_str(exp));
 			add(ret,"type",name);
 			return ret; };
-		if(str_eq(name,"substr")){
+		if(str_eq(name,"sub_str")){
 			add(ret,"type","text");
 			return ret; };
 		if(str_eq(name,"floor")){
@@ -350,7 +350,7 @@ map* sql_select_cols(char* sql,char* db,map* params){
 					add(add_key(ret,f,Map),"alias",f);
 					add(add_key(ret,f,Map),"talias",talias); }; };
 		}else if(str_end(k,".*")){
-			char* talias=substr(k,0,-2);
+			char* talias=sub_str(k,0,-2);
 			void* tcols=map_val(sql_select_cols(sql,db,NULL),talias);
 			if(!tcols){ fox_error(xstr("Invalid table alias ", k, " in sql ", sql, End),0); };
 			for(int idx2=next(tcols,-1,NULL,NULL); has_id(tcols,idx2); idx2++){ void* v2=map_id(tcols,idx2); char* k2=map_key(tcols, idx2);
@@ -381,7 +381,7 @@ map* cols_collect(map* cols,void* collect){
 	for(int next1=next(collect,-1,NULL,NULL); has_id(collect,next1); next1++){ void* op=map_id(collect,next1); char* f=map_key(collect, next1);
 		if(str_eq(f,"*")){ map_merge(ret,cols); }
 		else if(f[0]=='-'){
-			map_compact(map_del_key(ret,sub_str(f,1,0)));
+			map_compact(map_del_key(ret,sub_str(f,1,-2147483648)));
 		}else if(str_has(f,"-")){
 			map* limit=str_split(f,"-",2);
 			int inlimit=0;
@@ -692,7 +692,7 @@ int sql_utest(char* in,char* out){
 };
 int type_size(char* type){
 	return to_int(maptype(xmap(
-		"text", "129",
+		"text", "128",
 		"code", "50",
 		"guid", "36",
 		"int", "18",
@@ -810,7 +810,7 @@ map* pre_tables(){
 				"id4=code",xmap(End),
 				"tbl=code",xmap(End),
 				"body=text",xmap(End), End), End),
-	"options",NULL, End);
+	"fn",NULL, End);
 };
 map* db_table(char* db,char* tbl){
 	return cols_table(db_cols(db,tbl),tbl,db);
@@ -899,7 +899,7 @@ map* sql_id_ids(char* sql,char* db,void* id){ return tbl_id_ids(sql_table(sql),d
 map* sql_id(char* sql,char* db,void* ids){
 	return sql_row(map_sql(add(map_del_key(map_del_key(map_del_key(sql_map(sql),"order"),"where"),"limit"),"where",pkeys_where(sql_table(sql),db))),db,sql_id_ids(sql,db,ids));
 };
-map* sql_row(char* sql,char* db,map* param){ return map_id(lite_exec(sql_lite(sql,db,param),db,param),0); };
+map* sql_row(char* sql,char* db,map* param){ return map_id(lite_exec(sql,db,param),0); };
 map* sql_vector(char* sql,char* db,map* param){
 	map* ret=new_vec();
 	map* map_1=lite_exec(sql,db,param); for(int i=next(map_1,-1,NULL,NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i);
@@ -988,6 +988,7 @@ map* conn_db(char* db){
 	if(is_str(ret)){ add(add_key(_globals,"dbs",Map),db,parse_connection(ret)); };
 	return map_val(map_val(_globals,"dbs"),db);
 };
+map* sql_exec(char* sql,char* db,map* params){ return lite_exec(sql,db,params); };
 map* lite_exec(char* sql,char* db,map* params){
 	char* cname=db;
 	db=map_val(conn_db(db),"file");
@@ -1158,7 +1159,7 @@ map* cols_skeys(map* cols){
 map* toks_sql_params(map* toks, map* ret){
 	for(int next1=next(toks,-1,NULL,NULL); has_id(toks,next1); next1++){ void* val=map_id(toks,next1);
 		if(is_map(val)){ toks_sql_params(val,ret); continue; };
-		if(fox_at(val,0)==':'){ add(ret,sub_str(val,1,0),sub_str(val,1,0)); }; };
+		if(fox_at(val,0)==':'){ add(ret,sub_str(val,1,-2147483648),sub_str(val,1,-2147483648)); }; };
 	return ret;
 };
 void* is_null(void* val){
@@ -1386,27 +1387,36 @@ map* tbls_sync_sqls(map* new_tbls,map* old_tbls){
 map* db_meta(char* db){
 	if(!db){ return NULL; };
 	if(!map_val(_globals,"meta")){
-		add(_globals,"meta",data_map(file_read((xstr(file_rename(db,NULL,".db",NULL,NULL,NULL),".meta", End)),1)));
-		map* map_1=map_val(map_val(_globals,"meta"),"db"); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* val=map_id(map_1,next1); char* key=map_key(map_1, next1);
-			add(val,"name",key); }; };
+		add(_globals,"meta",data_map(file_read((xstr(file_rename(db,NULL,".db",NULL,NULL,NULL),".meta", End)),0)));
+		if(!map_val(_globals,"meta")){
+			add(_globals,"meta",new_map());
+		}else{
+			map* map_1=map_val(map_val(_globals,"meta"),"db"); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* val=map_id(map_1,next1); char* key=map_key(map_1, next1);
+				add(val,"name",key); }; }; };
 	return map_val(_globals,"meta");
 };
 map* tbl_cols(char* table,char* db){ return map_val(map_val(map_val(db_meta(db),"db"),table),"cols"); };
 map* db_sync(char* db,int go){
 	map* ret=tbls_sync_sqls(map_val(db_meta(db),"db"),db_tables(db));
-	if(go==1 && ret->len){ sqls_exec(ret,db); }
-	else if(go==2){
+	if(go==2 && ret->len){ sqls_exec(ret,db); }
+	else if(go==1){
 		px(map_join(ret,";\n"),0);
 		if(map_len(ret)){ px(";",1); }; };
 	return ret;
 };
 map* sync_sqls(map* newt,map* oldt){
 	if(str_eq(create_sql(oldt,NULL),create_sql(newt,NULL))){ return NULL; };	
+	px(xstr("", 
+	"DIFF old-new\n", 
+	create_sql(oldt,NULL), "\n", 
+	create_sql(newt,NULL), "\n", 
+	"", 
+	"", End),1);
 	map* match=cols_match(map_val(oldt,"cols"),map_val(newt,"cols"));
 	map* ret=new_vec();
 	vec_add(ret,drop_sql("_syncing"));
 	vec_add(ret,create_sql(newt,"_syncing"));
-	vec_add(ret,xstr("insert into _syncing (",map_join(map_keys(match),".. "),") select ",map_join(match,".. ")," from ",map_val(oldt,"name"), End));
+	vec_add(ret,xstr("insert into _syncing (",map_join(map_keys(match),", "),") select ",map_join(match,", ")," from ",map_val(oldt,"name"), End));
 	vec_add(ret,drop_sql(map_val(oldt,"name")));
 	vec_add(ret,sql_rename("_syncing",map_val(newt,"name")));
 	return ret;	
@@ -1534,7 +1544,7 @@ char* read_textblock(map* lines, int* lineno,char* terminator,char** outline){
 		if(str_level(line)<indent || str_start((line+indent),terminator)){
 			*outline=line+str_len(terminator)+indent;
 			return xstr(terminator,ret,terminator, End);
-		}else {ret=xcat(ret,sub_str(line,indent,0),"\n", End);}; };
+		}else {ret=xcat(ret,sub_str(line,indent,-2147483648),"\n", End);}; };
 	*outline=NULL;
 	return ret;
 };
@@ -1708,7 +1718,7 @@ map* http_req(){
 		add(ret,"path",xmap(
 			"full", map_val(ret,"path"),
 			"home", home,
-			"next", (sub_str(map_val(ret,"path"),str_len(home),0) ? sub_str(map_val(ret,"path"),str_len(home),0) : "/")
+			"next", (sub_str(map_val(ret,"path"),str_len(home),-2147483648) ? sub_str(map_val(ret,"path"),str_len(home),-2147483648) : "/")
 		, End));
 		add(_globals,"req",ret);
 		return ret; };
@@ -1721,7 +1731,7 @@ map* http_req(){
 	add(ret,"path",xmap(
 		"full", map_val(ret,"path"),
 		"home", home,
-		"next", (sub_str(map_val(ret,"path"),str_len(home),0) ? sub_str(map_val(ret,"path"),str_len(home),0) : "/")
+		"next", (sub_str(map_val(ret,"path"),str_len(home),-2147483648) ? sub_str(map_val(ret,"path"),str_len(home),-2147483648) : "/")
 	, End));
 	if(str_eq(map_val(env,"REQUEST_METHOD"),"GET")){
 		add(ret,"method","get");
@@ -1782,7 +1792,7 @@ map* sql_tokenizer(char** line){
 		else if(strchr("([{",*str)){ read_paren(mp,&str,sql_tokenizer); }
 		else if(strchr(" \t",*str)){ read_space(&str," \t"); }
 		else if(strchr("\n\r",*str)){ read_newline(&str); }
-		else if(strchr(".,;",*str)){ vec_add(mp,substr(str,0,1)); };
+		else if(strchr(".,;",*str)){ vec_add(mp,sub_str(str,0,1)); };
 		str++;
 	};
 	*line=str;
@@ -1805,7 +1815,7 @@ map* prop_tokenizer(char** line){
 		else if(strchr("([{",*str)){ read_paren(mp,&str,sql_tokenizer); }
 		else if(strchr(" \t",*str)){ read_space(&str," \t"); }
 		else if(strchr("\n\r",*str)){ read_newline(&str); }
-		else if(strchr(".,;",*str)){ vec_add(mp,substr(str,0,1)); };
+		else if(strchr(".,;",*str)){ vec_add(mp,sub_str(str,0,1)); };
 		str++;
 	};
 	*line=str;
@@ -1842,7 +1852,7 @@ map* tokenizer(char** line,char* comment){
 		}
 		else if(strchr(" \t",*str)){ read_space(&str," \t"); }
 		else if(strchr("\n\r",*str)){ read_newline(&str); }
-		else if(strchr(".,;",*str)){ vec_add(mp,substr(str,0,1)); };
+		else if(strchr(".,;",*str)){ vec_add(mp,sub_str(str,0,1)); };
 		str++;
 	};
 	*line=str;
@@ -1851,7 +1861,7 @@ map* tokenizer(char** line,char* comment){
 char* md_url(char* in,int len,void* junk){
 	char* url=sub_str(in,0,len);	
 	if(str_eq(url_host(url),"localhost") || str_has(url_host(url),"habibur")){ return url; };
-	char* ext3=sub_str(url,-4,0);
+	char* ext3=sub_str(url,-4,-2147483648);
 	if(!is_word(ext3,".jpg jpeg .png .gif")){ return url; };
 	char* id=md5(url);
 	char* file=xstr("imgs/", id, ".jpg", End);
@@ -1893,101 +1903,233 @@ char* fox_curl(char* url){
 	return res ? NULL : ret;
 };
 char* full_url(char* url){ return xstr(((map_val(map_val(_globals,"req"),"protocol") ? map_val(map_val(_globals,"req"),"protocol") : "http")),"://",((map_val(map_val(_globals,"req"),"server") ? map_val(map_val(_globals,"req"),"server") : "localhost")),show_port(),"/",str_ltrim(url,"/"), End); };
-char* home_url(char* path){ return xstr(full_url(map_val(map_val(map_val(_globals,"req"),"path"),"home")),path, End); };
+char* url_abs(char* abs, char* rel){
+	if(!rel){ return abs; };
+	if(str_start(rel,"./")){ return xstr(abs,sub_str(rel,2,-2147483648), End); };
+	if(rel[0]!='.'){ return xstr(abs,rel, End); };
+	char* srel=rel;
+	int level=0;
+	while(str_start(srel,"../")){ srel+=3; level++; };
+	map* base=str_split(abs,"/",0);
+	level=max(map_len(base)-level-1,3);
+	char* ret=map_join(vec_sub(base,0,level),"/");
+	return xstr(ret,"/",srel, End);
+};
+char* home_url(char* path){ return url_abs(full_url(map_val(map_val(map_val(_globals,"req"),"path"),"home")),path); };
 char* show_port(){
 	if(!map_val(map_val(_globals,"req"),"port")){ return NULL; };
 	if(str_eq(map_val(map_val(_globals,"req"),"protocol"),"http") && str_eq(map_val(map_val(_globals,"req"),"port"),"80")){ return NULL; };
 	if(str_eq(map_val(map_val(_globals,"req"),"protocol"),"https") && str_eq(map_val(map_val(_globals,"req"),"port"),"443")){ return NULL; };
 	return xstr(":",map_val(map_val(_globals,"req"),"port"), End);
 };
-//map* lite_trigger_slno(char* name, char* pkey, char* by=NULL){
-//	nby=by and " and $by=new.$by"
-//	oby=by and " and $by=old.$by"
-//	by&&=" where $by=new.$by"
-//	return [
-//		"drop trigger if exists $(name)_slno_insert_null;",
-//		"create trigger $(name)_slno_insert_null after insert on $name when new.slno+0=0 or abs(new.slno+0)>(select count(*) from $name$by) begin
-//			update $name set slno=1+(select count(*) from $name where $pkey!=new.$pkey$nby) where $pkey=new.$pkey;
-//		end;",
-//		"drop trigger if exists $(name)_slno_insert_negetive;",
-//		"create trigger $(name)_slno_insert_negetive after insert on $name when new.slno<0 and abs(new.slno)<=(select count(*) from $name$by) begin
-//			update $name set slno=slno+.5 where slno>=(select count(*) from $name$by)+new.slno$nby;
-//			update $name set slno=slno+.5 where slno>=(select count(*) from $name$by)+new.slno$nby;
-//			update $name set slno=(select count(*) from $name$by)+new.slno+1 where $pkey=new.$pkey;
-//		end;",
-//		"drop trigger if exists $(name)_slno_insert_positive;",
-//		"create trigger $(name)_slno_insert_positive after insert on $name when new.slno>0 and new.slno<=(select count(*) from $name$by) begin
-//			update $name set slno=slno+.5 where slno>=new.slno and $pkey!=new.$pkey$nby;
-//			update $name set slno=slno+.5 where slno>=new.slno and $pkey!=new.$pkey$nby;
-//		end;",
-//		"create trigger $(name)_slno_delete after delete on $name begin
-//			update $name set slno=slno-.5 where slno>old.slno$oby;
-//			update $name set slno=slno-.5 where slno>old.slno$oby;
-//		end;",
-//		"create trigger $(name)_slno_update_null after update on $name when new.slno is null or new.slno=0 or new.slno='' or abs(new.slno)>(select count(*) from $name$by) begin
-//			update $name set slno=slno-.5 where slno>old.slno$oby;
-//			update $name set slno=slno-.5 where slno>old.slno$oby;
-//			update $name set slno=(select count(*) from $name$by) where $pkey=new.$pkey;
-//		end;",
-//		"create trigger $(name)_slno_update_negetive after update on $name when new.slno<0 and new.slno>=-1*(select count(*) from $name$by) begin
-//			update $name set slno=slno-.5 where slno>old.slno$oby;
-//			update $name set slno=slno-.5 where slno>old.slno$oby;
-//			update $name set slno=slno+.5 where slno>=(select count(*) from $name$by)+new.slno$nby;
-//			update $name set slno=slno+.5 where slno>=(select count(*) from $name$by)+new.slno$nby;
-//			update $name set slno=(select count(*) from $name$by)+new.slno where $pkey=new.$pkey;
-//		end;",
-//		"create trigger $(name)_slno_update_positive after update on $name when new.slno>0 and old.slno>0 and abs(new.slno-old.slno)>=1 and new.slno<=(select count(*) from $name$by) begin
-//			update $name set slno=slno-.5 where slno>old.slno and $pkey!=new.$pkey$oby;
-//			update $name set slno=slno-.5 where slno>old.slno and $pkey!=new.$pkey$oby;
-//			update $name set slno=slno+.5 where slno>=new.slno and $pkey!=new.$pkey$nby;
-//			update $name set slno=slno+.5 where slno>=new.slno and $pkey!=new.$pkey$nby;
-//		end;
-//		"]
-//}
-//map* lite_trigger_tree(char* name,char* pkey){
-//	return [
-//		"drop trigger if exists $(name)_tree_insert_null;",
-//		
-//		"create trigger $(name)_tree_insert_null after insert on $name when new.parent is null or new.parent='' begin
-//		update $name set lft=(select coalesce(max(rgt),0) from $name where $pkey!=new.$pkey)+1,rgt=(select coalesce(max(rgt),0) from $name where $pkey!=new.$pkey)+2 where $pkey=new.$pkey;
-//		end;",
-//	
-//		"drop trigger if exists $(name)_tree_insert;",
-//
-//		"create trigger $(name)_tree_insert after insert on $name when new.parent is not null and length(new.parent)>0 begin
-//		update $name set lft=(select rgt from $name where $pkey=new.parent),rgt=(select rgt from $name where $pkey=new.parent)+1 where $pkey=new.$pkey;
-//		update $name set lft=lft+2 where lft>(select rgt from $name where $pkey=new.parent);
-//		update $name set rgt=rgt+2 where rgt>=(select rgt from $name where $pkey=new.parent) and $pkey!=new.$pkey;
-//		end;",
-//
-//		"drop trigger if exists $(name)_tree_delete;",
-//
-//		"create trigger $(name)_tree_delete before delete on $name begin
-//		update $name set lft=lft-(old.rgt-old.lft)-1 where lft>old.rgt;
-//		update $name set rgt=rgt-(old.rgt-old.lft)-1 where rgt>old.rgt;
-//		delete from $name where lft>old.lft and lft<old.rgt;
-//		end;",
-//
-//		"drop trigger if exists $(name)_tree_update_null;",
-//
-//		"create trigger $(name)_tree_update_null after update of parent on $name when new.parent is null or length(new.parent)=0 begin
-//		update $name set lft=lft+(select max(rgt) from $name)-old.lft+1,rgt=rgt+(select max(rgt) from $name)-old.lft+1 where lft>=old.lft and lft<=old.rgt;
-//		update $name set lft=lft-(old.rgt-old.lft)-1 where lft>old.rgt;
-//		update $name set rgt=rgt-(old.rgt-old.lft)-1 where rgt>old.rgt;
-//		end;",
-//	
-//		"drop trigger if exists $(name)_tree_update_right;",
-//
-//		"create trigger $(name)_tree_update_right after update of parent on $name when new.parent is not null and length(new.parent)>0 and old.lft<(select lft from $name where $pkey=new.parent) begin
-//		update $name set lft=case when lft>old.rgt and lft<(select rgt from $name where $pkey=new.parent) then lft-old.rgt+old.lft-1 when lft>=old.lft and lft<=old.rgt then lft+(select rgt from $name where $pkey=new.parent)-old.rgt-1 else lft end;
-//		update $name set rgt=case when rgt>old.rgt and rgt<(select rgt from $name where $pkey=new.parent) then rgt-old.rgt+old.lft-1 when rgt>=old.lft and rgt<=old.rgt then rgt+(select rgt from $name where $pkey=new.parent)-old.rgt-1 else rgt end;
-//		end;",
-//		
-//		"drop trigger if exists $(name)_tree_update_left;",
-//
-//		"create trigger $(name)_tree_update_left after update of parent on $name when new.parent is not null and length(new.parent)>0 and old.lft>(select lft from $name where $pkey=new.parent) begin
-//		update $name set lft=case when lft<old.lft and lft>=(select rgt from $name where $pkey=new.parent) then lft+old.rgt-old.lft+1 when lft>=old.lft and lft<=old.rgt then lft-old.lft+(select rgt from $name where $pkey=new.parent) else lft end;
-//		update $name set rgt=case when rgt<old.lft and rgt>=(select lft from $name where $pkey=old.$pkey) then rgt+old.rgt-old.lft+1 when rgt>=old.lft and rgt<=old.rgt then rgt-old.lft+(select lft from $name where $pkey=old.$pkey) else rgt end;
-//		end;"
-//	]
-//}
+map* lite_trigger_slno(char* name, char* pkey, char* by){
+	char* nby=(by ? xstr(" and ", by, "=new.", by, End) : NULL);
+	char* oby=(by ? xstr(" and ", by, "=old.", by, End) : NULL);
+	if(by){by=xstr(" where ", by, "=new.", by, End);};
+	return xvec(
+		xstr("drop trigger if exists ", name, "_slno_insert_null;", End),
+		xstr("create trigger ", name, "_slno_insert_null after insert on ", name, " when new.slno+0=0 or abs(new.slno+0)>(select count(*) from ", name, by, ") begin\n", 
+		"\tupdate ", name, " set slno=1+(select count(*) from ", name, " where ", pkey, "!=new.", pkey, nby, ") where ", pkey, "=new.", pkey, ";\n", 
+		"end;", End),
+		xstr("drop trigger if exists ", name, "_slno_insert_negetive;", End),
+		xstr("create trigger ", name, "_slno_insert_negetive after insert on ", name, " when new.slno<0 and abs(new.slno)<=(select count(*) from ", name, by, ") begin\n", 
+		"\tupdate ", name, " set slno=slno+.5 where slno>=(select count(*) from ", name, by, ")+new.slno", nby, ";\n", 
+		"\tupdate ", name, " set slno=slno+.5 where slno>=(select count(*) from ", name, by, ")+new.slno", nby, ";\n", 
+		"\tupdate ", name, " set slno=(select count(*) from ", name, by, ")+new.slno+1 where ", pkey, "=new.", pkey, ";\n", 
+		"end;", End),
+		xstr("drop trigger if exists ", name, "_slno_insert_positive;", End),
+		xstr("create trigger ", name, "_slno_insert_positive after insert on ", name, " when new.slno>0 and new.slno<=(select count(*) from ", name, by, ") begin\n", 
+		"\tupdate ", name, " set slno=slno+.5 where slno>=new.slno and ", pkey, "!=new.", pkey, nby, ";\n", 
+		"\tupdate ", name, " set slno=slno+.5 where slno>=new.slno and ", pkey, "!=new.", pkey, nby, ";\n", 
+		"end;", End),
+		xstr("create trigger ", name, "_slno_delete after delete on ", name, " begin\n", 
+		"\tupdate ", name, " set slno=slno-.5 where slno>old.slno", oby, ";\n", 
+		"\tupdate ", name, " set slno=slno-.5 where slno>old.slno", oby, ";\n", 
+		"end;", End),
+		xstr("create trigger ", name, "_slno_update_null after update on ", name, " when new.slno is null or new.slno=0 or new.slno='' or abs(new.slno)>(select count(*) from ", name, by, ") begin\n", 
+		"\tupdate ", name, " set slno=slno-.5 where slno>old.slno", oby, ";\n", 
+		"\tupdate ", name, " set slno=slno-.5 where slno>old.slno", oby, ";\n", 
+		"\tupdate ", name, " set slno=(select count(*) from ", name, by, ") where ", pkey, "=new.", pkey, ";\n", 
+		"end;", End),
+		xstr("create trigger ", name, "_slno_update_negetive after update on ", name, " when new.slno<0 and new.slno>=-1*(select count(*) from ", name, by, ") begin\n", 
+		"\tupdate ", name, " set slno=slno-.5 where slno>old.slno", oby, ";\n", 
+		"\tupdate ", name, " set slno=slno-.5 where slno>old.slno", oby, ";\n", 
+		"\tupdate ", name, " set slno=slno+.5 where slno>=(select count(*) from ", name, by, ")+new.slno", nby, ";\n", 
+		"\tupdate ", name, " set slno=slno+.5 where slno>=(select count(*) from ", name, by, ")+new.slno", nby, ";\n", 
+		"\tupdate ", name, " set slno=(select count(*) from ", name, by, ")+new.slno where ", pkey, "=new.", pkey, ";\n", 
+		"end;", End),
+		xstr("create trigger ", name, "_slno_update_positive after update on ", name, " when new.slno>0 and old.slno>0 and abs(new.slno-old.slno)>=1 and new.slno<=(select count(*) from ", name, by, ") begin\n", 
+		"\tupdate ", name, " set slno=slno-.5 where slno>old.slno and ", pkey, "!=new.", pkey, oby, ";\n", 
+		"\tupdate ", name, " set slno=slno-.5 where slno>old.slno and ", pkey, "!=new.", pkey, oby, ";\n", 
+		"\tupdate ", name, " set slno=slno+.5 where slno>=new.slno and ", pkey, "!=new.", pkey, nby, ";\n", 
+		"\tupdate ", name, " set slno=slno+.5 where slno>=new.slno and ", pkey, "!=new.", pkey, nby, ";\n", 
+		"end;\n", 
+		"", End), End);
+};
+map* lite_trigger_tree(char* name,char* pkey){
+	return xvec(
+		xstr("drop trigger if exists ", name, "_tree_insert_null;", End),
+		
+		xstr("create trigger ", name, "_tree_insert_null after insert on ", name, " when new.parent is null or new.parent='' begin\n", 
+		"update ", name, " set lft=(select coalesce(max(rgt),0) from ", name, " where ", pkey, "!=new.", pkey, ")+1,rgt=(select coalesce(max(rgt),0) from ", name, " where ", pkey, "!=new.", pkey, ")+2 where ", pkey, "=new.", pkey, ";\n", 
+		"end;", End),
+	
+		xstr("drop trigger if exists ", name, "_tree_insert;", End),
+
+		xstr("create trigger ", name, "_tree_insert after insert on ", name, " when new.parent is not null and length(new.parent)>0 begin\n", 
+		"update ", name, " set lft=(select rgt from ", name, " where ", pkey, "=new.parent),rgt=(select rgt from ", name, " where ", pkey, "=new.parent)+1 where ", pkey, "=new.", pkey, ";\n", 
+		"update ", name, " set lft=lft+2 where lft>(select rgt from ", name, " where ", pkey, "=new.parent);\n", 
+		"update ", name, " set rgt=rgt+2 where rgt>=(select rgt from ", name, " where ", pkey, "=new.parent) and ", pkey, "!=new.", pkey, ";\n", 
+		"end;", End),
+
+		xstr("drop trigger if exists ", name, "_tree_delete;", End),
+
+		xstr("create trigger ", name, "_tree_delete before delete on ", name, " begin\n", 
+		"update ", name, " set lft=lft-(old.rgt-old.lft)-1 where lft>old.rgt;\n", 
+		"update ", name, " set rgt=rgt-(old.rgt-old.lft)-1 where rgt>old.rgt;\n", 
+		"delete from ", name, " where lft>old.lft and lft<old.rgt;\n", 
+		"end;", End),
+
+		xstr("drop trigger if exists ", name, "_tree_update_null;", End),
+
+		xstr("create trigger ", name, "_tree_update_null after update of parent on ", name, " when new.parent is null or length(new.parent)=0 begin\n", 
+		"update ", name, " set lft=lft+(select max(rgt) from ", name, ")-old.lft+1,rgt=rgt+(select max(rgt) from ", name, ")-old.lft+1 where lft>=old.lft and lft<=old.rgt;\n", 
+		"update ", name, " set lft=lft-(old.rgt-old.lft)-1 where lft>old.rgt;\n", 
+		"update ", name, " set rgt=rgt-(old.rgt-old.lft)-1 where rgt>old.rgt;\n", 
+		"end;", End),
+	
+		xstr("drop trigger if exists ", name, "_tree_update_right;", End),
+
+		xstr("create trigger ", name, "_tree_update_right after update of parent on ", name, " when new.parent is not null and length(new.parent)>0 and old.lft<(select lft from ", name, " where ", pkey, "=new.parent) begin\n", 
+		"update ", name, " set lft=case when lft>old.rgt and lft<(select rgt from ", name, " where ", pkey, "=new.parent) then lft-old.rgt+old.lft-1 when lft>=old.lft and lft<=old.rgt then lft+(select rgt from ", name, " where ", pkey, "=new.parent)-old.rgt-1 else lft end;\n", 
+		"update ", name, " set rgt=case when rgt>old.rgt and rgt<(select rgt from ", name, " where ", pkey, "=new.parent) then rgt-old.rgt+old.lft-1 when rgt>=old.lft and rgt<=old.rgt then rgt+(select rgt from ", name, " where ", pkey, "=new.parent)-old.rgt-1 else rgt end;\n", 
+		"end;", End),
+		
+		xstr("drop trigger if exists ", name, "_tree_update_left;", End),
+
+		xstr("create trigger ", name, "_tree_update_left after update of parent on ", name, " when new.parent is not null and length(new.parent)>0 and old.lft>(select lft from ", name, " where ", pkey, "=new.parent) begin\n", 
+		"update ", name, " set lft=case when lft<old.lft and lft>=(select rgt from ", name, " where ", pkey, "=new.parent) then lft+old.rgt-old.lft+1 when lft>=old.lft and lft<=old.rgt then lft-old.lft+(select rgt from ", name, " where ", pkey, "=new.parent) else lft end;\n", 
+		"update ", name, " set rgt=case when rgt<old.lft and rgt>=(select lft from ", name, " where ", pkey, "=old.", pkey, ") then rgt+old.rgt-old.lft+1 when rgt>=old.lft and rgt<=old.rgt then rgt-old.lft+(select lft from ", name, " where ", pkey, "=old.", pkey, ") else rgt end;\n", 
+		"end;", End)
+	, End);
+};
+char* page_html(map* data){
+	return xstr("", 
+	"<!DOCTYPE html>\n", 
+	"<html><head><meta charset='utf-8'>\n", 
+	"<title>", map_val(data,"title"), "</title>\n", 
+	"<script type=\"application/ld+json\">\n", 
+	"{\n", 
+	"\"@context\": \"http://schema.org\",\n", 
+	"\"@type\": \"WebSite\",\n", 
+	"\"name\": \"Habib's Site\",\n", 
+	"\"alternateName\": \"Sanjir Habib\",\n", 
+	"url\": \"", map_val(map_val(_globals,"req"),"path"), "\"", 
+	"}\n", 
+	"</script>\n", 
+	"<link rel=\"apple-touch-icon\" href=\"/apple-touch-icon.png\">\n", 
+	"<meta name=\"application-name\" content=\"habib\"/>\n", 
+	"<meta name=\"msapplication-square70x70logo\" content=\"/small.jpg\"/>\n", 
+	"<meta name=\"msapplication-square150x150logo\" content=\"/medium.jpg\"/>\n", 
+	"<meta name=\"msapplication-wide310x150logo\" content=\"/wide.jpg\"/>\n", 
+	"<meta name=\"msapplication-square310x310logo\" content=\"/large.jpg\"/>\n", 
+	"<meta name=\"msapplication-TileColor\" content=\"#fff\"/>\n", 
+	"<meta name=\"description\" content=\"", map_val(data,"desc"), "\"/>\n", 
+	"<meta name=\"keywords\" content=\"", map_val(data,"keyword"), "\"/>\n", 
+	"<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n", 
+	"<meta name=\"og:image\" content=\"", map_val(data,"logo"), "\">\n", 
+	"<meta name=\"og:description\" content=\"", map_val(data,"desc"), "\">\n", 
+	"<meta name=\"og:title\" content=\"", map_val(data,"title"), "\">\n", 
+	map_val(data,"header"), "\n", 
+	"<link rel='icon' href='", map_val(data,"logo"), "'></link>\n", 
+	"</head><body>\n", 
+	"<div class='row-fluid alert-success'><span class='span8'>", map_val(data,"msg"), "</span>", map_val(data,"login"), "</div>\n", 
+	"<div class=row-fluid>\n", 
+	"<div class='span3' style='text-align:center;'><a href='", map_val(data,"home"), "'><img style='width:auto;height:100px;padding:.3em;' src='", map_val(data,"logo"), "'></img></a></div>\n", 
+	"<div class='span7'>\n", 
+	"<h2 style='text-align:center;'>", map_val(data,"title"), "</h2>\n", 
+	"<div style='border-top:1px solid gray;border-bottom:1px solid gray;min-height:0.2em;text-align:center;'>", map_val(data,"desc"), "</div>\n", 
+	"</div>\n", 
+	"</div>\n", 
+	map_val(data,"tabs"), map_val(data,"ldmenu"), "\n", 
+	"<div class=container-fluid>\n", 
+	"<div class=row-fluid>", map_val(data,"body"), "</div>\n", 
+	"<hr noshade=noshade style=\"width:70%;margin:auto;height:1px;margin-bottom:.5em;margin-top:8em;color:gray;\">\n", 
+	"<div class=footer style='color:#333;font-size:small;text-align:center;'>\n", 
+	"&copy; Habib &lt;habib@habibur.com&gt;. ", map_val(data,"hits"), " ", map_val(data,"footer"), "\n", 
+	"</div>\n", 
+	"</div>\n", 
+	"</body></html>\n", 
+	"", 
+	"", End);
+};
+map* page_data(map* data){
+	if(!(map_val(data,"title"))){add(data,"title","Habib's Site");};
+	if(!(map_val(data,"tab"))){add(data,"tab",map_val(data,"title"));};
+	if(!(map_val(data,"logo"))){add(data,"logo",home_url("logo.jpg"));};
+	if(!(map_val(data,"home"))){add(data,"home",home_url(NULL));};
+	if(map_val(data,"css")){add(data,"css",xstr("<style>\n", map_val(data,"css"), "\n</style>", End));};
+	char* head=NULL;
+	map* map_1=
+	xvec("/res/bootstrap.css","/res/bootstrap-responsive.css","/res/jquery.js","/res/bootstrap.js", End); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* v=map_id(map_1,next1);
+		if(str_eq(sub_str(v,-4,-2147483648),".css")){ head=xcat(head,xstr("<link rel='stylesheet' href='", v, "'></link>\n", End), End); }
+		else {head=xcat(head,xstr("<script async src='", v, "'></script>\n", End), End);}; };
+	map* map_2=map_val(_globals,"jsfile"); for(int next1=next(map_2,-1,NULL,NULL); has_id(map_2,next1); next1++){ void* v=map_id(map_2,next1);
+		head=xcat(head,xstr("<script async src='", v, "'></script>\n", End), End); };
+	add(data,"header",xstr(head,map_val(data,"css")
+		,((map_val(_globals,"css") ? xstr("<style>\n",map_join(map_val(_globals,"css"),"\n"),"</style>", End) : NULL)), End));
+	add(data,"footer",xstr("", 
+	"Run Time: ",int_str( run_time()), "ms=",int_str( gc_time()), "GC+",int_str( run_time()-total_time()-gc_time()), "Code+",int_str( total_time()), "DB\n", 
+	"Malloc: ",int_str( total_kb()), "KB. Total: ",int_str( max_mem()/1024), "KB.\n", 
+	"GC: ",int_str( gc_runs()), "runs.", 
+	"", End));
+	add(data,"footer",xcat(map_val(data,"footer"),((map_val(_globals,"js") ? xstr("<script>\n",map_join(map_val(_globals,"js"),"\n"),"</script>", End) : NULL)), End));
+	char* tabs=NULL;
+	map* lddata=xmap("@context", "http://schema.org", "@type", "BreadcrumbList", End);
+	int i=1;
+	map* map_3=map_val(_globals,"tabs"); for(int  idx=next(map_3,-1,NULL,NULL); has_id(map_3, idx);  idx++){ void* url=map_id(map_3, idx); char*  name=map_key(map_3,  idx);
+		char* active=NULL;
+		if(idx==map_len(map_val(_globals,"tabs"))-1){
+			active=" class='active'"; };			
+		tabs=xcat(tabs,xstr("<li", active, "><a href='", url, "'>", name, "</a></li>\n", End), End);
+			
+		vec_add(add_key(lddata,"itemListElement",Vector),xmap(
+			"@type", "ListItem",
+			"position",int_var( i++), "item", xmap( "@id", full_url(url), "name", full_url(url) , End)
+		, End)); };
+	vec_add(add_key(lddata,"itemListElement",Vector),xmap(
+		"@type", "ListItem",
+		"position",int_var( i++), "item", xmap( "@id", full_url(map_val(map_val(_globals,"req"),"path")), "name", full_url(map_val(map_val(_globals,"req"),"path")) , End)
+	, End));
+	if(map_len(map_val(_globals,"tabs"))>1){
+		add(data,"tabs",xstr("<div><ul class='nav nav-tabs'>", tabs, "</ul></div>", End)); };
+	add(data,"ldmenu",xstr("<script type='application/ld+json'>", lddata, "</script>", End));
+	char* body=NULL;
+	map* map_4=map_val(data,"menu"); for(int next1=next(map_4,-1,NULL,NULL); has_id(map_4,next1); next1++){ void* name=map_id(map_4,next1); char*  url=map_key(map_4, next1);
+		body=xcat(body,xstr("<li><a style='overflow:hidden;text-overflow:ellipsis;white-space:nowrap;' href='", url, "'>", name, "</a></li>\n", End), End); };
+	if(is_int(map_val(data,"width"))==4){
+		body=xstr("<div class='span11 offset1'><ul class='nav nav-pills'>", body, "</ul></div>", End);
+	}else{
+		body=xstr("<div class=span2><ul class='nav nav-tabs nav-stacked'>", body, "</ul></div>", End);
+	};
+	switch(is_int(map_val(data,"width"))){
+		case 1:
+			body=xcat(body,xstr("<div class='span4'>", map_val(data,"body"), "</div><div class=span6>", map_val(data,"help"), "</div>", End), End);
+		break;
+		case 3:
+			body=xcat(body,xstr("<div class='span10'>", map_val(data,"help"), map_val(data,"body"), "</div>", End), End);
+		break;
+		case 4:
+			body=xcat(body,xstr("</div><div class=row-fluid>", map_val(data,"help"), map_val(data,"body"), "</div>", End), End);
+		break;
+		default: //=2
+			body=xcat(body,xstr("<div class='span7'>", map_val(data,"body"), "</div><div class=span3>", map_val(data,"help"), "</div>", End), End); };
+	add(data,"body",body);
+	char* login=NULL;
+	if(map_val(map_val(_globals,"sess"),"user")){
+		login=xstr("<span class='pull-right'>", map_val(map_val(_globals,"sess"),"user"), " as ", map_val(map_val(_globals,"sess"),"role"), " | <a href='", home_url(NULL), "logout/'>Logout</a> &nbsp; </span>", End);
+	}else{
+		login=xstr("<span class='pull-right' style='margin-right:3em;'><a href='", home_url(NULL), "login/'>Login</a> | <a href='", home_url(NULL), "register/'>Register</a></span>", End); };
+	add(data,"login",login);
+	return data;
+};

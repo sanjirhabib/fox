@@ -272,7 +272,7 @@ map* sql_col(char* sql,char* db,map* exp){
 			ret.exp=exp.sql_str()
 			ret.type=name
 			return ret
-		if name===:substr
+		if name===:sub_str
 			ret.type=:text
 			return ret
 		if name===:floor
@@ -350,7 +350,7 @@ map* sql_select_cols(char* sql,char* db=NULL,map* params=NULL){
 					ret[f].alias=f
 					ret[f].talias=talias
 		else if k.str_end(".*")
-			talias=k.substr(0,-2)
+			talias=k.sub_str(0,-2)
 			tcols=sql.sql_select_cols(db)[talias]
 			if !tcols => "Invalid table alias $k in sql $sql".fox_error()
 			tcols.each v2,k2,idx2
@@ -692,7 +692,7 @@ int sql_utest(char* in,char* out){
 }
 int type_size(char* type){
 	return {{
-		text 129
+		text 128
 		code 50
 		guid 36
 		int 18
@@ -899,7 +899,7 @@ map* sql_id_ids(char* sql,char* db,void* id) => return sql.sql_table().tbl_id_id
 map* sql_id(char* sql,char* db,void* ids){
 	return sql.sql_map().map_del_key(:order).map_del_key(:where).map_del_key(:limit).add(:where,sql.sql_table().pkeys_where(db)).map_sql().sql_row(db,sql.sql_id_ids(db,ids))
 }
-map* sql_row(char* sql,char* db,map* param=NULL) => return sql.sql_lite(db,param).lite_exec(db,param)[0]
+map* sql_row(char* sql,char* db,map* param=NULL) => return sql.lite_exec(db,param)[0]
 map* sql_vector(char* sql,char* db,map* param=NULL){
 	ret=[]
 	sql.lite_exec(db,param).each v,,i
@@ -988,6 +988,7 @@ map* conn_db(char* db){
 	if ret.is_str() => _globals.dbs[db]=ret.parse_connection()
 	return _globals.dbs[db]
 }
+map* sql_exec(char* sql,char* db,map* params=NULL) => return sql.lite_exec(db,params)
 map* lite_exec(char* sql,char* db,map* params=NULL){
 	cname=db
 	db=db.conn_db().file
@@ -1386,27 +1387,36 @@ map* tbls_sync_sqls(map* new_tbls,map* old_tbls){
 map* db_meta(char* db){
 	if !db => return NULL
 	if !_globals.meta
-		_globals.meta=(db.file_rename(NULL,".db")..".meta").file_read().data_map()
-		_globals.meta.db.each val,key
-			val.name=key
+		_globals.meta=(db.file_rename(NULL,".db")..".meta").file_read(0).data_map()
+		if !_globals.meta
+			_globals.meta={}
+		else
+			_globals.meta.db.each val,key
+				val.name=key
 	return _globals.meta
 }
 map* tbl_cols(char* table,char* db) => return db.db_meta().db[table].cols
 map* db_sync(char* db,int go=0){
 	ret=db.db_meta().db.tbls_sync_sqls(db.db_tables())
-	if go==1 && ret->len => ret.sqls_exec(db)
-	else if go==2
+	if go==2 && ret->len => ret.sqls_exec(db)
+	else if go==1
 		ret.map_join(";\n").px(0)
 		if ret.map_len() => ";".px()
 	return ret
 }
 map* sync_sqls(map* newt,map* oldt){
 	if oldt.create_sql()===newt.create_sql() => return NULL	
+	---
+	DIFF old-new
+	$(oldt.create_sql())
+	$(newt.create_sql())
+
+	---.px()
 	match=oldt.cols.cols_match(newt.cols)
 	ret=[]
 	ret[]=:_syncing.drop_sql()
 	ret[]=newt.create_sql(:_syncing)
-	ret[]="insert into _syncing ("..match.map_keys().map_join(".. ")..") select "..match.map_join(".. ").." from "..oldt.name
+	ret[]="insert into _syncing ("..match.map_keys().map_join(", ")..") select "..match.map_join(", ").." from "..oldt.name
 	ret[]=oldt.name.drop_sql()
 	ret[]=:_syncing.sql_rename(newt.name)
 	return ret	
@@ -1782,7 +1792,7 @@ map* sql_tokenizer(char** line){
 		else if "([{".strchr(*str) => mp.read_paren(&str,sql_tokenizer)
 		else if " \t".strchr(*str) => read_space(&str);
 		else if "\n\r".strchr(*str) => read_newline(&str);
-		else if ".,;".strchr(*str) => mp[]=str.substr(0,1)
+		else if ".,;".strchr(*str) => mp[]=str.sub_str(0,1)
 		str++
 	
 	*line=str
@@ -1805,7 +1815,7 @@ map* prop_tokenizer(char** line){
 		else if "([{".strchr(*str) => mp.read_paren(&str,sql_tokenizer)
 		else if " \t".strchr(*str) => read_space(&str);
 		else if "\n\r".strchr(*str) => read_newline(&str);
-		else if ".,;".strchr(*str) => mp[]=str.substr(0,1)
+		else if ".,;".strchr(*str) => mp[]=str.sub_str(0,1)
 		str++
 	
 	*line=str
@@ -1842,7 +1852,7 @@ map* tokenizer(char** line,char* comment){
 		
 		else if " \t".strchr(*str) => read_space(&str)
 		else if "\n\r".strchr(*str) => read_newline(&str)
-		else if ".,;".strchr(*str) => mp[]=str.substr(0,1)
+		else if ".,;".strchr(*str) => mp[]=str.sub_str(0,1)
 		str++
 		
 	*line=str
@@ -1893,101 +1903,233 @@ char* fox_curl(char* url){
 	return res ? NULL : ret
 }
 char* full_url(char* url=NULL) => return (_globals.req.protocol or :http).."://"..(_globals.req.server or :localhost)..show_port().."/"..url.str_ltrim("/")
-char* home_url(char* path=NULL) => return _globals.req.path.home.full_url()..path
+char* url_abs(char* abs, char* rel){
+	if !rel => return abs
+	if rel.str_start("./") => return abs..rel.sub_str(2)
+	if rel[0]!='.' => return abs..rel
+	srel=rel
+	level=0
+	while srel.str_start("../") => srel+=3; level++
+	base=abs.str_split("/")
+	level=max(base.map_len()-level-1,3)
+	ret=base.vec_sub(0,level).map_join("/")
+	return ret.."/"..srel
+}
+char* home_url(char* path=NULL) => return _globals.req.path.home.full_url().url_abs(path)
 char* show_port(){
 	if !_globals.req.port => return ''
 	if _globals.req.protocol===:http && _globals.req.port==="80" => return ''
 	if _globals.req.protocol===:https && _globals.req.port==="443" => return ''
 	return ":".._globals.req.port
 }
-//map* lite_trigger_slno(char* name, char* pkey, char* by=NULL){
-//	nby=by and " and $by=new.$by"
-//	oby=by and " and $by=old.$by"
-//	by&&=" where $by=new.$by"
-//	return [
-//		"drop trigger if exists $(name)_slno_insert_null;",
-//		"create trigger $(name)_slno_insert_null after insert on $name when new.slno+0=0 or abs(new.slno+0)>(select count(*) from $name$by) begin
-//			update $name set slno=1+(select count(*) from $name where $pkey!=new.$pkey$nby) where $pkey=new.$pkey;
-//		end;",
-//		"drop trigger if exists $(name)_slno_insert_negetive;",
-//		"create trigger $(name)_slno_insert_negetive after insert on $name when new.slno<0 and abs(new.slno)<=(select count(*) from $name$by) begin
-//			update $name set slno=slno+.5 where slno>=(select count(*) from $name$by)+new.slno$nby;
-//			update $name set slno=slno+.5 where slno>=(select count(*) from $name$by)+new.slno$nby;
-//			update $name set slno=(select count(*) from $name$by)+new.slno+1 where $pkey=new.$pkey;
-//		end;",
-//		"drop trigger if exists $(name)_slno_insert_positive;",
-//		"create trigger $(name)_slno_insert_positive after insert on $name when new.slno>0 and new.slno<=(select count(*) from $name$by) begin
-//			update $name set slno=slno+.5 where slno>=new.slno and $pkey!=new.$pkey$nby;
-//			update $name set slno=slno+.5 where slno>=new.slno and $pkey!=new.$pkey$nby;
-//		end;",
-//		"create trigger $(name)_slno_delete after delete on $name begin
-//			update $name set slno=slno-.5 where slno>old.slno$oby;
-//			update $name set slno=slno-.5 where slno>old.slno$oby;
-//		end;",
-//		"create trigger $(name)_slno_update_null after update on $name when new.slno is null or new.slno=0 or new.slno='' or abs(new.slno)>(select count(*) from $name$by) begin
-//			update $name set slno=slno-.5 where slno>old.slno$oby;
-//			update $name set slno=slno-.5 where slno>old.slno$oby;
-//			update $name set slno=(select count(*) from $name$by) where $pkey=new.$pkey;
-//		end;",
-//		"create trigger $(name)_slno_update_negetive after update on $name when new.slno<0 and new.slno>=-1*(select count(*) from $name$by) begin
-//			update $name set slno=slno-.5 where slno>old.slno$oby;
-//			update $name set slno=slno-.5 where slno>old.slno$oby;
-//			update $name set slno=slno+.5 where slno>=(select count(*) from $name$by)+new.slno$nby;
-//			update $name set slno=slno+.5 where slno>=(select count(*) from $name$by)+new.slno$nby;
-//			update $name set slno=(select count(*) from $name$by)+new.slno where $pkey=new.$pkey;
-//		end;",
-//		"create trigger $(name)_slno_update_positive after update on $name when new.slno>0 and old.slno>0 and abs(new.slno-old.slno)>=1 and new.slno<=(select count(*) from $name$by) begin
-//			update $name set slno=slno-.5 where slno>old.slno and $pkey!=new.$pkey$oby;
-//			update $name set slno=slno-.5 where slno>old.slno and $pkey!=new.$pkey$oby;
-//			update $name set slno=slno+.5 where slno>=new.slno and $pkey!=new.$pkey$nby;
-//			update $name set slno=slno+.5 where slno>=new.slno and $pkey!=new.$pkey$nby;
-//		end;
-//		"]
-//}
-//map* lite_trigger_tree(char* name,char* pkey){
-//	return [
-//		"drop trigger if exists $(name)_tree_insert_null;",
-//		
-//		"create trigger $(name)_tree_insert_null after insert on $name when new.parent is null or new.parent='' begin
-//		update $name set lft=(select coalesce(max(rgt),0) from $name where $pkey!=new.$pkey)+1,rgt=(select coalesce(max(rgt),0) from $name where $pkey!=new.$pkey)+2 where $pkey=new.$pkey;
-//		end;",
-//	
-//		"drop trigger if exists $(name)_tree_insert;",
-//
-//		"create trigger $(name)_tree_insert after insert on $name when new.parent is not null and length(new.parent)>0 begin
-//		update $name set lft=(select rgt from $name where $pkey=new.parent),rgt=(select rgt from $name where $pkey=new.parent)+1 where $pkey=new.$pkey;
-//		update $name set lft=lft+2 where lft>(select rgt from $name where $pkey=new.parent);
-//		update $name set rgt=rgt+2 where rgt>=(select rgt from $name where $pkey=new.parent) and $pkey!=new.$pkey;
-//		end;",
-//
-//		"drop trigger if exists $(name)_tree_delete;",
-//
-//		"create trigger $(name)_tree_delete before delete on $name begin
-//		update $name set lft=lft-(old.rgt-old.lft)-1 where lft>old.rgt;
-//		update $name set rgt=rgt-(old.rgt-old.lft)-1 where rgt>old.rgt;
-//		delete from $name where lft>old.lft and lft<old.rgt;
-//		end;",
-//
-//		"drop trigger if exists $(name)_tree_update_null;",
-//
-//		"create trigger $(name)_tree_update_null after update of parent on $name when new.parent is null or length(new.parent)=0 begin
-//		update $name set lft=lft+(select max(rgt) from $name)-old.lft+1,rgt=rgt+(select max(rgt) from $name)-old.lft+1 where lft>=old.lft and lft<=old.rgt;
-//		update $name set lft=lft-(old.rgt-old.lft)-1 where lft>old.rgt;
-//		update $name set rgt=rgt-(old.rgt-old.lft)-1 where rgt>old.rgt;
-//		end;",
-//	
-//		"drop trigger if exists $(name)_tree_update_right;",
-//
-//		"create trigger $(name)_tree_update_right after update of parent on $name when new.parent is not null and length(new.parent)>0 and old.lft<(select lft from $name where $pkey=new.parent) begin
-//		update $name set lft=case when lft>old.rgt and lft<(select rgt from $name where $pkey=new.parent) then lft-old.rgt+old.lft-1 when lft>=old.lft and lft<=old.rgt then lft+(select rgt from $name where $pkey=new.parent)-old.rgt-1 else lft end;
-//		update $name set rgt=case when rgt>old.rgt and rgt<(select rgt from $name where $pkey=new.parent) then rgt-old.rgt+old.lft-1 when rgt>=old.lft and rgt<=old.rgt then rgt+(select rgt from $name where $pkey=new.parent)-old.rgt-1 else rgt end;
-//		end;",
-//		
-//		"drop trigger if exists $(name)_tree_update_left;",
-//
-//		"create trigger $(name)_tree_update_left after update of parent on $name when new.parent is not null and length(new.parent)>0 and old.lft>(select lft from $name where $pkey=new.parent) begin
-//		update $name set lft=case when lft<old.lft and lft>=(select rgt from $name where $pkey=new.parent) then lft+old.rgt-old.lft+1 when lft>=old.lft and lft<=old.rgt then lft-old.lft+(select rgt from $name where $pkey=new.parent) else lft end;
-//		update $name set rgt=case when rgt<old.lft and rgt>=(select lft from $name where $pkey=old.$pkey) then rgt+old.rgt-old.lft+1 when rgt>=old.lft and rgt<=old.rgt then rgt-old.lft+(select lft from $name where $pkey=old.$pkey) else rgt end;
-//		end;"
-//	]
-//}
+map* lite_trigger_slno(char* name, char* pkey, char* by=NULL){
+	nby=by and " and $by=new.$by"
+	oby=by and " and $by=old.$by"
+	by&&=" where $by=new.$by"
+	return [
+		"drop trigger if exists $(name)_slno_insert_null;",
+		"create trigger $(name)_slno_insert_null after insert on $name when new.slno+0=0 or abs(new.slno+0)>(select count(*) from $name$by) begin
+			update $name set slno=1+(select count(*) from $name where $pkey!=new.$pkey$nby) where $pkey=new.$pkey;
+		end;",
+		"drop trigger if exists $(name)_slno_insert_negetive;",
+		"create trigger $(name)_slno_insert_negetive after insert on $name when new.slno<0 and abs(new.slno)<=(select count(*) from $name$by) begin
+			update $name set slno=slno+.5 where slno>=(select count(*) from $name$by)+new.slno$nby;
+			update $name set slno=slno+.5 where slno>=(select count(*) from $name$by)+new.slno$nby;
+			update $name set slno=(select count(*) from $name$by)+new.slno+1 where $pkey=new.$pkey;
+		end;",
+		"drop trigger if exists $(name)_slno_insert_positive;",
+		"create trigger $(name)_slno_insert_positive after insert on $name when new.slno>0 and new.slno<=(select count(*) from $name$by) begin
+			update $name set slno=slno+.5 where slno>=new.slno and $pkey!=new.$pkey$nby;
+			update $name set slno=slno+.5 where slno>=new.slno and $pkey!=new.$pkey$nby;
+		end;",
+		"create trigger $(name)_slno_delete after delete on $name begin
+			update $name set slno=slno-.5 where slno>old.slno$oby;
+			update $name set slno=slno-.5 where slno>old.slno$oby;
+		end;",
+		"create trigger $(name)_slno_update_null after update on $name when new.slno is null or new.slno=0 or new.slno='' or abs(new.slno)>(select count(*) from $name$by) begin
+			update $name set slno=slno-.5 where slno>old.slno$oby;
+			update $name set slno=slno-.5 where slno>old.slno$oby;
+			update $name set slno=(select count(*) from $name$by) where $pkey=new.$pkey;
+		end;",
+		"create trigger $(name)_slno_update_negetive after update on $name when new.slno<0 and new.slno>=-1*(select count(*) from $name$by) begin
+			update $name set slno=slno-.5 where slno>old.slno$oby;
+			update $name set slno=slno-.5 where slno>old.slno$oby;
+			update $name set slno=slno+.5 where slno>=(select count(*) from $name$by)+new.slno$nby;
+			update $name set slno=slno+.5 where slno>=(select count(*) from $name$by)+new.slno$nby;
+			update $name set slno=(select count(*) from $name$by)+new.slno where $pkey=new.$pkey;
+		end;",
+		"create trigger $(name)_slno_update_positive after update on $name when new.slno>0 and old.slno>0 and abs(new.slno-old.slno)>=1 and new.slno<=(select count(*) from $name$by) begin
+			update $name set slno=slno-.5 where slno>old.slno and $pkey!=new.$pkey$oby;
+			update $name set slno=slno-.5 where slno>old.slno and $pkey!=new.$pkey$oby;
+			update $name set slno=slno+.5 where slno>=new.slno and $pkey!=new.$pkey$nby;
+			update $name set slno=slno+.5 where slno>=new.slno and $pkey!=new.$pkey$nby;
+		end;
+		"]
+}
+map* lite_trigger_tree(char* name,char* pkey){
+	return [
+		"drop trigger if exists $(name)_tree_insert_null;",
+		
+		"create trigger $(name)_tree_insert_null after insert on $name when new.parent is null or new.parent='' begin
+		update $name set lft=(select coalesce(max(rgt),0) from $name where $pkey!=new.$pkey)+1,rgt=(select coalesce(max(rgt),0) from $name where $pkey!=new.$pkey)+2 where $pkey=new.$pkey;
+		end;",
+	
+		"drop trigger if exists $(name)_tree_insert;",
+
+		"create trigger $(name)_tree_insert after insert on $name when new.parent is not null and length(new.parent)>0 begin
+		update $name set lft=(select rgt from $name where $pkey=new.parent),rgt=(select rgt from $name where $pkey=new.parent)+1 where $pkey=new.$pkey;
+		update $name set lft=lft+2 where lft>(select rgt from $name where $pkey=new.parent);
+		update $name set rgt=rgt+2 where rgt>=(select rgt from $name where $pkey=new.parent) and $pkey!=new.$pkey;
+		end;",
+
+		"drop trigger if exists $(name)_tree_delete;",
+
+		"create trigger $(name)_tree_delete before delete on $name begin
+		update $name set lft=lft-(old.rgt-old.lft)-1 where lft>old.rgt;
+		update $name set rgt=rgt-(old.rgt-old.lft)-1 where rgt>old.rgt;
+		delete from $name where lft>old.lft and lft<old.rgt;
+		end;",
+
+		"drop trigger if exists $(name)_tree_update_null;",
+
+		"create trigger $(name)_tree_update_null after update of parent on $name when new.parent is null or length(new.parent)=0 begin
+		update $name set lft=lft+(select max(rgt) from $name)-old.lft+1,rgt=rgt+(select max(rgt) from $name)-old.lft+1 where lft>=old.lft and lft<=old.rgt;
+		update $name set lft=lft-(old.rgt-old.lft)-1 where lft>old.rgt;
+		update $name set rgt=rgt-(old.rgt-old.lft)-1 where rgt>old.rgt;
+		end;",
+	
+		"drop trigger if exists $(name)_tree_update_right;",
+
+		"create trigger $(name)_tree_update_right after update of parent on $name when new.parent is not null and length(new.parent)>0 and old.lft<(select lft from $name where $pkey=new.parent) begin
+		update $name set lft=case when lft>old.rgt and lft<(select rgt from $name where $pkey=new.parent) then lft-old.rgt+old.lft-1 when lft>=old.lft and lft<=old.rgt then lft+(select rgt from $name where $pkey=new.parent)-old.rgt-1 else lft end;
+		update $name set rgt=case when rgt>old.rgt and rgt<(select rgt from $name where $pkey=new.parent) then rgt-old.rgt+old.lft-1 when rgt>=old.lft and rgt<=old.rgt then rgt+(select rgt from $name where $pkey=new.parent)-old.rgt-1 else rgt end;
+		end;",
+		
+		"drop trigger if exists $(name)_tree_update_left;",
+
+		"create trigger $(name)_tree_update_left after update of parent on $name when new.parent is not null and length(new.parent)>0 and old.lft>(select lft from $name where $pkey=new.parent) begin
+		update $name set lft=case when lft<old.lft and lft>=(select rgt from $name where $pkey=new.parent) then lft+old.rgt-old.lft+1 when lft>=old.lft and lft<=old.rgt then lft-old.lft+(select rgt from $name where $pkey=new.parent) else lft end;
+		update $name set rgt=case when rgt<old.lft and rgt>=(select lft from $name where $pkey=old.$pkey) then rgt+old.rgt-old.lft+1 when rgt>=old.lft and rgt<=old.rgt then rgt-old.lft+(select lft from $name where $pkey=old.$pkey) else rgt end;
+		end;"
+	]
+}
+char* page_html(map* data){
+	return ---
+	<!DOCTYPE html>
+	<html><head><meta charset='utf-8'>
+	<title>$(data.title)</title>
+	<script type="application/ld+json">
+	{
+	"@context": "http://schema.org",
+	"@type": "WebSite",
+	"name": "Habib's Site",
+	"alternateName": "Sanjir Habib",
+	"url": "$(_globals.req.path)"
+	}
+	</script>
+	<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+	<meta name="application-name" content="habib"/>
+	<meta name="msapplication-square70x70logo" content="/small.jpg"/>
+	<meta name="msapplication-square150x150logo" content="/medium.jpg"/>
+	<meta name="msapplication-wide310x150logo" content="/wide.jpg"/>
+	<meta name="msapplication-square310x310logo" content="/large.jpg"/>
+	<meta name="msapplication-TileColor" content="#fff"/>
+	<meta name="description" content="$(data.desc)"/>
+	<meta name="keywords" content="$(data.keyword)"/>
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta name="og:image" content="$(data.logo)">
+	<meta name="og:description" content="$(data.desc)">
+	<meta name="og:title" content="$(data.title)">
+	$(data.header)
+	<link rel='icon' href='$(data.logo)'></link>
+	</head><body>
+	<div class='row-fluid alert-success'><span class='span8'>$(data.msg)</span>$(data.login)</div>
+	<div class=row-fluid>
+	<div class='span3' style='text-align:center;'><a href='$(data.home)'><img style='width:auto;height:100px;padding:.3em;' src='$(data.logo)'></img></a></div>
+	<div class='span7'>
+	<h2 style='text-align:center;'>$(data.title)</h2>
+	<div style='border-top:1px solid gray;border-bottom:1px solid gray;min-height:0.2em;text-align:center;'>$(data.desc)</div>
+	</div>
+	</div>
+	$(data.tabs)$(data.ldmenu)
+	<div class=container-fluid>
+	<div class=row-fluid>$(data.body)</div>
+	<hr noshade=noshade style="width:70%;margin:auto;height:1px;margin-bottom:.5em;margin-top:8em;color:gray;">
+	<div class=footer style='color:#333;font-size:small;text-align:center;'>
+	&copy; Habib &lt;habib@habibur.com&gt;. $(data.hits) $(data.footer)
+	</div>
+	</div>
+	</body></html>
+
+	---
+}
+map* page_data(map* data){
+	data.title||="Habib's Site"
+	data.tab||=data.title
+	data.logo||="logo.jpg".home_url()
+	data.home||=home_url()
+	data.css&&="<style>\n$(data.css)\n</style>"
+	head=''
+	['/res/bootstrap.css','/res/bootstrap-responsive.css','/res/jquery.js','/res/bootstrap.js']
+	.each v
+		if v.sub_str(-4)==='.css' => head.="<link rel='stylesheet' href='$v'></link>\n"
+		else head.="<script async src='$v'></script>\n"
+	_globals.jsfile.each v
+		head.="<script async src='$v'></script>\n"
+	data.header=head..data.css
+		..(_globals.css and "<style>\n".._globals.css.map_join("\n").."</style>")
+	data.footer=---
+	Run Time: $(run_time())ms=$(gc_time())GC+$(run_time()-total_time()-gc_time())Code+$(total_time())DB
+	Malloc: $(total_kb())KB. Total: $(max_mem()/1024)KB.
+	GC: $(gc_runs())runs.
+	---
+	data.footer.=(_globals.js and "<script>\n".._globals.js.map_join("\n").."</script>")
+	tabs=''
+	lddata={"@context": "http://schema.org", "@type": "BreadcrumbList"}
+	i=1
+	_globals.tabs.each url, name, idx
+		active=''
+		if idx==_globals.tabs.map_len()-1
+			active=" class='active'"			
+		tabs.="<li$active><a href='$url'>$name</a></li>\n"
+			
+		lddata.itemListElement[]={
+			"@type": "ListItem",
+			"position": i++, "item": { "@id": url.full_url(), "name": url.full_url() }
+		}
+	lddata.itemListElement[]={
+		"@type": "ListItem",
+		"position": i++, "item": { "@id": _globals.req.path.full_url(), "name": _globals.req.path.full_url() }
+	}
+	if _globals.tabs.map_len()>1
+		data.tabs="<div><ul class='nav nav-tabs'>$tabs</ul></div>"
+	data.ldmenu="<script type='application/ld+json'>$lddata</script>"
+	body=''
+	data.menu.each name, url
+		body.="<li><a style='overflow:hidden;text-overflow:ellipsis;white-space:nowrap;' href='$url'>$name</a></li>\n"
+	if data.width.is_int()==4
+		body="<div class='span11 offset1'><ul class='nav nav-pills'>$body</ul></div>"
+	else
+		body="<div class=span2><ul class='nav nav-tabs nav-stacked'>$body</ul></div>"
+
+	switch data.width.is_int()
+		case 1:
+			body.="<div class='span4'>$(data.body)</div><div class=span6>$(data.help)</div>"
+		break
+		case 3:
+			body.="<div class='span10'>$(data.help)$(data.body)</div>"
+		break
+		case 4:
+			body.="</div><div class=row-fluid>$(data.help)$(data.body)</div>"
+		break
+		default: //=2
+			body.="<div class='span7'>$(data.body)</div><div class=span3>$(data.help)</div>"
+	data.body=body
+	login=''
+	if _globals.sess.user
+		login="<span class='pull-right'>$(_globals.sess.user) as $(_globals.sess.role) | <a href='$(home_url())logout/'>Logout</a> &nbsp; </span>"
+	else
+		login="<span class='pull-right' style='margin-right:3em;'><a href='$(home_url())login/'>Login</a> | <a href='$(home_url())register/'>Register</a></span>"
+	data.login=login
+	return data
+}

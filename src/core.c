@@ -45,7 +45,43 @@ char* stack_str(){
 	return ret;
 };
 void fox_stack_dump(){ fox_error("Crashed!\n",1); };
+size_t blob_size(char* in){
+	if(!in){ return 0; };
+	char* head=ptr_head(in);
+	return *(size_t*)head-(in-head-8);
+};
+int str_len(char* str){
+	if(!str){ return 0; };
+	int type=ptr_type(str);
+	if(type==Blob){ return blob_size(str); };
+	if(type==String){ return strlen(str); };
+	return 0;
+};
+char* new_blob(int size){
+	char* ret=fox_alloc(size+8+1,Blob);
+	*(size_t*)ret=size;
+	ret+=sizeof(size_t);
+	assert(str_len(ret)==size);
+	assert(!ret[size]);
+	return ret;
+};
+char* blob_dup(char* str, int len){
+	if(!str||!len){ return NULL; };
+	return memcpy(new_blob(len),str,len);
+};
+char* str_dup_len(char* str, int len){
+	if(!str){ return NULL; };
+	if(is_blob(str)){
+		return memcpy(new_blob(len),str,len); };
+	char* ret=new_str(len);
+	memcpy(ret,str,len);
+	ret[len]='\0';
+	return ret;
+};
+char* str_dup(char* str){ return str_dup_len(str,str_len(str)); };
 char* sub_str(char* src,int from,int len){
+	if(!len){ return NULL; }; //fox_stack_dump()
+	if(len==-2147483648){ len=0; };
 	int slen=str_len(src);
 	if(!slen){ return ""; };
 	if(from < 0){ from+=slen; };
@@ -53,9 +89,12 @@ char* sub_str(char* src,int from,int len){
 	if(len<=0){ return NULL; };
 	if(from>=slen){ return NULL; };
 	if(from+len>=slen){ return str_dup((src+from)); };
+//	if src.is_blob() => fox_stack_dump()
+//	return src.str_dup_len(len)
 	char* ret=new_str(len);
 	memcpy(ret,src+from,len);
 	assert(!ret[len]);
+	assert(str_len(ret)==len);
 	return ret;
 };
 char* print(char* str,FILE* fp){
@@ -153,33 +192,6 @@ char* to_str(void* v,char* null,int human){
 	else if(is_map(v)){ return json(v,human); }
 	else {return "";};
 };
-size_t blob_size(char* in){
-	if(!in){ return 0; };
-	char* head=ptr_head(in);
-	return *(size_t*)head-(in-head-8);
-};
-char* new_blob(int size){
-	char* ret=fox_alloc(size+8+1,Blob);
-	*(size_t*)ret=size;
-	ret+=sizeof(size_t);
-	assert(str_len(ret)==size);
-	assert(!ret[size]);
-	return ret;
-};
-char* blob_dup(char* str, int len){
-	if(!str||!len){ return NULL; };
-	return memcpy(new_blob(len),str,len);
-};
-char* str_dup_len(char* str, int len){
-	if(!str){ return NULL; };
-	if(is_blob(str)){
-		return memcpy(new_blob(len),str,len); };
-	char* ret=new_str(len);
-	memcpy(ret,str,len);
-	ret[len]='\0';
-	return ret;
-};
-char* str_dup(char* str){ return str_dup_len(str,str_len(str)); };
 char* str_quote(char* head){
 	if(!head){ return "\"\""; };
 	int len=str_len(head);
@@ -721,13 +733,6 @@ mempage* free_page(mempage* pg){
 	_gcdata.total_pages--;
 	reindex_pages();
 	return idx < _gcdata.total_pages ? &_gcdata.pages[idx] : NULL;
-};
-int str_len(char* str){
-	if(!str){ return 0; };
-	int type=ptr_type(str);
-	if(type==Blob){ return blob_size(str); };
-	if(type==String){ return strlen(str); };
-	return 0;
 };
 int block_len(int block,mempage* pg){
 	if(!pg){ return 0; };

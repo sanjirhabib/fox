@@ -31,26 +31,36 @@ void xexit(int val=0);
 void* fox_error(char* msg,int dump=0);
 void* call_php(map* params,char* func);
 
-int make(map* files=source_files(),char* outdir="c"){
-	req=0
-	files.each v1 => if v1.file_time()>".version.txt".file_time() => req=1; break
-	return req ? files.compile(outdir) : 0
+int cgi(char* infile="main.fox", char* outfile="index.cgi",char* opts=NULL,int keepfiles=0){
+	ret=infile.cc(outfile, :cgi, opts, keepfiles)
+	if ret => return ret
+	write_htaccess()
+	return ret
 }
-int cgi(char* infile="main.fox", char* outfile="index.cgi",char* opts=NULL,int keepfiles=0) => return infile.cc(outfile, :cgi, opts, keepfiles)
+char* write_htaccess(){
+	if ".htaccess".is_file() => return NULL
+	return ---
+	RewriteEngine On
+	RewriteCond %{REQUEST_FILENAME} !-f
+	RewriteCond %{REQUEST_FILENAME} !-d
+	RewriteRule ^(.+)$ index.cgi [L,QSA]
+
+	---.write_file(".htaccess")
+}
 int cc(char* infile, char* outfile=NULL, char* profile="debug", char* opts=NULL, int keepfiles=0){
 	infile=infile.file_rename(,".fox")
 	if !outfile => outfile=infile
 	in=infile..".fox"
 	in.fox_c(infile..".c")
 	in.fox_h(infile..".h")
-	cflags="-I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -Wno-unused-command-line-argument"
-	xlibs=" -lcrypto -lmarkdown -lcurl -lsqlite3"
+	cflags="-std=gnu99 -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -Wno-unused-command-line-argument"
+	xlibs="-lcrypto -lmarkdown -lcurl -lsqlite3"
 	switches={
 		debug: "-O0 -lfox $cflags $xlibs"
 		speed: "-O3 -lfox $cflags $xlibs"
 		size: "-Os -lfox $cflags"
 		static: "-lfoxstatic -lfoxcmdstatic $cflags -fdata-sections -ffunction-sections -Wl,-dead_strip"
-		cgi: "-Os -lfoxstatic -lfoxcgistatic $cflags $xlibs -fdata-sections -ffunction-sections"
+		cgi: "-Os -lfoxstatic -lfoxcgistatic $cflags $xlibs"
 	}
 	profile = switches[profile] or switches[:debug]
 	ret="gcc $infile.c -o $outfile $profile $opts -std=gnu99 -Wno-logical-op-parentheses -lm 2>&1"
@@ -60,24 +70,6 @@ int cc(char* infile, char* outfile=NULL, char* profile="debug", char* opts=NULL,
 		(infile..".c").remove()	
 		(infile..".h").remove()	
 	return ret
-}
-int compile(map* files=source_files(),char* outdir="c",char* outfile=:fox,char* options="",int release=0,int exe=0){
-	out_c=build(files,outdir)
-	if outfile===:fox
-		"mv fox .fox".px()
-		if :fox.is_file() && "mv fox .fox".exec()
-			"mv fox failed".fox_error()
-	output=''
-	infiles=out_c.map_join(" ")
-	optimize="-g -Os"
-	if release => optimize="-O3"
-	ret="gcc $(optimize) $(infiles) $('callfunc.c'.file_rename(outdir)) extern.c -o $(outfile) -rmeta -std=gnu99 -Wno-logical-op-parentheses -lfox -lm -I $outdir/ $(options) 2>&1"
-		.px()
-		.exec()
-	if ret && outfile===:fox
-		if ".fox".is_file() => "mv .fox fox".exec()
-	if ret => xexit(-1)
-	return 0
 }
 char* file_dir(char* file){
 	len=file.str_len()
@@ -90,6 +82,7 @@ char* file_dir(char* file){
 void write_source(){
 	source_funcs()
 	source_files().each infile
+		if infile.str_end(".h") => continue
 		infile.fox_c(infile.file_rename(:src,".fox")..".c")
 		infile.fox_h(infile.file_rename(:include,".fox")..".h")
 	"fox.h".file_rename(:include).write_foxh()
@@ -107,19 +100,6 @@ char* file_rename(char* file,char* dir=NULL,char* delext=NULL,char* addext=NULL,
 	return olddir.sane_dir()..ret
 }
 char* sane_dir(char* dir) => return dir ? dir.str_rtrim("/").."/" : NULL
-map* build(map* files=source_files(),char* outdir="c"){
-	ret=[]
-	files.each v2
-		outfile=''
-		if v2.str_end(".fox") => outfile=v2.file_rename(outdir,".fox",".c",NULL)
-		else if v2.str_end(".c.in") => outfile=v2.file_rename(outdir,".in",NULL,NULL)
-		ret[]=outfile
-		v2.write_c(outfile)
-	"fox.h".file_rename(outdir).write_foxh()
-	"meta.c".file_rename(outdir).write_meta()
-	mem_usage().px()
-	return ret
-}
 char* write_configm4(char* name=:fox, char* outfile=NULL){
 	NAME=name.str_dup().str_upper()
 	return ---
@@ -196,7 +176,6 @@ char* int_human(int i,char* unit='',char* zero=""){
 	if ret && unit => ret.=unit
 	return ret
 }
-char* substr(char* src,int from,int len) => return len ? src.sub_str(from,len) : NULL
 char* mstr(char* format, ...){
 	ret=''
 	va_list args
@@ -357,13 +336,13 @@ char* str_ltrim(char* str,char* chars=" \t\n\r"){
 char* str_rtrim(char* str,char* chars=" \t\n\r"){
 	r=str.rchars(chars)
 	if !r => return str
-	return str.substr(0,str.str_len()-r)
+	return str.sub_str(0,str.str_len()-r)
 }
 char* str_trim(char* str,char* chars=" \t\n\r"){
 	l=str.lchars(chars)
 	r=str.rchars(chars)
 	if !l && !r => return str
-	return str.substr(l,str.str_len()-l-r)
+	return str.sub_str(l,str.str_len()-l-r)
 }
 int line_isempty(char* line){
 	while(*line && *line!='\n' && *line!='\r'){ if(*line!=' ' && *line!='\t') return 0; line++; }
@@ -633,15 +612,15 @@ map* add_name_val(map* mp,char* str,char** name,char** val,int type){
 	*val=NULL
 	void* v=NULL
 	if type==Vector
-		s=name1.substr(0,str-name1).str_trim()
+		s=name1.sub_str(0,str-name1).str_trim()
 		return mp[]=s.marked_str()
 	
 	if(val1)
 		name1=name1.str_trim(" \t")
 		name1=name1.str_replace("\\=","=")
 		if !name1.str_len() => name1=NULL
-		v=val1.substr(0,str-val1).marked_str(name1)
-	else if name1 => v=name1.substr(0,str-name1).marked_str(); name1=NULL
+		v=val1.sub_str(0,str-val1).marked_str(name1)
+	else if name1 => v=name1.sub_str(0,str-name1).marked_str(); name1=NULL
 	if type==Index && !name1.str_len() => name1=v.to_str()
 	else if type==Keys && !name1
 		name1=v.to_str()
@@ -657,10 +636,10 @@ char* read_as_block(char** from,int level,char* terminator="-"){
 		tabs=str.str_level()
 		len=str.line_len()
 		if tabs>=level||str.line_isempty()
-			ret.=len-level>0 ? str.substr(level,len-level) : "\n"
+			ret.=len-level>0 ? str.sub_str(level,len-level) : "\n"
 		else break
 		str+=len
-	if str.substr(str.str_level(),str.line_len()-str.str_level()).str_trim()===terminator
+	if str.sub_str(str.str_level(),str.line_len()-str.str_level()).str_trim()===terminator
 		len2=str.line_len()
 		str+=len2
 	*from=str
@@ -719,7 +698,7 @@ map* block_map(char** from,int inlevel,int maptype){
 		if !val
 			if *str=='\\' => str++; continue
 			if maptype!=Vector && *str=='='
-				name=name.substr(0,str-name)
+				name=name.sub_str(0,str-name)
 				val=str+1
 				continue
 			continue
@@ -837,6 +816,7 @@ int page_map(mempage* pg){
 		type &=(31)
 		if !type => ".".printf()
 		else if type==String => :s.printf()
+		else if type==Blob => :s.printf()
 		else if type==Map => :m.printf()
 		else if type==Vector => :v.printf()
 		else if type==Cell => :v.printf()
@@ -1105,11 +1085,11 @@ map* str_split(char* str,char* by,int limit=0){
 	end=''
 	int found=0
 	while (end=head.str_has(by))
-		ret[]=head.substr(0,end-head)
+		ret[]=head.sub_str(0,end-head)
 		head=end+by.str_len()
 		if limit && ++found==limit-1 => break
 	
-	ret[]=head.str_dup(); //head.str_dup()
+	ret[]=head.str_dup() //head.str_dup()
 	return ret
 }
 char* toks_str(map* mp){
@@ -1342,7 +1322,7 @@ char* read_num(char** in){
 		str++
 	from=*in
 	*in=str-1
-	return from.substr(0,str-from)
+	return from.sub_str(0,str-from)
 }
 char* skip_over(char* in,char* chars=" \t\n\r"){
 	while(*in && chars.strchr(*in)) in++
@@ -1374,7 +1354,7 @@ void* read_value(char** str, char* sep){
 	if **str=='{'||**str=='[' => return xjson_map_recurse(str)
 	from=*str
 	*str=from.skip_word(sep)
-	ret=from.substr(0,*str-from)
+	ret=from.sub_str(0,*str-from)
 	return ret ? ret : :null
 }
 char* read_upto(char** in,char* terminators){
@@ -1388,7 +1368,7 @@ char* read_upto(char** in,char* terminators){
 	if (*terminators=='\'' || *terminators=='"') && *str==*terminators => str++
 	from=*in
 	*in=str
-	return from.substr(0,str-from)
+	return from.sub_str(0,str-from)
 }
 char* read_alpha(char** in){
 	str=*in
@@ -1396,7 +1376,7 @@ char* read_alpha(char** in){
 	while(*str && is_alphanum(*str)) str++
 	from=*in
 	*in=str-1
-	return from.substr(0,str-from)
+	return from.sub_str(0,str-from)
 }
 char* fox_read_symbol(char** in){
 	str=*in
@@ -1409,13 +1389,13 @@ char* fox_read_symbol(char** in){
 		str++
 	from=*in
 	*in=str-1
-	return from.substr(0,str-from)
+	return from.sub_str(0,str-from)
 }
 char* fox_read_oper(char** in,char term){
 	str=*in
 	from=*in
 	while(*str && is_oper(*str) && *str!=term) str++
-	ret=from.substr(0,str-from)
+	ret=from.sub_str(0,str-from)
 	less=0
 	while ret.strlen() && !ret.is_word("~ ! @ # $ % ^ & * - = + | < > ? / \\ } ] ) . != >= <= += -= /= *= || && << >> => ++ -- ** *** **** |= &= >>= <<= ^^ ... -> == === !== .= .. ||= &&=")
 		ret[ret.strlen()-1]='\0'
@@ -1429,10 +1409,10 @@ char* read_upto_word(char** in,char* upto){
 	from=*in
 	if *str
 		*in=str+upto.strlen()-1
-		return from.substr(0,str-from+upto.strlen())
+		return from.sub_str(0,str-from+upto.strlen())
 	else
 		*in=str-1
-		return from.substr(0,str-from)
+		return from.sub_str(0,str-from)
 }
 char* read_theline(char** in){
 	if !in||!*in||!**in => return NULL
@@ -1441,21 +1421,21 @@ char* read_theline(char** in){
 	if *str=='\r' && str[1]=='\n' => str++
 	from=*in
 	*in=str-1
-	return from.substr(0,str-from)
+	return from.sub_str(0,str-from)
 }
 char* read_newline(char** in){
 	str=*in
 	while(*str && "\n\r".strchr(*str)) str++
 	from=*in
 	*in=str-1
-	return from.substr(0,str-from)
+	return from.sub_str(0,str-from)
 }
 char* read_space(char** in,char* spaces=" \t"){
 	str=*in
 	while(*str && spaces.strchr(*str)) str++
 	from=*in
 	*in=str-1
-	return from.substr(0,str-from)
+	return from.sub_str(0,str-from)
 }
 map* read_data(char** in){
 	str=*in
@@ -1465,12 +1445,12 @@ map* read_data(char** in){
 		str+=str.str_level()
 	if *str => str+=2
 	*in=str-1
-	return from.substr(0,str-from).data_toks()
+	return from.sub_str(0,str-from).data_toks()
 }
 char* read_heredoc(char** in){
 	str=*in
 	len=str.line_len()
-	hd=str.substr(0,len).str_trim()
+	hd=str.sub_str(0,len).str_trim()
 	from=*in
 	lno=0
 	str+=len
@@ -1482,7 +1462,7 @@ char* read_heredoc(char** in){
 		str+=len+tabs
 	if *str => str+=hd.str_len()-1
 	*in=str
-	return from.substr(0,str-from+1)
+	return from.sub_str(0,str-from+1)
 }
 char* read_multistr(char** in){
 	str=*in
@@ -1497,7 +1477,7 @@ char* read_multistr(char** in){
 		else if *str==end => if(!hd) break
 		else if *str=='\n'||*str=='\r'
 			if !lno && word_start
-				hd=word_start.substr(0,str-word_start)
+				hd=word_start.sub_str(0,str-word_start)
 			lno++
 			word_start=NULL
 		else if *str!=' ' && *str!='\t'
@@ -1508,7 +1488,7 @@ char* read_multistr(char** in){
 					break
 		str++
 	*in=str
-	return from.substr(0,str-from+1)
+	return from.sub_str(0,str-from+1)
 }
 char* read_quote(char** in){
 	str=*in
@@ -1521,7 +1501,7 @@ char* read_quote(char** in){
 	
 	from=*in
 	*in=str
-	return from.substr(0,str-from+1)
+	return from.sub_str(0,str-from+1)
 }
 char* xlog(char* str){
 	FILE* fp=fopen("/tmp/log.txt","a+")
@@ -1614,8 +1594,8 @@ map* c_tokenizer(char** line,char term){
 			c.char_str().add_ctok(mp,1)
 			c_tokenizer(&str,c.closing_paren()).add_ctok(mp,1)
 			if *str => c.closing_paren().char_str().add_ctok(mp,1)
-		else if ','==*str => str.substr(0,1).add_ctok(mp,1)
-		else if ';'==*str => str.substr(0,1).add_ctok(mp,1)
+		else if ','==*str => str.sub_str(0,1).add_ctok(mp,1)
+		else if ';'==*str => str.sub_str(0,1).add_ctok(mp,1)
 		if *str => str++
 	assert(term || str==expected_end)
 	*line=str
@@ -1662,7 +1642,7 @@ map* multiline_parts(char* str){
 		if i<lines.map_len()-1
 			nl="\\n"
 		if i => parts[]="\n"..tabs
-		parts[]="\"%s%s\"".mstr(v.sub_str(cut,0).str_escape(),nl)
+		parts[]="\"%s%s\"".mstr(v.sub_str(cut).str_escape(),nl)
 	return parts
 }
 map* heredoc_parts(char* str){
@@ -1685,7 +1665,7 @@ map* heredoc_parts(char* str){
 		nl="\\n"
 		if i==lines->len-2 => nl=""
 		parts[]="\n"..tabs
-		parts[]="\"%s%s\"".mstr(v.sub_str(cut,0).str_escape(),nl)
+		parts[]="\"%s%s\"".mstr(v.sub_str(cut).str_escape(),nl)
 	parts.xadd("\n"..tabs,"\"\"")
 	return parts
 }
@@ -1967,7 +1947,7 @@ map* xstr_parts(char* in){
 	tokhead=tok
 	incode=0
 	str=in
-	if "\"'".strchr(*str) => str=str.substr(1,-1)//.str_unquote()
+	if "\"'".strchr(*str) => str=str.sub_str(1,-1)//.str_unquote()
 	while 1
 		if incode
 			if incode>1 && *str=='('
@@ -3661,20 +3641,22 @@ int run_cmdline(map* args){
 int utests(char* test=NULL,char* file="utests.map"){
 	mp=file.file_vec()
 	errs=0
+	runs=0
 	for int i=0; i<mp.map_len(); i+=3
 		if test && !mp[i].str_has(test) => continue
+		runs++
 		"Running: %20s\r".printf(mp[i])
 		stdout.fflush()
 		errs+=mp[i+1].eval().utest(mp[i+2],mp[i+1],mp[i])
-	passed=mp.map_len()/3+errs
-	"\n$passed/$(mp.map_len()/3) tests passed.".px()
+	passed=runs-errs
+	"\n$passed/$runs tests passed.".px()
 	return errs
 }
 char* file_path(char* file){
 	int i=0
 	for i=file.str_len(); i>0; i-- => if file[i-1]=='/' => break
 	if !i => return "./"
-	return file.substr(0,i)
+	return file.sub_str(0,i)
 }
 map* load_global(char* file){
 	ret=file.file_read().str_map()
@@ -4174,7 +4156,7 @@ char* fork_exec(char* cmd,map* params){
 		else if status.WIFSIGNALED() => "command %s killed".mstr(cmd)
 	return NULL
 }
-map* source_files() => return ["core.fox","fox.fox","sql.fox","cmd.fox","cgi.fox"]
+map* source_files() => return ["core.fox","fox.fox","sql.fox","cmd.fox","cgi.fox","astro/astro.h"]
 map* source_funcs(){
 	if !_globals.cache.funcs
 		map* mp={}	
@@ -4619,13 +4601,9 @@ char* ptr_id(void* ptr){
 	sprintf(temp,"%d#%d+%d [%s]",pg->no,block,pg->block_size,ptr.ptr_name())
 	return temp
 }
-char* today() => return time_str().substr(0,10)
-char* now() => return time_str().substr(11,8)
+char* today() => return time_str().sub_str(0,10)
+char* now() => return time_str().sub_str(11,8)
 char* datetime() => return time_str()
-int crash(){
-	char** hello=NULL
-	return **hello
-}
 int str_ascii(char* in){
 	return in[0]
 }
@@ -4741,14 +4719,14 @@ char* read_over(char** in,char* chars=" \t"){
 		str++
 	from=*in
 	*in=str-1
-	return from.substr(0,str-from)
+	return from.sub_str(0,str-from)
 }
 map* data_quote(char* in){
 	if !in || !in.str_len() => return NULL
 	if "\"'`".str_chr(*in) => return [in]
 	if *in=='=' => return in.sub_str(1).x_map().vec_del(0,1).vec_compact()
-	if *in=='{' => return in.substr(1,-1).prop_toks()
-	if *in=='[' => return in.substr(1,-1).prop_vec_toks()
+	if *in=='{' => return in.sub_str(1,-1).prop_toks()
+	if *in=='[' => return in.sub_str(1,-1).prop_vec_toks()
 	return [in.str_quote()]
 }
 map* prop_vec_toks(char* in){
@@ -4860,9 +4838,9 @@ void* data_unquote(char* in){
 	if !in || !in.str_len() => return NULL
 	if "\"'`".str_chr(*in) => return in.str_unquote()
 	if *in=='=' => return in.sub_str(1).eval()
-	if in.str_start("---") => return in.substr(3,-3)
-	if *in=='{' => return in.substr(1,-1).prop_map()
-	if *in=='[' => return in.substr(1,-1).prop_vec()
+	if in.str_start("---") => return in.sub_str(3,-3)
+	if *in=='{' => return in.sub_str(1,-1).prop_map()
+	if *in=='[' => return in.sub_str(1,-1).prop_vec()
 	return in
 }
 map* prop_vec(char* in){

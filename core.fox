@@ -45,7 +45,43 @@ char* stack_str(){
 	return ret
 }
 void fox_stack_dump() => fox_error("Crashed!\n",1)
-char* sub_str(char* src,int from,int len=0){
+size_t blob_size(char* in){
+	if !in => return 0
+	char* head=in.ptr_head()
+	return *(size_t*)head-(in-head-8)
+}
+int str_len(char* str){
+	if !str => return 0
+	int type=str.ptr_type()
+	if type==Blob => return str.blob_size()
+	if type==String => return str.strlen()
+	return 0
+}
+char* new_blob(int size){
+	char* ret=fox_alloc(size+8+1,Blob)
+	*(size_t*)ret=size
+	ret+=sizeof(size_t)
+	assert(ret.str_len()==size)
+	assert(!ret[size])
+	return ret
+}
+char* blob_dup(char* str, int len){
+	if !str||!len => return NULL
+	return new_blob(len).memcpy(str,len)
+}
+char* str_dup_len(char* str, int len){
+	if !str => return NULL
+	if str.is_blob()
+		return new_blob(len).memcpy(str,len)
+	char* ret=new_str(len)
+	ret.memcpy(str,len)
+	ret[len]='\0'
+	return ret
+}
+char* str_dup(char* str) => return str.str_dup_len(str.str_len())
+char* sub_str(char* src,int from,int len=-2147483648){
+	if !len => return NULL //fox_stack_dump()
+	if len==-2147483648 => len=0
 	int slen=src.str_len()
 	if !slen => return ""
 	if from < 0 => from+=slen
@@ -53,9 +89,12 @@ char* sub_str(char* src,int from,int len=0){
 	if len<=0 => return NULL
 	if from>=slen => return NULL
 	if from+len>=slen => return (src+from).str_dup()
+//	if src.is_blob() => fox_stack_dump()
+//	return src.str_dup_len(len)
 	char* ret=new_str(len)
 	ret.memcpy(src+from,len)
 	assert(!ret[len])
+	assert(ret.str_len()==len)
 	return ret
 }
 char* print(char* str,FILE* fp=stdout){
@@ -153,33 +192,6 @@ char* to_str(void* v,char* null="",int human=0){
 	else if v.is_map() => return v.json(human)
 	else return ""
 }
-size_t blob_size(char* in){
-	if !in => return 0
-	char* head=in.ptr_head()
-	return *(size_t*)head-(in-head-8)
-}
-char* new_blob(int size){
-	char* ret=fox_alloc(size+8+1,Blob)
-	*(size_t*)ret=size
-	ret+=sizeof(size_t)
-	assert(ret.str_len()==size)
-	assert(!ret[size])
-	return ret
-}
-char* blob_dup(char* str, int len){
-	if !str||!len => return NULL
-	return new_blob(len).memcpy(str,len)
-}
-char* str_dup_len(char* str, int len){
-	if !str => return NULL
-	if str.is_blob()
-		return new_blob(len).memcpy(str,len)
-	char* ret=new_str(len)
-	ret.memcpy(str,len)
-	ret[len]='\0'
-	return ret
-}
-char* str_dup(char* str) => return str.str_dup_len(str.str_len())
 char* str_quote(char* head){
 	if !head => return "\"\""
 	len=head.str_len()
@@ -721,13 +733,6 @@ mempage* free_page(mempage* pg){
 	_gcdata.total_pages--
 	reindex_pages()
 	return idx < _gcdata.total_pages ? &_gcdata.pages[idx] : NULL
-}
-int str_len(char* str){
-	if !str => return 0
-	int type=str.ptr_type()
-	if type==Blob => return str.blob_size()
-	if type==String => return str.strlen()
-	return 0
 }
 int block_len(int block,mempage* pg){
 	if !pg => return 0
