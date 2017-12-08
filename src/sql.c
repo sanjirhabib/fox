@@ -13,7 +13,7 @@ map* split_keywords(map* mp,char* words){
 	map* ret=new_map();
 	map* curr=new_vec();
 	char* lastword=NULL;
-	for(int i=next(mp,-1,NULL,&NULL); has_id(mp,i); i++){
+	for(int i=next(mp,-1,NULL,NULL); has_id(mp,i); i++){
 		if(is_word(map_id(mp,i),words)){
 			if(curr->len){ add(ret,lastword,curr); };
 			lastword=map_id(mp,i);
@@ -36,14 +36,14 @@ char* join_clause(char* pre,map* mp,char* clause,char* by,char* sub1,char* sub2,
 	map* mp1=mp;
 	if(clause){ mp1=map_val(mp,clause); };
 	char* ret=NULL;
-	for(int idx2=next(mp1,-1,NULL,&NULL); has_id(mp1,idx2); idx2++){
+	for(int idx2=next(mp1,-1,NULL,NULL); has_id(mp1,idx2); idx2++){
 		char* ret2=NULL;
 		if(!sub1){ ret2=to_str(map_id(mp1,idx2),"",0); };
-		if(!sub2){ ret2=sql_map_join(&map_id(mp1,idx2),sub1); }
+		if(!sub2){ ret2=sql_map_join(map_id(mp1,idx2),sub1); }
 		else{
 			void* mp2=map_id(mp1,idx2);
 			char* ret3=NULL;
-			map* map_1=map_id(mp1,idx2); for(int idx4=next(map_1,-1,NULL,&NULL); has_id(map_1,idx4); idx4++){ void* v4=map_id(map_1,idx4); char* k4=map_key(map_1, idx4);
+			map* map_1=map_id(mp1,idx2); for(int idx4=next(map_1,-1,NULL,NULL); has_id(map_1,idx4); idx4++){ void* v4=map_id(map_1,idx4); char* k4=map_key(map_1, idx4);
 				if(is_str(k4)){ ret3=str_join(ret3,sub1,sql_map_join(map_key_val(mp2,idx4),sub2)); };
 			};
 			ret2=ret3; };
@@ -63,7 +63,7 @@ map* de_select(map* cls){
 		if(str_eq(to_str(map_id(map_val(cls,"select"),0),"",0),"prefix")){
 			add(cls,"prefix",map_id(map_val(cls,"select"),1));
 			vec_compact(vec_del(map_val(cls,"select"),0,2)); }; };
-	map* map_1=map_split(map_val(cls,"select"),",",0); for(int idx=next(map_1,-1,NULL,&NULL); has_id(map_1,idx); idx++){ void* val=map_id(map_1,idx);
+	map* map_1=map_split(map_val(cls,"select"),",",0); for(int idx=next(map_1,-1,NULL,NULL); has_id(map_1,idx); idx++){ void* val=map_id(map_1,idx);
 		map* mp1=map_split(val,"as",2);
 		char* name=mp1->len==2 ? sql_str(map_id(mp1,1)) : sql_str(map_id(mp1,0));
 		add(ret,name,map_id(mp1,0)); };
@@ -72,10 +72,10 @@ map* de_select(map* cls){
 map* de_from(map* cls){
 	map* ret=new_map();
 	void* last_join_type=NULL;
-	map* map_1=map_split(map_val(cls,"from"),"join",0); for(int idx=next(map_1,-1,NULL,&NULL); has_id(map_1,idx); idx++){ void* v=map_id(map_1,idx);
+	map* map_1=map_split(map_val(cls,"from"),"join",0); for(int idx=next(map_1,-1,NULL,NULL); has_id(map_1,idx); idx++){ void* v=map_id(map_1,idx);
 		void* join_type=NULL;
 		map* words=v;
-		for(int idx1=next(words,-1,NULL,&NULL); has_id(words,idx1); idx1++){ void* v1=map_id(words,idx1);
+		for(int idx1=next(words,-1,NULL,NULL); has_id(words,idx1); idx1++){ void* v1=map_id(words,idx1);
 			if(is_word(v1,"full inner left right cross outer")){
 				join_type=vec_slice(words,idx1,words->len);
 				vec_compact(words);
@@ -95,7 +95,7 @@ map* de_from(map* cls){
 map* parse_where(map* cls){
 	if(map_has_word(cls,"or")){ return xmap(NULL, cls, End); };
 	map* wheres=new_map();
-	map* map_1=map_split(cls,"and",0); for(int idx2=next(map_1,-1,NULL,&NULL); has_id(map_1,idx2); idx2++){ void* val2=map_id(map_1,idx2);
+	map* map_1=map_split(cls,"and",0); for(int idx2=next(map_1,-1,NULL,NULL); has_id(map_1,idx2); idx2++){ void* val2=map_id(map_1,idx2);
 		map* eqs=map_split(val2,"=",2);	
 		void* val=map_id(eqs,0);
 		char* key=NULL;
@@ -121,10 +121,10 @@ map* de_order(map* cls){
 	if(!mp){ return cls; };
 	if(str_eq(map_id(mp,0),"by")){ vec_compact(vec_del(mp,1-1,1)); };
 	map* ret=new_map();
-	map* map_1=map_split(mp,",",0); for(int idx=next(map_1,-1,NULL,&NULL); has_id(map_1,idx); idx++){ void* val=map_id(map_1,idx);
+	map* map_1=map_split(mp,",",0); for(int idx=next(map_1,-1,NULL,NULL); has_id(map_1,idx); idx++){ void* val=map_id(map_1,idx);
 		void* mp1=val;
-		char* col=sql_str(&map_id(mp1,0));
-		char* ord=sql_str(&map_id(mp1,1));
+		char* col=sql_str(map_id(mp1,0));
+		char* ord=sql_str(map_id(mp1,1));
 		int iord=1;
 		if(str_eq(ord,"desc")){ iord=-1; };
 		map_add(ret,col,int_var(iord));
@@ -143,8 +143,8 @@ map* de_limit(map* cls){
 	void* mp=map_val(cls,"limit");
 	if(!mp){ return cls; };
 	mp=map_split(mp,",",2);
-	int offset=stoi(sql_str(&map_id(mp,0)));
-	int limit=stoi(sql_str(&map_id(mp,1)));
+	int offset=stoi(sql_str(map_id(mp,0)));
+	int limit=stoi(sql_str(map_id(mp,1)));
 	if(offset && !limit){ limit=offset; offset=0; };
 	add(cls,"limit",xmap("offset",int_var( offset),"limit",int_var( limit), End));
 	return cls;
@@ -158,7 +158,7 @@ map* sql_toks_map(map* toks){
 		de_where(
 		de_select(
 		de_from(
-		split_keywords(&map_id(toks,0),"select from where group having order limit"))))))));
+		split_keywords(map_id(toks,0),"select from where group having order limit"))))))));
 	if(map_id(toks,1)){ add(ret,"union",map_id(toks,1)); };
 	return ret;
 };
@@ -171,7 +171,7 @@ map* sql_map(char* sql){
 };
 char* sql_map_join(map* mp,char* joiner){
 	char* ret=NULL;
-	for(int idx=next(mp,-1,NULL,&NULL); has_id(mp,idx); idx++){ ret=str_join(ret,joiner,sql_str(map_id(mp,idx))); };
+	for(int idx=next(mp,-1,NULL,NULL); has_id(mp,idx); idx++){ ret=str_join(ret,joiner,sql_str(map_id(mp,idx))); };
 	return ret;	
 };
 char* var_join(void* v,char* joiner){
@@ -182,7 +182,7 @@ char* var_join(void* v,char* joiner){
 map* sql_convert_func(map* mp,char* db){
 	char* name=map_id(mp,0);
 	map* params=new_vec();
-	for(int idx=next(mp,-1,NULL,&NULL); has_id(mp,idx); idx++){
+	for(int idx=next(mp,-1,NULL,NULL); has_id(mp,idx); idx++){
 		if(idx==0){ continue; };
 		vec_add(params,sql_str(map_id(mp,idx)));
 	};
@@ -204,14 +204,14 @@ char* is_func(map* mp,int idx){
 	return map_id(mp,idx-1);
 };
 map* sql_func_params(map* mp,int idx){
-	return is_func(mp,idx) ? map_split(&map_id(mp,idx+1),",",0) : NULL;
+	return is_func(mp,idx) ? map_split(map_id(mp,idx+1),",",0) : NULL;
 };
 map* get_func(map* mp,int idx){
-	return is_func(mp,idx) ? vec_merge(xvec(map_id(mp,idx-1), End),map_split(&map_id(mp,idx+1),",",0)) : NULL;
+	return is_func(mp,idx) ? vec_merge(xvec(map_id(mp,idx-1), End),map_split(map_id(mp,idx+1),",",0)) : NULL;
 };
 map* search_sql_func(map* mp,char* db){
 	if(!mp){ return NULL; };
-	for(int idx=next(mp,-1,NULL,&NULL); has_id(mp,idx); idx++){ void* v=map_id(mp,idx);
+	for(int idx=next(mp,-1,NULL,NULL); has_id(mp,idx); idx++){ void* v=map_id(mp,idx);
 		if(is_map(v)){ set(mp,idx,search_sql_func(v,db)); continue; };
 		map* mp1=get_func(mp,idx);
 		if(mp1){ mp1=sql_convert_func(mp1,db); };
@@ -226,10 +226,10 @@ map* to_vec(void* val){
 map* sql_order(char* sql){
 	map* mp=sql_map(sql);
 	map* ret=new_map();
-	map* map_1=map_val(map_id(mp,mp->len-1),"order"); for(int idx=next(map_1,-1,NULL,&NULL); has_id(map_1,idx); idx++){ void* val=map_id(map_1,idx);
+	map* map_1=map_val(map_id(mp,mp->len-1),"order"); for(int idx=next(map_1,-1,NULL,NULL); has_id(map_1,idx); idx++){ void* val=map_id(map_1,idx);
 		void* mp1=val;
-		char* col=sql_str(&map_id(mp1,0));
-		char* ord=sql_str(&map_id(mp1,1));
+		char* col=sql_str(map_id(mp1,0));
+		char* ord=sql_str(map_id(mp1,1));
 		int iord=1;
 		if(str_eq(ord,"desc")){ iord=-1; };
 		map_add(ret,col,int_var(iord));
@@ -239,7 +239,7 @@ map* sql_order(char* sql){
 map* sql_tables(char* sql,char* db){
 	if(is_code(sql)){ return xmap((sql), sql, End); };
 	map* ret=new_map();
-	map* map_1=sql_cls(sql,"from"); for(int idx=next(map_1,-1,NULL,&NULL); has_id(map_1,idx); idx++){ void* v=map_id(map_1,idx); char* k=map_key(map_1, idx);
+	map* map_1=sql_cls(sql,"from"); for(int idx=next(map_1,-1,NULL,NULL); has_id(map_1,idx); idx++){ void* v=map_id(map_1,idx); char* k=map_key(map_1, idx);
 		add(ret,is_code(k) ? k : NULL,map_val(v,"tbl")); };
 	return ret;
 };
@@ -247,7 +247,7 @@ map* sql_col(char* sql,char* db,map* exp){
 	map* ret=new_map();
 	if(exp->len==1){
 		char* name=map_id(exp,0);
-		map* map_1=sql_tables(sql,db); for(int next1=next(map_1,-1,NULL,&NULL); has_id(map_1,next1); next1++){ void* ssql=map_id(map_1,next1);
+		map* map_1=sql_tables(sql,db); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* ssql=map_id(map_1,next1);
 			map* cols=sql_select_cols(ssql,db,NULL);
 			if(map_val(cols,name)){ return map_val(cols,name); }; };
 		ret=map_val(sql_cls(sql,"select"),name);
@@ -309,7 +309,7 @@ map* crosstab_cols(map* cols,char* sql,char* db,map* params){
 	if(!map_val(mp,"crosstab")){ return NULL; };
 	void* col1=map_val(map_id(cols,0),"alias");
 	void* col2_name=map_val(map_id(cols,cols->len-2),"alias");
-	char* col2_expr=map_join(&map_val(map_id(cols,cols->len-2),"expr"),"");
+	char* col2_expr=map_join(map_val(map_id(cols,cols->len-2),"expr"),"");
 	void* sum=map_id(cols,cols->len-1);
 	void* table=map_val(map_val(cols,sum),"table");
 	map* order=xmap((col2_expr), map_val(map_val(mp,"order"),col2_expr), End);
@@ -318,7 +318,7 @@ map* crosstab_cols(map* cols,char* sql,char* db,map* params){
 	map* ret=new_map();
 	void* fsum=map_val(sum,"sum");
 	if(str_eq(fsum,"*")){ fsum="1"; };
-	for(int i=next(rows,-1,NULL,&NULL); has_id(rows,i); i++){ void* val=map_id(rows,i);
+	for(int i=next(rows,-1,NULL,NULL); has_id(rows,i); i++){ void* val=map_id(rows,i);
 		char* f=NULL;
 		if(map_val(mp,"prefix")){
 			f=xstr(to_str(map_val(mp,"prefix"),"",0),"_",str_code(val), End);
@@ -332,18 +332,18 @@ map* sql_select_cols(char* sql,char* db,map* params){
 	map* ret=new_map();
 	if(is_code(sql)){
 		ret=map_dup(tbl_cols(sql,db));
-		for(int i6=next(ret,-1,NULL,&NULL); has_id(ret,i6); i6++){ void* v6 =map_id(ret,i6); char* k6=map_key(ret, i6); add(v6,"expr",xvec(k6, End)); };
+		for(int i6=next(ret,-1,NULL,NULL); has_id(ret,i6); i6++){ void* v6 =map_id(ret,i6); char* k6=map_key(ret, i6); add(v6,"expr",xvec(k6, End)); };
 		return ret; };
 	map* cols=sql_cls(sql,"select");
 	if(!db){
 		char* tbl=sql_table(sql);
-		for(int idx=next(cols,-1,NULL,&NULL); has_id(cols,idx); idx++){ void* v=map_id(cols,idx); char* k=map_key(cols, idx);
+		for(int idx=next(cols,-1,NULL,NULL); has_id(cols,idx); idx++){ void* v=map_id(cols,idx); char* k=map_key(cols, idx);
 			add(ret,k,xmap("alias", k, "expr", v, "table", tbl, End)); };
 		return ret; };
-	for(int idx=next(cols,-1,NULL,&NULL); has_id(cols,idx); idx++){ void* v=map_id(cols,idx); char* k=map_key(cols, idx);
+	for(int idx=next(cols,-1,NULL,NULL); has_id(cols,idx); idx++){ void* v=map_id(cols,idx); char* k=map_key(cols, idx);
 		if(str_eq(k,"*")){
-			map* map_1=sql_tables(sql,db); for(int next1=next(map_1,-1,NULL,&NULL); has_id(map_1,next1); next1++){ void* ssql=map_id(map_1,next1); char*  talias=map_key(map_1, next1);
-				map* map_1=sql_select_cols(ssql,db,NULL); for(int next1=next(map_1,-1,NULL,&NULL); has_id(map_1,next1); next1++){ void* col=map_id(map_1,next1); char*  f=map_key(map_1, next1);
+			map* map_1=sql_tables(sql,db); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* ssql=map_id(map_1,next1); char*  talias=map_key(map_1, next1);
+				map* map_1=sql_select_cols(ssql,db,NULL); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* col=map_id(map_1,next1); char*  f=map_key(map_1, next1);
 					if(map_val(ret,f)){ continue; };
 					add(ret,f,map_dup(col));
 					add(add_key(ret,f,Map),"expr",is_code(talias) ? xvec(talias,".",f, End) : xvec(f, End));
@@ -353,7 +353,7 @@ map* sql_select_cols(char* sql,char* db,map* params){
 			char* talias=sub_str(k,0,-2);
 			void* tcols=map_val(sql_select_cols(sql,db,NULL),talias);
 			if(!tcols){ fox_error(xstr("Invalid table alias ", k, " in sql ", sql, End),0); };
-			for(int idx2=next(tcols,-1,NULL,&NULL); has_id(tcols,idx2); idx2++){ void* v2=map_id(tcols,idx2); char* k2=map_key(tcols, idx2);
+			for(int idx2=next(tcols,-1,NULL,NULL); has_id(tcols,idx2); idx2++){ void* v2=map_id(tcols,idx2); char* k2=map_key(tcols, idx2);
 				if(map_val(cols,k2)||map_val(ret,k2)){ continue; };
 				add(ret,k2,map_dup(v2));
 				add(add_key(ret,k2,Map),"expr",is_code(talias) ? xvec(talias,".",k2, End) : xvec(k2, End));
@@ -378,14 +378,14 @@ map* cols_collect(map* cols,void* collect){
 	assert(is_map(cols));
 	if(is_str(collect)){ collect=str_map(collect,Map); };
 	map* ret=new_map();
-	for(int next1=next(collect,-1,NULL,&NULL); has_id(collect,next1); next1++){ void* op=map_id(collect,next1); char* f=map_key(collect, next1);
+	for(int next1=next(collect,-1,NULL,NULL); has_id(collect,next1); next1++){ void* op=map_id(collect,next1); char* f=map_key(collect, next1);
 		if(str_eq(f,"*")){ map_merge(ret,cols); }
 		else if(f[0]=='-'){
 			map_compact(map_del_key(ret,sub_str(f,1,-2147483648)));
 		}else if(str_has(f,"-")){
 			map* limit=str_split(f,"-",2);
 			int inlimit=0;
-			for(int next1=next(cols,-1,NULL,&NULL); has_id(cols,next1); next1++){ char* f1=map_key(cols, next1);
+			for(int next1=next(cols,-1,NULL,NULL); has_id(cols,next1); next1++){ char* f1=map_key(cols, next1);
 				if(str_eq(map_id(limit,0),f1)){
 					inlimit=1; };
 				if(inlimit){
@@ -395,29 +395,29 @@ map* cols_collect(map* cols,void* collect){
 		}else{
 			add(ret,f,map_val(cols,f));
 			if(is_map(map_val(ret,f))){
-				add(ret,f,map_dup(&map_val(ret,f)));
-				if(is_map(op)){ map_merge(&map_val(ret,f),op); };
-				if(str_eq(&map_val(map_val(ret,f),"type"),"-")){ add(add_key(ret,f,Map),"type",map_val(map_val(cols,f),"type")); }; }; }; };
+				add(ret,f,map_dup(map_val(ret,f)));
+				if(is_map(op)){ map_merge(map_val(ret,f),op); };
+				if(str_eq(map_val(map_val(ret,f),"type"),"-")){ add(add_key(ret,f,Map),"type",map_val(map_val(cols,f),"type")); }; }; }; };
 	return ret;
 };
 map* sql_where_cols(char* sql,char* db){
 	map* ret=new_map();
-	map* map_1=sql_cls(sql,"where"); for(int next1=next(map_1,-1,NULL,&NULL); has_id(map_1,next1); next1++){ void* val=map_id(map_1,next1); char* k=map_key(map_1, next1);
+	map* map_1=sql_cls(sql,"where"); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* val=map_id(map_1,next1); char* k=map_key(map_1, next1);
 		if(!is_str(k)){ continue; };
 		add(ret,k,sql_col(sql,db,sql_toks(k))); };
-	map* map_2=sql_cls(sql,"having"); for(int next1=next(map_2,-1,NULL,&NULL); has_id(map_2,next1); next1++){ void* val=map_id(map_2,next1); char* k=map_key(map_2, next1);
+	map* map_2=sql_cls(sql,"having"); for(int next1=next(map_2,-1,NULL,NULL); has_id(map_2,next1); next1++){ void* val=map_id(map_2,next1); char* k=map_key(map_2, next1);
 		if(!is_str(k)){ continue; };
 		add(ret,k,sql_col(sql,db,sql_toks(k))); };
 	return ret;
 };
 map* sql_where_vals(char* sql){
 	map* ret=new_map();
-	map* map_1=sql_cls(sql,"where"); for(int next1=next(map_1,-1,NULL,&NULL); has_id(map_1,next1); next1++){ void* val=map_id(map_1,next1); char* k=map_key(map_1, next1);
+	map* map_1=sql_cls(sql,"where"); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* val=map_id(map_1,next1); char* k=map_key(map_1, next1);
 		if(!is_str(k)){ continue; };
 		char* sval=sql_str(val);
 		if(strchr("\"'",sval[0])){ sval=str_unquote(sval); };
 		add(ret,k,sval); };
-	map* map_2=sql_cls(sql,"having"); for(int next1=next(map_2,-1,NULL,&NULL); has_id(map_2,next1); next1++){ void* val=map_id(map_2,next1); char* k=map_key(map_2, next1);
+	map* map_2=sql_cls(sql,"having"); for(int next1=next(map_2,-1,NULL,NULL); has_id(map_2,next1); next1++){ void* val=map_id(map_2,next1); char* k=map_key(map_2, next1);
 		if(!is_str(k)){ continue; };
 		char* sval=sql_str(val);
 		if(strchr("\"'",sval[0])){ sval=str_unquote(sval); };
@@ -437,27 +437,27 @@ char* sql_add_limit(char* sql,int rpp,int page){
 char* sql_add_order(char* sql,char* db,map* order){
 	order=map_merge(sql_cls(sql,"order"),order);
 	if(!order){ order=new_map(); };
-	map* map_1=sql_pkeys(sql,db); for(int next1=next(map_1,-1,NULL,&NULL); has_id(map_1,next1); next1++){ void* f=map_id(map_1,next1);
+	map* map_1=sql_pkeys(sql,db); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* f=map_id(map_1,next1);
 		if(!map_val(order,f)){ add(order,f,int_var(1)); }; };
 	return sql_add_cls(sql,"order",order);
 };
 char* sql_add_filter(char* sql,map* filter){
 	map* dsql=sql_map(sql);
-	for(int next1=next(filter,-1,NULL,&NULL); has_id(filter,next1); next1++){ void* val=map_id(filter,next1); char* k=map_key(filter, next1);
+	for(int next1=next(filter,-1,NULL,NULL); has_id(filter,next1); next1++){ void* val=map_id(filter,next1); char* k=map_key(filter, next1);
 		add(add_key(dsql,"where",Map),k,xstr(":",k, End)); };
 	return map_sql(dsql);
 };
 char* name_type(char* name){
-	map* map_1=types(); for(int next1=next(map_1,-1,NULL,&NULL); has_id(map_1,next1); next1++){ char* type=map_key(map_1, next1);
+	map* map_1=types(); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ char* type=map_key(map_1, next1);
 		if(str_has(name,type)){ return type; }; };
-	map* map_2=str_map("name=text,desc=para,title=text",Map); for(int next1=next(map_2,-1,NULL,&NULL); has_id(map_2,next1); next1++){ void* val=map_id(map_2,next1); char* key=map_key(map_2, next1);
+	map* map_2=str_map("name=text,desc=para,title=text",Map); for(int next1=next(map_2,-1,NULL,NULL); has_id(map_2,next1); next1++){ void* val=map_id(map_2,next1); char* key=map_key(map_2, next1);
 		if(str_has(name,key)){ return val; }; };
 	return "text";
 };
 map* to_cols(void* cols,char* sql,char* db){
 	if(is_str(cols)){ cols=xkeys(cols); };
 	if(!sql){
-		for(int next1=next(cols,-1,NULL,&NULL); has_id(cols,next1); next1++){ void* col=map_id(cols,next1); char* f=map_key(cols, next1);
+		for(int next1=next(cols,-1,NULL,NULL); has_id(cols,next1); next1++){ void* col=map_id(cols,next1); char* f=map_key(cols, next1);
 			if(!col){
 				add(cols,f,xmap("type", name_type(f), End));
 			}else if(is_str(col)){
@@ -466,10 +466,10 @@ map* to_cols(void* cols,char* sql,char* db){
 				add(add_key(cols,f,Map),"type",name_type(f)); }; };
 		return cols; };
 	map* ret=new_map();
-	for(int idx=next(cols,-1,NULL,&NULL); has_id(cols,idx); idx++){ void* col=map_id(cols,idx); char* f=map_key(cols, idx);
+	for(int idx=next(cols,-1,NULL,NULL); has_id(cols,idx); idx++){ void* col=map_id(cols,idx); char* f=map_key(cols, idx);
 		add(ret,f,sql_col(sql,db,sql_toks(f)));
-		if(is_map(col)){ map_merge(&map_val(ret,f),col); };
-		if(str_eq(&map_val(map_val(ret,f),"type"),"-")){ add(add_key(ret,f,Map),"type",map_val(map_val(cols,f),"type")); }; };
+		if(is_map(col)){ map_merge(map_val(ret,f),col); };
+		if(str_eq(map_val(map_val(ret,f),"type"),"-")){ add(add_key(ret,f,Map),"type",map_val(map_val(cols,f),"type")); }; };
 	return ret;
 };
 map* sql_cols(char* sql,char* db,void* cols){
@@ -480,7 +480,7 @@ map* sql_add_cols(char* sql,char* db,map* cols){
 	map* scols=tbl_cols(sql_table(sql),db);
 	if(map_len(cols)){ return cols_collect(scols,cols); };
 	map* ret=new_map();
-	for(int next1=next(scols,-1,NULL,&NULL); has_id(scols,next1); next1++){ void* op=map_id(scols,next1); char* f=map_key(scols, next1);
+	for(int next1=next(scols,-1,NULL,NULL); has_id(scols,next1); next1++){ void* op=map_id(scols,next1); char* f=map_key(scols, next1);
 		if(map_val(op,"noshow")){ continue; };
 		if(map_val(op,"noadd")){ continue; };
 		if(map_val(op,"auto")){ continue; };
@@ -493,7 +493,7 @@ map* sql_view_cols(char* sql,char* db,map* cols){
 	map* scols=tbl_cols(sql_table(sql),db);
 	if(map_len(cols)){ return cols_collect(scols,cols); };
 	map* ret=new_map();
-	for(int next1=next(scols,-1,NULL,&NULL); has_id(scols,next1); next1++){ void* op=map_id(scols,next1); char* f=map_key(scols, next1);
+	for(int next1=next(scols,-1,NULL,NULL); has_id(scols,next1); next1++){ void* op=map_id(scols,next1); char* f=map_key(scols, next1);
 		if(map_val(op,"noshow")){ continue; };
 		if(str_eq(map_val(op,"type"),"guid") && !map_val(op,"sql")){ continue; };
 		add(ret,f,op); };
@@ -503,7 +503,7 @@ map* sql_edit_cols(char* sql,char* db,map* cols){
 	map* scols=tbl_cols(sql_table(sql),db);
 	if(map_len(cols)){ return cols_collect(scols,cols); };
 	map* ret=new_map();
-	for(int next1=next(scols,-1,NULL,&NULL); has_id(scols,next1); next1++){ void* op=map_id(scols,next1); char* f=map_key(scols, next1);
+	for(int next1=next(scols,-1,NULL,NULL); has_id(scols,next1); next1++){ void* op=map_id(scols,next1); char* f=map_key(scols, next1);
 		if(map_val(op,"noshow")){ continue; };
 		if(map_val(op,"noedit")){ continue; };
 		if(map_val(op,"auto")){ continue; };
@@ -516,7 +516,7 @@ map* sql_list_cols(char* sql,char* db,map* cols){
 	map* scols=sql_select_cols(sql,db,NULL);
 	if(map_len(cols)){ return cols_collect(scols,cols); };
 	map* ret=new_map();
-	for(int next1=next(scols,-1,NULL,&NULL); has_id(scols,next1); next1++){ void* op=map_id(scols,next1); char* f=map_key(scols, next1);
+	for(int next1=next(scols,-1,NULL,NULL); has_id(scols,next1); next1++){ void* op=map_id(scols,next1); char* f=map_key(scols, next1);
 		if(map_val(op,"noshow")){ continue; };
 		if(map_val(op,"nolist")){ continue; };
 		if(str_eq(map_val(op,"type"),"guid") && !map_val(op,"sql")){ continue; };
@@ -537,7 +537,7 @@ char* sql_str(void* data){
 	if(type==Map||type==Vector){
 		map* mp=(map*)data;
 		char* ret=NULL;
-		for(int idx=next(mp,-1,NULL,&NULL); has_id(mp,idx); idx++){
+		for(int idx=next(mp,-1,NULL,NULL); has_id(mp,idx); idx++){
 			if(ret && is_map(map_id(mp,idx)) && is_map(map_id(mp,idx-1))){ ret=xcat(ret,", ", End); }
 			else if(ret && !str_is_oper(map_id(mp,idx)) && !str_is_oper(map_id(mp,idx-1))){ ret=xcat(ret," ", End); };
 			ret=xcat(ret,sql_str(map_id(mp,idx)), End); };
@@ -551,7 +551,7 @@ char* re_select(map* mp){
 	if(map_val(mp,"unique")){ ret=xcat(ret,"distinct ", End); };
 	if(map_val(mp,"crosstab")){ ret=xcat(ret,"crosstab ", End); };
 		if(map_val(mp,"prefix")){ ret=xcat(ret,"prefix ",to_str(map_val(mp,"prefix"),"",0), End); };
-	map* map_1=map_val(mp,"select"); for(int idx=next(map_1,-1,NULL,&NULL); has_id(map_1,idx); idx++){ void* v=map_id(map_1,idx); char* k=map_key(map_1, idx);
+	map* map_1=map_val(mp,"select"); for(int idx=next(map_1,-1,NULL,NULL); has_id(map_1,idx); idx++){ void* v=map_id(map_1,idx); char* k=map_key(map_1, idx);
 		if(i++){ ret=xcat(ret,", ", End); };
 		char* v2=sql_str(v);
 		if(str_end(v2,".*") && map_len(map_val(mp,"select"))==1){ v2="*"; };
@@ -564,7 +564,7 @@ char* re_from(map* cls){
 	int i=0;
 	if(!cls){ return NULL; };
 	char* ret=" from ";
-	for(int idx=next(cls,-1,NULL,&NULL); has_id(cls,idx); idx++){ void* v=map_id(cls,idx); char* k=map_key(cls, idx);
+	for(int idx=next(cls,-1,NULL,NULL); has_id(cls,idx); idx++){ void* v=map_id(cls,idx); char* k=map_key(cls, idx);
 		map* mp1=v;
 		if(map_val(mp1,"join_type")){ ret=xcat(ret," ",sql_str(map_val(mp1,"join_type")), End); };
 		if(i++){ ret=xcat(ret," join ", End); };
@@ -579,7 +579,7 @@ char* re_where(map* cls){
 	int i=0;
 	if(!cls){ return NULL; };
 	char* ret=" where ";
-	for(int idx=next(cls,-1,NULL,&NULL); has_id(cls,idx); idx++){ void* v=map_id(cls,idx); char* k=map_key(cls, idx);
+	for(int idx=next(cls,-1,NULL,NULL); has_id(cls,idx); idx++){ void* v=map_id(cls,idx); char* k=map_key(cls, idx);
 		if(i++){ ret=xcat(ret," and ", End); };
 		if(is_str(k)){ ret=xcat(ret,k,"=", End); };
 		ret=xcat(ret,sql_str(v), End); };
@@ -589,7 +589,7 @@ char* re_group(map* cls){
 	int i=0;
 	if(!cls){ return NULL; };
 	char* ret=" group by ";
-	for(int idx=next(cls,-1,NULL,&NULL); has_id(cls,idx); idx++){ void* v=map_id(cls,idx);
+	for(int idx=next(cls,-1,NULL,NULL); has_id(cls,idx); idx++){ void* v=map_id(cls,idx);
 		if(i++){ ret=xcat(ret,", ", End); };
 		ret=xcat(ret,sql_str(v), End);
 	};
@@ -599,7 +599,7 @@ char* re_having(map* cls){
 	int i=0;
 	if(!cls){ return NULL; };
 	char* ret=" having ";
-	for(int idx=next(cls,-1,NULL,&NULL); has_id(cls,idx); idx++){ void* v=map_id(cls,idx); char* k=map_key(cls, idx);
+	for(int idx=next(cls,-1,NULL,NULL); has_id(cls,idx); idx++){ void* v=map_id(cls,idx); char* k=map_key(cls, idx);
 		if(i++){ ret=xcat(ret,", ", End); };
 		if(is_str(k)){ ret=xcat(ret,k,"=", End); };
 		ret=xcat(ret,sql_str(v), End);
@@ -610,7 +610,7 @@ char* re_order(map* cls){
 	int i=0;
 	if(!cls){ return NULL; };
 	char* ret=" order by ";
-	for(int idx=next(cls,-1,NULL,&NULL); has_id(cls,idx); idx++){ void* v=map_id(cls,idx); char* k=map_key(cls, idx);
+	for(int idx=next(cls,-1,NULL,NULL); has_id(cls,idx); idx++){ void* v=map_id(cls,idx); char* k=map_key(cls, idx);
 		if(i++){ ret=xcat(ret,", ", End); };
 		ret=xcat(ret,k, End);
 		if(is_int(v)<0){ ret=xcat(ret," desc", End); }; };
@@ -634,19 +634,19 @@ char* map_sql(map* mp){
 	return xstr(re_select(mp),re_from(map_val(mp,"from")),re_where(map_val(mp,"where")),re_group(map_val(mp,"group")),re_having(map_val(mp,"having")),re_order(map_val(mp,"order")),re_limit(map_val(mp,"limit")),re_union(map_val(mp,"union")), End);
 };
 int has_aggregate(char* sql){
-	map* map_1=map_val(sql_select_cols(sql,NULL,NULL),"cols"); for(int i=next(map_1,-1,NULL,&NULL); has_id(map_1,i); i++){ void* col=map_id(map_1,i); if(map_val(col,"aggregate")){ return 1; }; };
+	map* map_1=map_val(sql_select_cols(sql,NULL,NULL),"cols"); for(int i=next(map_1,-1,NULL,NULL); has_id(map_1,i); i++){ void* col=map_id(map_1,i); if(map_val(col,"aggregate")){ return 1; }; };
 	return 0;
 };
 char* sql_auto_join(char* sql,char* db){
 	map* dsql=sql_map(sql);
 	map* cols=new_map();
 	int ok=1;
-	map* map_1=map_val(dsql,"from"); for(int i2=next(map_1,-1,NULL,&NULL); has_id(map_1,i2); i2++){ void* op2 =map_id(map_1,i2); char* tbl2=map_key(map_1, i2); if(i2 && !map_val(op2,"on")){ ok=0; break; }; };
+	map* map_1=map_val(dsql,"from"); for(int i2=next(map_1,-1,NULL,NULL); has_id(map_1,i2); i2++){ void* op2 =map_id(map_1,i2); char* tbl2=map_key(map_1, i2); if(i2 && !map_val(op2,"on")){ ok=0; break; }; };
 	if(ok){ return sql; };
-	map* map_2=map_val(dsql,"from"); for(int i=next(map_2,-1,NULL,&NULL); has_id(map_2,i); i++){ void* op=map_id(map_2,i); char* tbl=map_key(map_2, i);
+	map* map_2=map_val(dsql,"from"); for(int i=next(map_2,-1,NULL,NULL); has_id(map_2,i); i++){ void* op=map_id(map_2,i); char* tbl=map_key(map_2, i);
 		if(i && !map_val(op,"on")){
-			for(int i2=next(cols,-1,NULL,&NULL); has_id(cols,i2); i2++){ void* op2=map_id(cols,i2); char* t2=map_key(cols, i2);
-				for(int i3=next(op2,-1,NULL,&NULL); has_id(op2,i3); i3++){ void* op3=map_id(op2,i3); char* f3=map_key(op2, i3);
+			for(int i2=next(cols,-1,NULL,NULL); has_id(cols,i2); i2++){ void* op2=map_id(cols,i2); char* t2=map_key(cols, i2);
+				for(int i3=next(op2,-1,NULL,NULL); has_id(op2,i3); i3++){ void* op3=map_id(op2,i3); char* f3=map_key(op2, i3);
 					if(!map_val(op3,"sql")){ continue; };
 					char* sql2=fkey_sql(map_val(op3,"sql"),db);
 					if(!str_eq(sql_table(sql2),map_val(op,"tbl"))){ continue; };
@@ -665,12 +665,12 @@ char* sql_auto_group(char* sql,char* db){
 	map* cols=sql_select_cols(sql,db,NULL);
 	int agg=0;
 	int noagg=0;
-	for(int i=next(cols,-1,NULL,&NULL); has_id(cols,i); i++){ void* col=map_id(cols,i);
+	for(int i=next(cols,-1,NULL,NULL); has_id(cols,i); i++){ void* col=map_id(cols,i);
 		if(map_val(col,"aggregate")){ agg++; }
 		else {noagg++;}; };
 	if(!agg || !noagg){ return sql; };
 	add(dsql,"group",new_vec());
-	for(int i2=next(cols,-1,NULL,&NULL); has_id(cols,i2); i2++){ void* col2 =map_id(cols,i2); char* f2=map_key(cols, i2); if(!map_val(col2,"aggregate")){ vec_add(add_key(dsql,"group",Vector),f2); }; };
+	for(int i2=next(cols,-1,NULL,NULL); has_id(cols,i2); i2++){ void* col2 =map_id(cols,i2); char* f2=map_key(cols, i2); if(!map_val(col2,"aggregate")){ vec_add(add_key(dsql,"group",Vector),f2); }; };
 	return map_sql(dsql);
 };
 char* sql_lite(char* sql,char* db,map* params){
@@ -678,7 +678,7 @@ char* sql_lite(char* sql,char* db,map* params){
 	map* ret=sql_map(sql);
 	if(db){
 		add(ret,"select",new_map());
-		map* map_1=sql_select_cols(sql,db,params); for(int idx=next(map_1,-1,NULL,&NULL); has_id(map_1,idx); idx++){ void* prop=map_id(map_1,idx); char* name=map_key(map_1, idx);
+		map* map_1=sql_select_cols(sql,db,params); for(int idx=next(map_1,-1,NULL,NULL); has_id(map_1,idx); idx++){ void* prop=map_id(map_1,idx); char* name=map_key(map_1, idx);
 			add(add_key(ret,"select",Map),name,map_val(prop,"expr")); };
 		add(ret,"crosstab",NULL);
 		add(ret,"prefix",NULL); };
@@ -704,7 +704,7 @@ int type_size(char* type){
 };
 char* lite_create_col(map* col){
 	long long size=to_int(map_val(col,"size"));
-	if(!size){ size=type_size(&map_val(col,"type")); };
+	if(!size){ size=type_size(map_val(col,"type")); };
 	char* type=maptype(xmap(
 		"text", "varchar",
 		"para", "clob",
@@ -716,8 +716,8 @@ char* lite_create_col(map* col){
 		"datetime", "datetime",
 		"daymonth", "varchar",
 		"month", "varchar"
-	, End),&map_val(col,"type"));
-	if(!type){ fox_error(xstr("col.type=", &map_val(col,"type"), " not matched", End),0); };
+	, End),map_val(col,"type"));
+	if(!type){ fox_error(xstr("col.type=", map_val(col,"type"), " not matched", End),0); };
 	void* name=map_val(col,"name");
 	if(str_eq(type,"varchar")){ return xstr(name, " varchar(",int_str( size), ") collate nocase not null default ''", End); };
 	if(str_eq(type,"number")){ return xstr(name, " integer not null default 0", End); };
@@ -741,7 +741,7 @@ int is_indexed(char* type){
 };
 map* create_index_sqls(map* tbl){
 	map* ret=new_vec();
-	map* map_1=map_val(tbl,"cols"); for(int i=next(map_1,-1,NULL,&NULL); has_id(map_1,i); i++){ void* f=map_id(map_1,i); char* k=map_key(map_1, i);
+	map* map_1=map_val(tbl,"cols"); for(int i=next(map_1,-1,NULL,NULL); has_id(map_1,i); i++){ void* f=map_id(map_1,i); char* k=map_key(map_1, i);
 		if(!is_indexed(map_val(f,"type"))){ continue; };
 		vec_add(ret,xstr("create index idx_",to_str( map_val(tbl,"name"),"",0), "_", map_val(f,"name"), " on ",to_str( map_val(tbl,"name"),"",0), "(", map_val(f,"name"), ")", End)); };
 	return ret;
@@ -750,7 +750,7 @@ char* drop_sql(char* name){ return xstr("drop table if exists ", name, End); };
 char* create_sql(map* tbl,char* name){
 	if(!name){ name=map_val(tbl,"name"); };
 	map* cls=new_map();
-	map* map_1=map_val(tbl,"cols"); for(int i=next(map_1,-1,NULL,&NULL); has_id(map_1,i); i++){ void* v =map_id(map_1,i); char* k=map_key(map_1, i); add(cls,k,lite_create_col(v)); };
+	map* map_1=map_val(tbl,"cols"); for(int i=next(map_1,-1,NULL,NULL); has_id(map_1,i); i++){ void* v =map_id(map_1,i); char* k=map_key(map_1, i); add(cls,k,lite_create_col(v)); };
 	map* pkeys=cols_pkeys(map_val(tbl,"cols"));
 	if(map_len(pkeys)==1 && is_word(to_str(map_val(map_val(map_val(tbl,"cols"),map_id(pkeys,0)),"type"),"",0),"int integer")){
 		add(cls,map_id(pkeys,0),xstr(map_id(pkeys,0), " integer primary key autoincrement", End));
@@ -780,7 +780,7 @@ int has_table(char* db,char* tbl){
 	return to_int(sql_value("select count(*) from sqlite_master where type='table' and name=:name",db,xmap("name", tbl, End)));
 };
 map* map_cols(void* cols,char* tbl,char* db){
-	for(int i=next(cols,-1,NULL,&NULL); has_id(cols,i); i++){ void* f=map_id(cols,i); char* name=map_key(cols, i);
+	for(int i=next(cols,-1,NULL,NULL); has_id(cols,i); i++){ void* f=map_id(cols,i); char* name=map_key(cols, i);
 		add(f,"name",name);
 		add(f,"table",tbl);
 		add(f,"db",db); };
@@ -810,14 +810,14 @@ map* pre_tables(){
 				"id4=code",xmap(End),
 				"tbl=code",xmap(End),
 				"body=text",xmap(End), End), End),
-	"char*",NULL, End);
+	"rows_show",NULL, End);
 };
 map* db_table(char* db,char* tbl){
 	return cols_table(db_cols(db,tbl),tbl,db);
 };
 map* db_tables(char* db){
 	map* ret=new_map();
-	map* map_1=db_table_names(db); for(int i=next(map_1,-1,NULL,&NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i);
+	map* map_1=db_table_names(db); for(int i=next(map_1,-1,NULL,NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i);
 		add(ret,v,db_table(db,v)); };
 	return ret;
 };
@@ -825,14 +825,14 @@ map* db_cols(char* db,char* tbl){
 	map* rs=lite_exec(xstr("pragma table_info (", tbl, ")", End),db,NULL);
 	map* ret=new_map();
 	//name|type|notnull|dflt_value|pk
-	for(int idx=next(rs,-1,NULL,&NULL); has_id(rs,idx); idx++){ void* v=map_id(rs,idx);
+	for(int idx=next(rs,-1,NULL,NULL); has_id(rs,idx); idx++){ void* v=map_id(rs,idx);
 		map* col=new_map();
 		map* mp=v;
 		char* name=str_lower(to_str(map_val(mp,"name"),"",0));
 		add(col,"name",name);
-		map* func=get_func(sql_toks(&map_val(mp,"type")),1);
+		map* func=get_func(sql_toks(map_val(mp,"type")),1);
 		if(!func){
-			add(col,"type",meta_type(&map_val(mp,"type"),0));
+			add(col,"type",meta_type(map_val(mp,"type"),0));
 		}else{
 			int size=stoi(map_id(map_id(func,1),0));
 			add(col,"size",int_var(size));
@@ -849,17 +849,17 @@ map* db_cols(char* db,char* tbl){
 };
 map* row_ids(void* row,char* tbl,char* db){
 	map* ret=new_map();
-	map* map_1=tbl_pkeys(tbl,db); for(int i=next(map_1,-1,NULL,&NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i); add(ret,v,map_val(row,v)); };
+	map* map_1=tbl_pkeys(tbl,db); for(int i=next(map_1,-1,NULL,NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i); add(ret,v,map_val(row,v)); };
 	return ret;
 };
 map* pkeys_where(char* tbl,char* db){
 	map* ret=new_map();
-	map* map_1=tbl_pkeys(tbl,db); for(int i=next(map_1,-1,NULL,&NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i); map_add(ret,v,xstr(":",v, End)); };
+	map* map_1=tbl_pkeys(tbl,db); for(int i=next(map_1,-1,NULL,NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i); map_add(ret,v,xstr(":",v, End)); };
 	return ret;
 };
 map* tbl_row_ids(char* tbl,char* db,map* row){
 	map* ret=new_map();
-	map* map_1=tbl_pkeys(tbl,db); for(int next1=next(map_1,-1,NULL,&NULL); has_id(map_1,next1); next1++){ void* f=map_id(map_1,next1);
+	map* map_1=tbl_pkeys(tbl,db); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* f=map_id(map_1,next1);
 		add(ret,f,map_val(row,f)); };
 	return ret;
 };
@@ -888,10 +888,10 @@ map* tbl_id_ids(char* tbl,char* db,void* id){
 	assert(is_map(id));
 	if(pkeys->len!=map_len(id)){ fox_error(xstr("PKey=",to_str( pkeys,"",0), " and id=", id, ", number of field mismatched", End),0); };
 	if(is_vec(id)){
-		for(int idx=next(pkeys,-1,NULL,&NULL); has_id(pkeys,idx); idx++){ void* f=map_id(pkeys,idx);
+		for(int idx=next(pkeys,-1,NULL,NULL); has_id(pkeys,idx); idx++){ void* f=map_id(pkeys,idx);
 			add(ret,f,map_id(id,idx)); };
 		return ret; };
-	for(int next1=next(pkeys,-1,NULL,&NULL); has_id(pkeys,next1); next1++){ void* f=map_id(pkeys,next1);
+	for(int next1=next(pkeys,-1,NULL,NULL); has_id(pkeys,next1); next1++){ void* f=map_id(pkeys,next1);
 		add(ret,f,map_val(id,f)); };
 	return ret;
 };
@@ -902,19 +902,19 @@ map* sql_id(char* sql,char* db,void* ids){
 map* sql_row(char* sql,char* db,map* param){ return map_id(lite_exec(sql,db,param),0); };
 map* sql_vector(char* sql,char* db,map* param){
 	map* ret=new_vec();
-	map* map_1=lite_exec(sql,db,param); for(int i=next(map_1,-1,NULL,&NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i);
+	map* map_1=lite_exec(sql,db,param); for(int i=next(map_1,-1,NULL,NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i);
 		vec_add(ret,map_id(v,0)); };
 	return ret;
 };
 map* sql_pairs(char* sql,char* db,map* param){
 	map* ret=new_map();
-	map* map_1=lite_exec(sql,db,param); for(int i=next(map_1,-1,NULL,&NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i);
+	map* map_1=lite_exec(sql,db,param); for(int i=next(map_1,-1,NULL,NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i);
 		add(ret,map_id(v,0),map_len(v)>1 ? map_id(v,1) : map_id(v,0)); };
 	return ret;
 };
 map* sql_vec(char* sql,char* db,map* param){
 	map* ret=new_vec();
-	map* map_1=lite_exec(sql,db,param); for(int i=next(map_1,-1,NULL,&NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i);
+	map* map_1=lite_exec(sql,db,param); for(int i=next(map_1,-1,NULL,NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i);
 		vec_add(ret,map_id(v,0)); };
 	return ret;
 };
@@ -928,8 +928,8 @@ map* meta_fkeys(char* db){
 	void* ret=map_val(map_val(map_val(_globals,"meta"),"fkeys"),db);
 	if(!ret){
 		ret=new_vec();
-		map* map_1=map_val(map_val(_globals,"meta"),"db"); for(int next1=next(map_1,-1,NULL,&NULL); has_id(map_1,next1); next1++){ void* tbl=map_id(map_1,next1); char* name=map_key(map_1, next1);
-			map* map_1=map_val(tbl,"cols"); for(int next1=next(map_1,-1,NULL,&NULL); has_id(map_1,next1); next1++){ void* col=map_id(map_1,next1); char* f=map_key(map_1, next1);
+		map* map_1=map_val(map_val(_globals,"meta"),"db"); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* tbl=map_id(map_1,next1); char* name=map_key(map_1, next1);
+			map* map_1=map_val(tbl,"cols"); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* col=map_id(map_1,next1); char* f=map_key(map_1, next1);
 				if(map_val(col,"sql")){
 					char* sql=fkey_sql(map_val(col,"sql"),db);
 					vec_add(ret,xmap("table", name, "f", f, "table2", sql_table(sql), "f2", map_val(map_id(sql_cols(sql,db,NULL),0),"name"), "db", map_val(col,"db"), End)); }; }; };
@@ -938,37 +938,37 @@ map* meta_fkeys(char* db){
 };
 map* tbl_referred_by(char* tbl,char* db){
 	map* ret=new_vec();
-	map* map_1=meta_fkeys(db); for(int next1=next(map_1,-1,NULL,&NULL); has_id(map_1,next1); next1++){ void* rel=map_id(map_1,next1);
+	map* map_1=meta_fkeys(db); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* rel=map_id(map_1,next1);
 		if(str_eq(map_val(rel,"table2"),tbl)){
 			vec_add(ret,xmap("table", map_val(rel,"table"), "f", map_val(rel,"f"), "f2", map_val(rel,"f2"), End)); }; };
 	return ret;
 };
 void* id_update(void* ids,char* tbl,char* db,map* row){
 	ids=tbl_id_ids(tbl,db,ids);
-	for(int next1=next(ids,-1,NULL,&NULL); has_id(ids,next1); next1++){ void* val=map_id(ids,next1); char* f=map_key(ids, next1);
+	for(int next1=next(ids,-1,NULL,NULL); has_id(ids,next1); next1++){ void* val=map_id(ids,next1); char* f=map_key(ids, next1);
 		if(map_val(row,f) && !str_eq(map_val(row,f),val)){
-			map* map_1=tbl_referred_by(tbl,db); for(int next1=next(map_1,-1,NULL,&NULL); has_id(map_1,next1); next1++){ void* ft=map_id(map_1,next1);
+			map* map_1=tbl_referred_by(tbl,db); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* ft=map_id(map_1,next1);
 				lite_exec(xstr("update ", map_val(ft,"table"), " set ", map_val(ft,"f"), "=:newval where ", map_val(ft,"f"), "=:oldval", End),db,xmap("newval", map_val(row,f), "oldval", val, End)); }; }; };
 	map* cols=tbl_cols(tbl,db);
 	if(!cols){ return fox_error(xstr("Table ", tbl, " not found", End),0); };
 	map* fld=new_vec();
-	for(int idx=next(cols,-1,NULL,&NULL); has_id(cols,idx); idx++){ char* k=map_key(cols, idx);
+	for(int idx=next(cols,-1,NULL,NULL); has_id(cols,idx); idx++){ char* k=map_key(cols, idx);
 		if(!map_val(row,k)){ continue; };
 		vec_add(fld,xstr(k, "=:", k, End)); };
 	map* v1=new_vec();
-	for(int idx2=next(ids,-1,NULL,&NULL); has_id(ids,idx2); idx2++){ void* v2=map_id(ids,idx2); char* k2=map_key(ids, idx2);
+	for(int idx2=next(ids,-1,NULL,NULL); has_id(ids,idx2); idx2++){ void* v2=map_id(ids,idx2); char* k2=map_key(ids, idx2);
 		vec_add(v1,xstr(k2, "=:_old_", k2, End));
 		add(row,xstr("_old_", k2, End),v2); };
-	return lite_exec(xstr("update ", tbl, " set ", map_join(fld,&", "), " where ", map_join(v1,&" and "), End),db,row);
+	return lite_exec(xstr("update ", tbl, " set ", map_join(fld,", "), " where ", map_join(v1," and "), End),db,row);
 };
 int row_insert(map* row,char* tbl,char* db){
 	map* cols=tbl_cols(tbl,db);
 	if(!cols){ return fox_error(xstr("Table ", tbl, " not found", End),0); };
 	map* fld=new_vec();
-	for(int idx=next(cols,-1,NULL,&NULL); has_id(cols,idx); idx++){ char* k=map_key(cols, idx);
+	for(int idx=next(cols,-1,NULL,NULL); has_id(cols,idx); idx++){ char* k=map_key(cols, idx);
 		if(!map_val(row,k)){ continue; };
 		vec_add(fld,k); };
-	lite_exec(xstr("insert into ", tbl, " (", map_join(fld,&", "), ") values (:", map_join(fld,&", :"), ")", End),db,row);
+	lite_exec(xstr("insert into ", tbl, " (", map_join(fld,", "), ") values (:", map_join(fld,", :"), ")", End),db,row);
 	return to_int(sql_value("select last_insert_rowid()",db,NULL));
 };
 void* sql_error(char* sql,char* db,sqlite3* conn){
@@ -977,7 +977,7 @@ void* sql_error(char* sql,char* db,sqlite3* conn){
 	return fox_error(msg,0);
 };
 map* sqls_exec(map* sqls,char* db){
-	for(int next1=next(sqls,-1,NULL,&NULL); has_id(sqls,next1); next1++){ void* sql=map_id(sqls,next1); lite_exec(sql,db,NULL); };
+	for(int next1=next(sqls,-1,NULL,NULL); has_id(sqls,next1); next1++){ void* sql=map_id(sqls,next1); lite_exec(sql,db,NULL); };
 	return sqls;
 };
 map* parse_connection(char* in){ return xmap("type", "lite", "file", in, End); };
@@ -1003,7 +1003,7 @@ map* lite_exec(char* sql,char* db,map* params){
 	if(sqlite3_prepare_v2(conn,sql,-1,&stm,NULL)!=SQLITE_OK){
 		return sql_error(sql,db,conn); };
 	int i=0;
-	for(int idx=next(params,-1,NULL,&NULL); has_id(params,idx); idx++){ void* v=map_id(params,idx); char* k=map_key(params, idx);
+	for(int idx=next(params,-1,NULL,NULL); has_id(params,idx); idx++){ void* v=map_id(params,idx); char* k=map_key(params, idx);
 		assert(is_str(k));
 		if((i=sqlite3_bind_parameter_index(stm,xstr(":",k, End)))){
 			sqlite3_bind_text(stm,i,to_str(v,"",0),-1,NULL); }; };
@@ -1027,7 +1027,7 @@ map* lite_exec(char* sql,char* db,map* params){
 	return ret;
 };
 void close_conns(){
-	map* map_1=map_val(_globals,"conn"); for(int next1=next(map_1,-1,NULL,&NULL); has_id(map_1,next1); next1++){ void* val=map_id(map_1,next1); char* key=map_key(map_1, next1);
+	map* map_1=map_val(_globals,"conn"); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* val=map_id(map_1,next1); char* key=map_key(map_1, next1);
 		add(add_key(_globals,"conn",Map),key,NULL);
 		if(!val){ continue; };
 		sqlite3_close_v2(val);
@@ -1035,7 +1035,7 @@ void close_conns(){
 map* vec_map(map* in){
 	if(!is_vec(in)){ return in; };
 	map* ret=new_map();
-	for(int next1=next(in,-1,NULL,&NULL); has_id(in,next1); next1++){ void* val=map_id(in,next1);
+	for(int next1=next(in,-1,NULL,NULL); has_id(in,next1); next1++){ void* val=map_id(in,next1);
 		add(ret,val,val); };
 	return ret;
 };
@@ -1047,7 +1047,7 @@ map* db_table_names(char* db){
 };
 map* cols_pkeys(map* cols){
 	map* ret=new_map();
-	for(int i=next(cols,-1,NULL,&NULL); has_id(cols,i); i++){ void* v=map_id(cols,i); char* k=map_key(cols, i);
+	for(int i=next(cols,-1,NULL,NULL); has_id(cols,i); i++){ void* v=map_id(cols,i); char* k=map_key(cols, i);
 		if(map_val(v,"pkey")){ add(ret,k,k); }; };
 	if(!map_len(ret)){ add(ret,map_key(cols,0),map_key(cols,0)); };
 	return ret;
@@ -1153,11 +1153,11 @@ map* tbl_pkeys(char* tbl,char* db){ return cols_pkeys(tbl_cols(tbl,db)); };
 map* tbl_skeys(char* tbl,char* db){ return cols_skeys(tbl_cols(tbl,db)); };
 map* cols_skeys(map* cols){
 	if(!map_len(cols)){ return NULL; };
-	for(int next1=next(cols,-1,NULL,&NULL); has_id(cols,next1); next1++){ char* name=map_key(cols, next1); if(str_has(name,"name")){ return xmap("name", name, End); }; };	
+	for(int next1=next(cols,-1,NULL,NULL); has_id(cols,next1); next1++){ char* name=map_key(cols, next1); if(str_has(name,"name")){ return xmap("name", name, End); }; };	
 	return xmap((map_key(cols,0)), map_key(cols,0), End);
 };
 map* toks_sql_params(map* toks, map* ret){
-	for(int next1=next(toks,-1,NULL,&NULL); has_id(toks,next1); next1++){ void* val=map_id(toks,next1);
+	for(int next1=next(toks,-1,NULL,NULL); has_id(toks,next1); next1++){ void* val=map_id(toks,next1);
 		if(is_map(val)){ toks_sql_params(val,ret); continue; };
 		if(fox_at(val,0)==':'){ add(ret,sub_str(val,1,-2147483648),sub_str(val,1,-2147483648)); }; };
 	return ret;
@@ -1171,7 +1171,7 @@ void* is_null(void* val){
 };
 map* sql_missing_params(char* sql, map* params){
 	map* ret=new_map();
-	map* map_1=sql_params(sql); for(int next1=next(map_1,-1,NULL,&NULL); has_id(map_1,next1); next1++){ char* key=map_key(map_1, next1);
+	map* map_1=sql_params(sql); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ char* key=map_key(map_1, next1);
 		if(!map_val(params,key)){ add(ret,key,key); }; };
 	return is_null(ret);
 };
@@ -1237,7 +1237,7 @@ char* str_show(char* value,char* type,map* op,int width){
 	if(str_eq(type,"credit")){ return int_human((-to_int(value)),to_str(map_val(op,"unit"),"",0),""); };
 	if(str_eq(type,"password")){ return "****"; };
 	if(str_eq(type,"email")){ return xstr("<a href='mailto:",str_html(value),"'>",str_html(value),"</a>", End); };
-	if(str_eq(type,"guid")){ return str_html(&"<ID>"); };
+	if(str_eq(type,"guid")){ return str_html("<ID>"); };
 	if(str_eq(type,"mins")){ long long n=to_int(value); return mstr("%d:%02d",n/60,n%60, End); };
 	if(str_eq(type,"duration")){ return "Duration/Pending"; };
 	if(str_eq(type,"date")){ return human_time(value); };
@@ -1246,7 +1246,7 @@ char* str_show(char* value,char* type,map* op,int width){
 	return value;
 };
 char* cols_show(map* cols,map* row,char* name,int width){
-	return str_show(map_val(row,name),&map_val(map_val(cols,name),"type"),&map_val(cols,name),width);
+	return str_show(map_val(row,name),map_val(map_val(cols,name),"type"),map_val(cols,name),width);
 };
 char* human_time(char* in){
 	if(!in){ return NULL; };
@@ -1264,16 +1264,16 @@ char* thumb_name(char* name){
 };
 map* row_show(map* row,map* cols,int width){
 	map* ret=new_map();
-	for(int next1=next(row,-1,NULL,&NULL); has_id(row,next1); next1++){ void* v=map_id(row,next1); char* f=map_key(row, next1);
+	for(int next1=next(row,-1,NULL,NULL); has_id(row,next1); next1++){ void* v=map_id(row,next1); char* f=map_key(row, next1);
 		if(map_val(cols,f)){ add(ret,f,cols_show(cols,row,f,width)); }
 		else {add(ret,f,v);}; };
 	return ret;
 };
 map* rows_show(map* rows,map* cols,int width){
 	map* ret=new_vec();
-	for(int i=next(rows,-1,NULL,&NULL); has_id(rows,i); i++){ void* row=map_id(rows,i); char* k=map_key(rows, i);
+	for(int i=next(rows,-1,NULL,NULL); has_id(rows,i); i++){ void* row=map_id(rows,i); char* k=map_key(rows, i);
 		map* r=new_map();
-		for(int i2=next(row,-1,NULL,&NULL); has_id(row,i2); i2++){ void* v=map_id(row,i2); char* f=map_key(row, i2);
+		for(int i2=next(row,-1,NULL,NULL); has_id(row,i2); i2++){ void* v=map_id(row,i2); char* f=map_key(row, i2);
 			if(map_val(cols,f)){ add(r,f,cols_show(cols,row,f,width)); }
 			else {add(r,f,v);}; };
 		vec_add(ret,r); };
@@ -1304,15 +1304,15 @@ int type_distance(char* type1,char* type2){
 map* cols_match(map* from, map* into){
 	map* ret=new_map();
 	map* ret2=new_map();
-	for(int i=next(into,-1,NULL,&NULL); has_id(into,i); i++){ void* op=map_id(into,i); char* f=map_key(into, i);
+	for(int i=next(into,-1,NULL,NULL); has_id(into,i); i++){ void* op=map_id(into,i); char* f=map_key(into, i);
 		if(map_val(from,f)){
 			add(ret,f,f);
 			add(ret2,f,f); }; };
-	for(int i1=next(into,-1,NULL,&NULL); has_id(into,i1); i1++){ void* op1=map_id(into,i1); char* f1=map_key(into, i1);
+	for(int i1=next(into,-1,NULL,NULL); has_id(into,i1); i1++){ void* op1=map_id(into,i1); char* f1=map_key(into, i1);
 		if(map_val(ret,f1)){ continue; };
 		int minid=0;
 		int mindist=0;
-		for(int i2=next(from,-1,NULL,&NULL); has_id(from,i2); i2++){ void* op2=map_id(from,i2); char* f2=map_key(from, i2);
+		for(int i2=next(from,-1,NULL,NULL); has_id(from,i2); i2++){ void* op2=map_id(from,i2); char* f2=map_key(from, i2);
 			if(map_val(ret2,f2)){ continue; };
 			int dist=type_distance(map_val(op2,"type"),map_val(op1,"type"));
 			if(!minid){ minid=i2; mindist=dist; }
@@ -1353,9 +1353,9 @@ map* map_sort(map* mp,int reverse){
 };
 char* nearest_table(map* tbls,map* tbl){
 	map* match=new_map();
-	for(int next1=next(tbls,-1,NULL,&NULL); has_id(tbls,next1); next1++){ void* t=map_id(tbls,next1); char* name=map_key(tbls, next1);
+	for(int next1=next(tbls,-1,NULL,NULL); has_id(tbls,next1); next1++){ void* t=map_id(tbls,next1); char* name=map_key(tbls, next1);
 		int score=abs(map_len(map_val(t,"cols"))-map_len(map_val(tbl,"cols")));
-		map* map_1=map_val(tbl,"cols"); for(int next1=next(map_1,-1,NULL,&NULL); has_id(map_1,next1); next1++){ void* col=map_id(map_1,next1); char* f=map_key(map_1, next1);
+		map* map_1=map_val(tbl,"cols"); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* col=map_id(map_1,next1); char* f=map_key(map_1, next1);
 			if(!str_eq(map_val(map_val(map_val(t,"cols"),f),"type"),map_val(col,"type"))){ score--; }; };
 		add(match,name,int_var(score)); };
 	if(!match->len){ return NULL; };
@@ -1366,21 +1366,21 @@ map* tbls_sync_sqls(map* new_tbls,map* old_tbls){
 	if(!new_tbls){ fox_error("sync_sql() final table list is blank!",0); };
 	map* newtbls=new_map();
 	map* oldtbls=new_map();
-	for(int next1=next(old_tbls,-1,NULL,&NULL); has_id(old_tbls,next1); next1++){ void* val=map_id(old_tbls,next1); char* key=map_key(old_tbls, next1); if(!map_val(new_tbls,key)){ add(oldtbls,key,val); }; };
+	for(int next1=next(old_tbls,-1,NULL,NULL); has_id(old_tbls,next1); next1++){ void* val=map_id(old_tbls,next1); char* key=map_key(old_tbls, next1); if(!map_val(new_tbls,key)){ add(oldtbls,key,val); }; };
 	map* match=new_map();
-	for(int next1=next(new_tbls,-1,NULL,&NULL); has_id(new_tbls,next1); next1++){ void* val=map_id(new_tbls,next1); char* key=map_key(new_tbls, next1);
+	for(int next1=next(new_tbls,-1,NULL,NULL); has_id(new_tbls,next1); next1++){ void* val=map_id(new_tbls,next1); char* key=map_key(new_tbls, next1);
 		if(!map_val(old_tbls,key)){ add(newtbls,key,val); }
 		else {add(match,key,key);}; };
-	for(int next1=next(newtbls,-1,NULL,&NULL); has_id(newtbls,next1); next1++){ void* tbl=map_id(newtbls,next1); char* name=map_key(newtbls, next1);
+	for(int next1=next(newtbls,-1,NULL,NULL); has_id(newtbls,next1); next1++){ void* tbl=map_id(newtbls,next1); char* name=map_key(newtbls, next1);
 		if(!oldtbls->len){ break; };
 		add(match,name,nearest_table(oldtbls,tbl));
 		map_compact(map_del_key(oldtbls,map_val(match,name))); };
 	map* sqls=new_vec();
-	for(int next1=next(match,-1,NULL,&NULL); has_id(match,next1); next1++){ void* oldt=map_id(match,next1); char* newt=map_key(match, next1);
-		vec_merge(sqls,sync_sqls(&map_val(old_tbls,oldt),&map_val(new_tbls,newt))); };
-	for(int next1=next(newtbls,-1,NULL,&NULL); has_id(newtbls,next1); next1++){ void* newt=map_id(newtbls,next1);
-		vec_add(sqls,create_sql(&map_val(new_tbls,newt),NULL)); };
-	for(int next1=next(oldtbls,-1,NULL,&NULL); has_id(oldtbls,next1); next1++){ void* oldt=map_id(oldtbls,next1);
+	for(int next1=next(match,-1,NULL,NULL); has_id(match,next1); next1++){ void* oldt=map_id(match,next1); char* newt=map_key(match, next1);
+		vec_merge(sqls,sync_sqls(map_val(old_tbls,oldt),map_val(new_tbls,newt))); };
+	for(int next1=next(newtbls,-1,NULL,NULL); has_id(newtbls,next1); next1++){ void* newt=map_id(newtbls,next1);
+		vec_add(sqls,create_sql(map_val(new_tbls,newt),NULL)); };
+	for(int next1=next(oldtbls,-1,NULL,NULL); has_id(oldtbls,next1); next1++){ void* oldt=map_id(oldtbls,next1);
 		vec_add(sqls,drop_sql(map_val(oldt,"name"))); };
 	return sqls;
 };
@@ -1391,7 +1391,7 @@ map* db_meta(char* db){
 		if(!map_val(_globals,"meta")){
 			add(_globals,"meta",new_map());
 		}else{
-			map* map_1=map_val(map_val(_globals,"meta"),"db"); for(int next1=next(map_1,-1,NULL,&NULL); has_id(map_1,next1); next1++){ void* val=map_id(map_1,next1); char* key=map_key(map_1, next1);
+			map* map_1=map_val(map_val(_globals,"meta"),"db"); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* val=map_id(map_1,next1); char* key=map_key(map_1, next1);
 				add(val,"name",key); }; }; };
 	return map_val(_globals,"meta");
 };
@@ -1497,7 +1497,7 @@ char* test_out(char* in){
 //}
 map* sql_sums(char* sql,char* db,map* cols,map* params){
 	map* sum=new_map();
-	for(int next1=next(cols,-1,NULL,&NULL); has_id(cols,next1); next1++){ void* col=map_id(cols,next1); char* f=map_key(cols, next1);
+	for(int next1=next(cols,-1,NULL,NULL); has_id(cols,next1); next1++){ void* col=map_id(cols,next1); char* f=map_key(cols, next1);
 		if(!to_int(maptype(xmap(
 			"text", "0",
 			"amount", "1"
@@ -1518,7 +1518,7 @@ int sql_count(char* sql,char* db,map* params){
 	char* expr="*";
 	if(map_val(sqls,"aggregate")){
 		if(map_val(sqls,"having")){ return to_int(sql_value(xstr("select count(*) from (", sql, ")", End),db,params)); };
-		map* map_1=sql_cols(sql,db,NULL); for(int next1=next(map_1,-1,NULL,&NULL); has_id(map_1,next1); next1++){ void* val=map_id(map_1,next1); char* key=map_key(map_1, next1);
+		map* map_1=sql_cols(sql,db,NULL); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* val=map_id(map_1,next1); char* key=map_key(map_1, next1);
 			if(!map_val(val,"aggregate")){ expr=xstr("distinct ", key, End); break; }; }; };
 	return to_int(sql_value((xstr(xstr("select count(", expr, ") ", End),re_from(map_val(sqls,"from")),re_where(map_val(sqls,"where")), End)),db,params));
 };
@@ -1539,7 +1539,7 @@ char* read_textblock(map* lines, int* lineno,char* terminator,char** outline){
 	terminator=str_trim(terminator," \t\n\r");
 	int indent=str_level(map_id(lines,*lineno+1));
 	char* ret=NULL;
-	for(int no=next(lines,*lineno+1-1,NULL,&NULL); has_id(lines,no); no++){ void* line=map_id(lines,no);
+	for(int no=next(lines,*lineno+1-1,NULL,NULL); has_id(lines,no); no++){ void* line=map_id(lines,no);
 		*lineno=no;
 		if(str_level(line)<indent || str_start((line+indent),terminator)){
 			*outline=line+str_len(terminator)+indent;
@@ -1552,7 +1552,7 @@ char* http_moved(char* url){ return http_out(NULL,"301 Moved Permanently","text/
 char* http_redirect(char* url){ return http_out(NULL,"302 Moved Temporarily","text/html",xvec(xstr("Location: ", url, End), End)); };
 void* http_error(char* msg,char* status){ http_out(msg,status,"text/html; charset=utf-8",NULL); xexit(0); return NULL; };
 char* file_mime(char* path){
-	map* map_1=map_val(_globals,"mime"); for(int i=next(map_1,-1,NULL,&NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i); char* k=map_key(map_1, i);
+	map* map_1=map_val(_globals,"mime"); for(int i=next(map_1,-1,NULL,NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i); char* k=map_key(map_1, i);
 		if(str_end(path,k)) {return v;}; };
 	return NULL;
 };
@@ -1581,8 +1581,8 @@ char* http_out(char* str,char* status,char* mime,map* headers){
 	header(xstr("Status: ", status, End));
 	header(xstr("Content-Type: ", mime, End));
 	header(xstr("Content-Length: ",int_str( str_len(out)), End));
-	for(int i=next(headers,-1,NULL,&NULL); has_id(headers,i); i++){ void* v=map_id(headers,i); header(v); };
-	map* map_1=map_val(_globals,"cookie"); for(int next1=next(map_1,-1,NULL,&NULL); has_id(map_1,next1); next1++){ void* v2=map_id(map_1,next1);
+	for(int i=next(headers,-1,NULL,NULL); has_id(headers,i); i++){ void* v=map_id(headers,i); header(v); };
+	map* map_1=map_val(_globals,"cookie"); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* v2=map_id(map_1,next1);
 		header(xstr("Set-Cookie: ", v2, End)); };
 	header("");
 	print(out,stdout);
@@ -1635,7 +1635,7 @@ char* url_str(char* in){
 };
 char* map_amps(map* mp){
 	char* ret=NULL;
-	for(int next1=next(mp,-1,NULL,&NULL); has_id(mp,next1); next1++){ void* v=map_id(mp,next1); char* n=map_key(mp, next1);
+	for(int next1=next(mp,-1,NULL,NULL); has_id(mp,next1); next1++){ void* v=map_id(mp,next1); char* n=map_key(mp, next1);
 		if(!str_len(v)){ continue; };
 		if(ret){ ret=xcat(ret,"&", End); };
 		ret=xcat(ret,str_url(is_str(n)),"=",str_url(v), End); };
@@ -1643,7 +1643,7 @@ char* map_amps(map* mp){
 };
 map* amps_map(char* in){
 	map* ret=new_map();
-	map* map_1=str_split(in,"&",0); for(int i=next(map_1,-1,NULL,&NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i);
+	map* map_1=str_split(in,"&",0); for(int i=next(map_1,-1,NULL,NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i);
 		map* pr=str_split(v,"=",2);
 		add(ret,url_str(map_id(pr,0)),url_str(map_id(pr,1))); };
 	return ret;
@@ -1686,7 +1686,7 @@ void sess_delete(){
 map* link_relative(map* links,char* url){
 	if(!links||!url) {return links;};
 	char* prepad=str_times("../",str_char_count(url,'/')+1);
-	for(int i=next(links,-1,NULL,&NULL); has_id(links,i); i++){ void* v=map_id(links,i);
+	for(int i=next(links,-1,NULL,NULL); has_id(links,i); i++){ void* v=map_id(links,i);
 		if(is_map(v)){
 			link_relative(v,url);
 			continue; };
@@ -1697,7 +1697,7 @@ map* link_relative(map* links,char* url){
 map* header_map(char* val){
 	if(!val){ return NULL; };
 	map* ret=new_map();
-	map* map_1=str_split(val,";",0); for(int i=next(map_1,-1,NULL,&NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i);
+	map* map_1=str_split(val,";",0); for(int i=next(map_1,-1,NULL,NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i);
 		if(!strchr(v,'=')){ vec_add(ret,v); continue; };
 		map* pair=str_split(v,"=",2);
 		add(ret,str_trim(map_id(pair,0)," \t\n\r"),str_unquote(str_trim(map_id(pair,1)," \t\n\r"))); };
@@ -2071,10 +2071,10 @@ map* page_data(map* data){
 	if(map_val(data,"css")){add(data,"css",xstr("<style>\n",to_str( map_val(data,"css"),"",0), "\n</style>", End));};
 	char* head=NULL;
 	map* map_1=
-	xvec("/res/bootstrap.css","/res/bootstrap-responsive.css","/res/jquery.js","/res/bootstrap.js", End); for(int next1=next(map_1,-1,NULL,&NULL); has_id(map_1,next1); next1++){ void* v=map_id(map_1,next1);
-		if(str_eq(sub_str(v,-4,-2147483648),&".css")){ head=xcat(head,xstr("<link rel='stylesheet' href='", v, "'></link>\n", End), End); }
+	xvec("/res/bootstrap.css","/res/bootstrap-responsive.css","/res/jquery.js","/res/bootstrap.js", End); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* v=map_id(map_1,next1);
+		if(str_eq(sub_str(v,-4,-2147483648),".css")){ head=xcat(head,xstr("<link rel='stylesheet' href='", v, "'></link>\n", End), End); }
 		else {head=xcat(head,xstr("<script async src='", v, "'></script>\n", End), End);}; };
-	map* map_2=map_val(_globals,"jsfile"); for(int next1=next(map_2,-1,NULL,&NULL); has_id(map_2,next1); next1++){ void* v=map_id(map_2,next1);
+	map* map_2=map_val(_globals,"jsfile"); for(int next1=next(map_2,-1,NULL,NULL); has_id(map_2,next1); next1++){ void* v=map_id(map_2,next1);
 		head=xcat(head,xstr("<script async src='", v, "'></script>\n", End), End); };
 	add(data,"header",xstr(head,to_str(map_val(data,"css")
 		,"",0),((map_val(_globals,"css") ? xstr("<style>\n",map_join(map_val(_globals,"css"),"\n"),"</style>", End) : NULL)), End));
@@ -2087,7 +2087,7 @@ map* page_data(map* data){
 	char* tabs=NULL;
 	map* lddata=xmap("@context", "http://schema.org", "@type", "BreadcrumbList", End);
 	int i=1;
-	map* map_3=map_val(_globals,"tabs"); for(int  idx=next(map_3,-1,NULL,&NULL); has_id(map_3, idx);  idx++){ void* url=map_id(map_3, idx); char*  name=map_key(map_3,  idx);
+	map* map_3=map_val(_globals,"tabs"); for(int  idx=next(map_3,-1,NULL,NULL); has_id(map_3, idx);  idx++){ void* url=map_id(map_3, idx); char*  name=map_key(map_3,  idx);
 		char* active=NULL;
 		if(idx==map_len(map_val(_globals,"tabs"))-1){
 			active=" class='active'"; };			
@@ -2105,7 +2105,7 @@ map* page_data(map* data){
 		add(data,"tabs",xstr("<div><ul class='nav nav-tabs'>", tabs, "</ul></div>", End)); };
 	add(data,"ldmenu",xstr("<script type='application/ld+json'>",to_str( lddata,"",0), "</script>", End));
 	char* body=NULL;
-	map* map_4=map_val(data,"menu"); for(int next1=next(map_4,-1,NULL,&NULL); has_id(map_4,next1); next1++){ void* name=map_id(map_4,next1); char*  url=map_key(map_4, next1);
+	map* map_4=map_val(data,"menu"); for(int next1=next(map_4,-1,NULL,NULL); has_id(map_4,next1); next1++){ void* name=map_id(map_4,next1); char*  url=map_key(map_4, next1);
 		body=xcat(body,xstr("<li><a style='overflow:hidden;text-overflow:ellipsis;white-space:nowrap;' href='", url, "'>", name, "</a></li>\n", End), End); };
 	if(is_int(map_val(data,"width"))==4){
 		body=xstr("<div class='span11 offset1'><ul class='nav nav-pills'>", body, "</ul></div>", End);

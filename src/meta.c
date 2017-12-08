@@ -3,7 +3,7 @@
 #include "fox.h"
 
 char* version(){
-	return mstr("Fox: build: 5988, date: 2017-12-08 09:04:28 [%s old]",time_ago("2017-12-08 09:04:28"), End);
+	return mstr("Fox: build: 5989, date: 2017-12-08 09:07:29 [%s old]",time_ago("2017-12-08 09:07:29"), End);
 };
 void* invoke(map* v,char* name){
 	unsigned long long idn=str_hash((unsigned char*)name);
@@ -66,7 +66,7 @@ void* invoke(map* v,char* name){
 		case 0x6530523a55e: { return is_map(map_id(v,0)); break; };
 		case 0x377da2ead45eea2: { return double_var(to_double(map_id(v,0))); break; };
 		case 0x6531e83f2f2: { return int_var(to_int(map_id(v,0))); break; };
-		case 0x17c9b1ec4: { char* pkey_next=is_str(map_id(v,2)); return int_var(next(is_map(map_id(v,0)),to_int(map_id(v,1)),v->len>=2 ? &pkey_next : NULL,&&v->len>=3 ? map_id(v,3) : NULL)); break; };
+		case 0x17c9b1ec4: { char* pkey_next=is_str(map_id(v,2)); return int_var(next(is_map(map_id(v,0)),to_int(map_id(v,1)),v->len>=2 ? &pkey_next : NULL,v->len>=3 ? map_id(v,3) : NULL)); break; };
 		case 0x17c9e1b44: { return int_var(stoi(is_str(map_id(v,0)))); break; };
 		case 0xd0b3006b3b09: { return globals(); break; };
 		case 0x1ae74c77b06954: { return int_var(mem_used(v->len>=0 ? to_int(map_id(v,0)) : 0,v->len>=1 ? to_int(map_id(v,1)) : 0)); break; };
@@ -74,7 +74,7 @@ void* invoke(map* v,char* name){
 		case 0x377d54822961265: { return int_var(ptr_block(map_id(v,0),map_id(v,1))); break; };
 		case 0x1ae76ecac8d0fc: { return int_var(ptr_type(map_id(v,0))); break; };
 		case 0x727046265bca7d21: { return int_var(cell2_mark(map_id(v,0),to_int(map_id(v,1)))); break; };
-		case 0x377c410b0a8890f: { return int_var(cell_mark(&map_id(v,0),to_int(map_id(v,1)))); break; };
+		case 0x377c410b0a8890f: { return int_var(cell_mark(map_id(v,0),to_int(map_id(v,1)))); break; };
 		case 0xd0b2ea514e39: { return int_var(gc_mark(map_id(v,0))); break; };
 		case 0x72730045cd308085: { return int_var(sweep_page(map_id(v,0))); break; };
 		case 0xc07ddcec5a777bd1: { return data_delete(map_id(v,0),to_int(map_id(v,1)),to_int(map_id(v,2)),to_int(map_id(v,3))); break; };
@@ -114,8 +114,8 @@ void* invoke(map* v,char* name){
 		case 0x377d0b4a2c90efa: { return map_index(is_map(map_id(v,0)),to_int(map_id(v,1))); break; };
 		case 0xc0aed06b19758cf1: { return map_reindex(is_map(map_id(v,0))); break; };
 		case 0x1ae75b322011d8: { return null_str(is_str(map_id(v,0))); break; };
-		case 0x1ae76ecc2728eb: { return ptrs_vec(&map_id(v,0),to_int(map_id(v,1))); break; };
-		case 0xd0b39ea74862: { return int_var(init_gc(&map_id(v,0))); break; };
+		case 0x1ae76ecc2728eb: { return ptrs_vec(map_id(v,0),to_int(map_id(v,1))); break; };
+		case 0xd0b39ea74862: { return int_var(init_gc(map_id(v,0))); break; };
 		case 0x17c967daa: { char* poutput_exec=is_str(map_id(v,1)); return int_var(exec(is_str(map_id(v,0)),v->len>=1 ? &poutput_exec : NULL)); break; };
 		case 0xcfc0f53e96a5ec73: { return int_var(clock_cycles()); break; };
 		case 0x1ae76ecac1e56c: { return ptr_head(map_id(v,0)); break; };
@@ -191,7 +191,7 @@ void* invoke(map* v,char* name){
 		case 0xc078567e50a15e6e: { cache_blast(is_str(map_id(v,0))); return NULL; break; };
 		case 0x310f355db9: { return cache(map_id(v,0),is_str(map_id(v,1)),v->len>=2 ? map_id(v,2) : NULL); break; };
 		case 0xd0b6af042f1b: { return str_map(is_str(map_id(v,0)),v->len>=1 ? to_int(map_id(v,1)) : Map); break; };
-		case 0xc0cab7c1ea9a175c: { rewrite_ptr(map_id(v,0),&map_id(v,1)); return NULL; break; };
+		case 0xc0cab7c1ea9a175c: { rewrite_ptr(map_id(v,0),map_id(v,1)); return NULL; break; };
 		case 0xda21afff3ddd034f: { rewrite_ptrs(map_id(v,0)); return NULL; break; };
 		case 0x377c4753d7880bc: { return int_var(copy_page(map_id(v,0),map_id(v,1))); break; };
 		case 0x1ae768faee69df: { return int_var(page_map(map_id(v,0))); break; };
@@ -375,7 +375,7 @@ void* invoke(map* v,char* name){
 		case 0x377c3e8ff9db36c: { return call_func(is_map(map_id(v,0)),is_str(map_id(v,1)),v->len>=2 ? is_map(map_id(v,2)) : NULL); break; };
 		case 0x377c532c242cac3: { return data_exec(map_id(v,0),v->len>=1 ? is_map(map_id(v,1)) : NULL); break; };
 		case 0x17c9674ad: { return eval(is_str(map_id(v,0)),v->len>=1 ? is_map(map_id(v,1)) : NULL); break; };
-		case 0x9954fc6ac4141f5e: { return int_var(eval_expr_cont(is_map(map_id(v,0)),to_int(map_id(v,1)),is_map(map_id(v,2)),&map_id(v,3),to_int(map_id(v,4)))); break; };
+		case 0x9954fc6ac4141f5e: { return int_var(eval_expr_cont(is_map(map_id(v,0)),to_int(map_id(v,1)),is_map(map_id(v,2)),map_id(v,3),to_int(map_id(v,4)))); break; };
 		case 0x377c2f16edd8368: { return binary_op(map_id(v,0),(is_str(map_id(v,1)) ? is_str(map_id(v,1))[0] : to_int(map_id(v,1))),map_id(v,2)); break; };
 		case 0xd0b3a99c7120: { return int_var(is_true(map_id(v,0))); break; };
 		case 0x377d73d2288dbe8: { return read_line(map_id(v,0)); break; };
