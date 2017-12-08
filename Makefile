@@ -1,16 +1,14 @@
 CC=gcc
 INSTALL_DIR?=/usr/local
-CFLAGS=-Iinclude -std=gnu99 -Wno-logical-op-parentheses -Os -Wno-int-conversion -L/usr/lib64/ -fPIC -Wno-unused-command-line-argument
-FOXS=fox.fox core.fox sql.fox cgi.fox cmd.fox main.fox
-LIBS=-lsqlite3 -I/usr/local/opt/openssl/include -L/usr/local/lib -L/usr/local/opt/openssl/lib -lcrypto -lmarkdown -lcurl
+CFLAGS=-Iinclude -std=gnu99 -Wno-logical-op-parentheses -Os -Wno-int-conversion -L/usr/lib64/ -fPIC -Wno-unused-command-line-argument -I/usr/local/opt/openssl/include -L/usr/local/lib -L/usr/local/opt/openssl/lib
+FOXS=fox.fox core.fox sql.fox cgi.fox cmd.fox main.fox astrostr.fox
+LIBS=-lsqlite3 -lcrypto -lmarkdown -lcurl
 HEADERS=fox.h sql.h
 _XLIBS=libfoxstatic.a libfox.so libfoxcgi.so libfoxcgistatic.a libfoxcmdstatic.a libfoxastro.a
 XLIBS=$(patsubst %,lib/%,$(_XLIBS))
 DEPS=$(patsubst %,include/%,$(HEADERS))
-_OBJ=core.o meta.o fox.o memsize.o sql.o astro.o
+_OBJ=core.o meta.o fox.o memsize.o sql.o astro.o astrostr.o
 OBJ = $(patsubst %,obj/%,$(_OBJ))
-_OCMD=cmd.o
-OCMD = $(patsubst %,obj/%,$(_OCMD))
 
 .DEFAULT_GOAL := bin/fox
 
@@ -41,17 +39,17 @@ bin/fox: obj/main.o $(DEPS) $(OBJ) $(FOXS) $(XLIBS)
 	gcc -o $@ obj/main.o $(CFLAGS) -Llib -lm $(LIBS) -lfoxstatic -lfoxcmdstatic -lfoxastro
 	bin/fox utests
 
-src/core.c src/fox.c src/sql.c src/cgi.c src/cmd.c: $(FOXS)
+src/core.c src/fox.c src/sql.c src/cgi.c src/cmd.c src/astrostr.c: $(FOXS)
 	fox write_source
 
 
 lib/libfoxcgi.so: $(OBJ) obj/cgi.o
 	rm -f $@
-	gcc -shared -o $@ $^ $(LIBS)
+	gcc -shared -o $@ $^ $(LIBS) $(CFLAGS)
 
 lib/libfox.so: $(OBJ) obj/cmd.o
 	rm -f $@
-	gcc -shared -o $@ $^ $(LIBS)
+	gcc -shared -o $@ $^ $(LIBS) $(CFLAGS)
 
 lib/libfoxcgistatic.a: obj/cgi.o
 	rm -f $@
@@ -78,8 +76,8 @@ install: bin/fox lib/libfoxstatic.a lib/libfoxcgistatic.a lib/libfoxastro.a
 	bin/fox utests
 	cp include/fox.h $(INSTALL_DIR)/include/fox.h
 	cp bin/fox $(INSTALL_DIR)/bin/fox
-	cp lib/*.a $(INSTALL_DIR)/lib/
 	cp lib/*.so $(INSTALL_DIR)/lib/
+	sudo cp lib/*.a $(INSTALL_DIR)/lib/
 
 php: install 
 	fox fox_phpc habib.fox php/habibphp.c

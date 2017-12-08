@@ -8,7 +8,7 @@ void* px(void* str,int newline){
 	void* ret=str;
 	str=to_str(str,"",0);
 	if(!str_len(str) && !newline){ return ret; };
-	add(_globals,"out",xcat(map_val(_globals,"out"),str, End));
+	add(_globals,"out",xcat(to_str(map_val(_globals,"out"),"",0),str, End));
 	return ret;
 };
 void xexit(int val){
