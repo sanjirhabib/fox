@@ -2501,7 +2501,6 @@ map* type_convert(map* tok,char* outtype,map* env,map* fs,map* fn){
 			return tok.vec_splice(1,0,["&",NULL])
 	else if intype==="char**"
 		if outtype==="char*" => return tok.vec_splice(1,0,["*",NULL])
-	else if outtype.str_start(intype) && (outtype+intype.str_len())==="*" => return tok.vec_splice(1,0,["&",NULL])
 	return tok
 }
 map* param_c(map* params,map* env,map* fs,map* fn){
