@@ -31,7 +31,7 @@ void xexit(int val=0);
 void* fox_error(char* msg,int dump=0);
 void* call_php(map* params,char* func);
 
-int cgi(char* infile="index.fox", char* outfile="index.cgi",char* opts=NULL,int keepfiles=0){
+int cgi(char* infile="main.fox", char* outfile="index.cgi",char* opts=NULL,int keepfiles=0){
 	ret=infile.cc(outfile, :cgi, opts, keepfiles)
 	if ret => return ret
 	write_htaccess()
@@ -2487,13 +2487,11 @@ map* type_convert(map* tok,char* outtype,map* env,map* fs,map* fn){
 	if intype.is_word("int long size_t") || intype==="long long"
 		if outtype==="void*" => return tok.wrap_call(:int_var)
 		else if outtype==="char*" => return tok.wrap_call(:int_str)
-	else if intype==="void*"
-		if outtype===:double => return tok.wrap_call(:to_double)
-	else if intype===:double
+	if intype===:double
 		if outtype==="void*" => return tok.wrap_call(:double_var)
 		else if outtype==="char*" => return tok.wrap_call(:double_str)
-	else if intype==="map*"
-		if outtype==="char*" => return tok.wrap_call(:to_str)
+//	else if intype==="map*"
+//		if outtype==="char*" => return tok.wrap_call(:json)
 	else if intype==="char*"
 		if outtype===:int => return tok.wrap_call(:stoi)
 		else if outtype==="char**"
@@ -2688,8 +2686,9 @@ int is_func_decl(map* syn){
 	if syn[idx+7]==="{" && syn[idx+13]===";" => return 1
 	return 0
 }
-char* c_h(char* infile,char* outfile=NULL) => return infile.file_funcs().funcs_cdecl(0).write_file(outfile)
-char* fox_h(char* infile,char* outfile=NULL) => return ("#include <fox.h>\n"..infile.file_funcs().funcs_cdecl(0)).write_file(outfile)
+char* fox_h(char* infile,char* outfile=NULL){
+	return ("#include <fox.h>\n"..infile.file_funcs().funcs_cdecl(0)).write_file(outfile)
+}
 char* fox_c(char* infile, char* outfile=NULL) => return infile.file_read().x_c().write_file(outfile)
 map* x_map(char* in) => return c_tokenizer(&in,'\0')
 char* c_x(char* in) => return in.x_map().map_tox().toks_c()
@@ -4157,7 +4156,7 @@ char* fork_exec(char* cmd,map* params){
 		else if status.WIFSIGNALED() => "command %s killed".mstr(cmd)
 	return NULL
 }
-map* source_files() => return ["core.fox","fox.fox","sql.fox","cmd.fox","cgi.fox","astro/astro.h","astrostr.fox"]
+map* source_files() => return ["core.fox","fox.fox","sql.fox","cmd.fox","cgi.fox","astro/astro.h"]
 map* source_funcs(){
 	if !_globals.cache.funcs
 		map* mp={}	

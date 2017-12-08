@@ -149,7 +149,7 @@ char* vec_json(map* mp,int indent){
 	if(!is_vec(mp)){ return json(mp,indent); };
 	char* ret=NULL;
 	ret=xcat(ret,"[", End);
-	for(int i=next(mp,-1,NULL,NULL); has_id(mp,i); i++){ void* v=map_id(mp,i);
+	for(int i=next(mp,-1,NULL,&NULL); has_id(mp,i); i++){ void* v=map_id(mp,i);
 		if(!v){ ret=xcat(ret,"null", End); }
 		else if(is_str(v)){ ret=xcat(ret,str_quote(v), End); }
 		else if(is_num(v)){ ret=xcat(ret,v, End); }
@@ -168,7 +168,7 @@ char* json(map* mp,int indent){
 	if(!is_map(mp)){ return NULL; };
 	char* ret=NULL;
 	ret=xcat(ret,"{", End);
-	for(int i=next(mp,-1,NULL,NULL); has_id(mp,i); i++){ void* v=map_id(mp,i); char* k=map_key(mp, i);
+	for(int i=next(mp,-1,NULL,&NULL); has_id(mp,i); i++){ void* v=map_id(mp,i); char* k=map_key(mp, i);
 		if(indent){ ret=xcat(ret,"\n",str_times("\t",indent-1), End); };
 		if(is_i(k)){ ret=xcat(ret,int_str((is_int(k)-1)), End); }
 		else if(is_f(k)){ ret=xcat(ret,k, End); }
@@ -923,7 +923,7 @@ map* map_reindex(map* mp){
 		mp->pairs[i].nextid=mp->pairs[i].nextid ? -1 : 0;
 		mp->pairs[i].hkey=0;
 	};
-	for(int i=next(mp,-1,NULL,NULL); has_id(mp,i); i++){ map_index(mp,i); };
+	for(int i=next(mp,-1,NULL,&NULL); has_id(mp,i); i++){ map_index(mp,i); };
 	return mp;
 };
 char* null_str(char* in){ return in ? in : ""; };

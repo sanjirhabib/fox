@@ -455,7 +455,6 @@ int syn_assign_val(map* syn);
 int is_assign(map* syn);
 int is_var_decl(map* syn);
 int is_func_decl(map* syn);
-char* c_h(char* infile, char* outfile);
 char* fox_h(char* infile, char* outfile);
 char* fox_c(char* infile, char* outfile);
 map* x_map(char* in);
