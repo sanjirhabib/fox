@@ -53,14 +53,14 @@ int cc(char* infile, char* outfile=NULL, char* profile="debug", char* opts=NULL,
 	in=infile..".fox"
 	in.fox_c(infile..".c")
 	in.fox_h(infile..".h")
-	cflags="-std=gnu99 -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -Wno-unused-command-line-argument -lfoxmain"
+	cflags="-std=gnu99 -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -Wno-unused-command-line-argument"
 	xlibs="-lcrypto -lmarkdown -lcurl -lsqlite3"
 	switches={
-		debug: "-O0 -lfox $cflags $xlibs"
-		speed: "-O3 -lfox $cflags $xlibs"
-		size: "-Os -lfox $cflags"
-		static: "-lfoxstatic -lfoxcmdstatic $cflags -fdata-sections -ffunction-sections -Wl,-dead_strip"
-		cgi: "-Os -lfoxstatic -lfoxcgistatic $cflags $xlibs"
+		debug: "-O0 -lfox $cflags $xlibs -lfoxmain"
+		speed: "-O3 -lfox $cflags $xlibs -lfoxmain"
+		size: "-Os -lfox $cflags -lfoxmain"
+		static: "-lfoxstatic -lfoxcmdstatic $cflags -fdata-sections -ffunction-sections -Wl,-dead_strip -lfoxmain"
+		cgi: "-Os -lfoxstatic -lfoxcgistatic $cflags $xlibs -lfoxmaincgi"
 	}
 	profile = switches[profile] or switches[:debug]
 	ret="gcc $infile.c -o $outfile $profile $opts -std=gnu99 -Wno-logical-op-parentheses -lm 2>&1"
@@ -200,17 +200,6 @@ char* va_str(char* format,va_list args){
 	ret=new_str(len)
 	ret.vsnprintf(len+1,format,copy)
 	copy.va_end()
-	return ret
-}
-void* verbose(char* msg,...){
-	if !_globals.verbose => return msg
-	if is_web() => return NULL
-	va_list args
-	args.va_start(msg)
-	ret=msg.va_str(args)
-	ret.puts()
-	args.va_end()
-	stdout.fflush()
 	return ret
 }
 void* dx(void* data="**",char* name=NULL,int panic=0){
@@ -2734,7 +2723,6 @@ char* func_ccall(map* fn){
 			ret="call_variadic_$mtype(v,$(fn.name),\"$(fn.name)\")"
 			break
 		else if !v.str_end("*")
-			"ignoring %s/%s/%s".verbose(fn.name,v,k)
 			return NULL
 		if def => ret.="v->len>=$i ? $pre$mid$post : $(def.x_c().sub_str(0,-1)),"
 		else => ret.="$pre$mid$post,"
@@ -3253,7 +3241,6 @@ void* call_func(map* params,char* name,map* env=NULL){
 	if name.str_start(:php_) => return params.call_php(name.sub_str(5))
 	map* user=_globals.cache.userfuncs[name]
 //	_globals.add_key(:callstack,Vector)[]=name //params.call_c(name)
-//	name.verbose()
 	void* ret=NULL
 	if user
 		int halt=0
@@ -3561,9 +3548,6 @@ map* command_line(char* in,int argc,char** argv){
 	"Unrecognized argument".px()
 	in.px()
 	return NULL
-}
-int is_web(){
-	return _is_web
 }
 map* param_test(char* one=:none,char* two=:missing){
 	return args_map()
@@ -4587,6 +4571,7 @@ char* ptr_id(void* ptr){
 }
 char* today() => return time_str().sub_str(0,10)
 char* now() => return time_str().sub_str(11,8)
+int this_year() => return time_str().sub_str(0,4).str_int()
 char* datetime() => return time_str()
 int str_ascii(char* in) => return in[0]
 void benchmark_gc(){
@@ -4843,6 +4828,23 @@ map* prop_map(char* in,char* name=NULL){
 		ret[val[0].data_unquote()]=val[1].data_unquote()
 	return ret
 }
+char* num_lang(char* in,char* lang){
+	if !in || !*in => return NULL
+	char buff[5]={0}
+	langid={en: 0, bg: 1, ar: 2}
+	int id=langid[lang].to_int()
+	int points[]={ 48, 2534, 1632 }
+	ret=''
+	code=0
+	while (code=in.utf_unicode())
+		in+=in.utf_len()
+		for i=0; i<3; i++
+			if i!=id && code>=points[i] && code<points[i]+10
+				code-=(points[i]-points[id])
+				break
+		ret.=code.unicode_utf(buff)
+	return ret
+}
 char* str_tr(char* in, map* replace){
 	if !in => return NULL
 	ret=''
@@ -4867,21 +4869,4 @@ char* str_tr(char* in, map* replace){
 		ret.=saved.sub_str(0,in-saved)
 
 	return ret	
-}
-char* num_lang(char* in,char* lang){
-	if !in || !*in => return NULL
-	char buff[5]={0}
-	langid={en: 0, bg: 1, ar: 2}
-	int id=langid[lang].to_int()
-	int points[]={ 48, 2534, 1632 }
-	ret=''
-	code=0
-	while (code=in.utf_unicode())
-		in+=in.utf_len()
-		for i=0; i<3; i++
-			if i!=id && code>=points[i] && code<points[i]+10
-				code-=(points[i]-points[id])
-				break
-		ret.=code.unicode_utf(buff)
-	return ret
 }

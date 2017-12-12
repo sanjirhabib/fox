@@ -74,7 +74,7 @@ map* pre_tables();
 map* db_table(char* db, char* tbl);
 map* db_tables(char* db);
 map* db_cols(char* db, char* tbl);
-map* row_ids(void* row, char* tbl, char* db);
+map* row_ids(map* row, char* tbl, char* db);
 map* pkeys_where(char* tbl, char* db);
 map* tbl_row_ids(char* tbl, char* db, map* row);
 char* tbl_row_id(char* tbl, char* db, map* row);

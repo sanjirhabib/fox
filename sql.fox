@@ -4,8 +4,6 @@
 #include <mkdio.h>
 #include <curl/curl.h>
 
-int _is_web=0;
-
 map* sql_toks(char* line) => return sql_tokenizer(&line)
 	
 map* split_keywords(map* mp,char* words){
@@ -103,7 +101,7 @@ map* parse_where(map* cls){
 		if eqs->len==2
 			key=val.sql_str()
 			val=eqs[1]
-		wheres.map_add(key,val)
+		wheres[key]=val
 	return wheres
 }
 map* de_where(map* cls){
@@ -127,7 +125,7 @@ map* de_order(map* cls){
 		ord=mp1[1].sql_str()
 		int iord=1
 		if ord===:desc => iord=-1
-		ret.map_add(col,iord)
+		ret[col]=iord
 	
 	cls.order=ret
 	return cls
@@ -232,7 +230,7 @@ map* sql_order(char* sql){
 		ord=mp1[1].sql_str()
 		int iord=1
 		if ord===:desc => iord=-1
-		ret.map_add(col,iord)
+		ret[col]=iord
 	
 	return ret
 }
@@ -847,14 +845,14 @@ map* db_cols(char* db,char* tbl){
 	_globals.schema[tbl]=ret
 	return ret
 }
-map* row_ids(void* row,char* tbl,char* db){
+map* row_ids(map* row,char* tbl,char* db){
 	ret={}
 	tbl.tbl_pkeys(db).each v,,i => ret[v]=row[v]
 	return ret
 }
 map* pkeys_where(char* tbl,char* db){
 	ret={}
-	tbl.tbl_pkeys(db).each v,,i => ret.map_add(v,":"..v)
+	tbl.tbl_pkeys(db).each v,,i => ret[v]=":"..v
 	return ret
 }
 map* tbl_row_ids(char* tbl,char* db,map* row){
@@ -1466,7 +1464,7 @@ int utf_len(char* in){
 	if input[0] < 0x80 => return 1
 	if (input[0] & 0xC0) == 0xC0 => return 2
 	if (input[0] & 0xE0) == 0xE0 => return 3
-	return 0
+	return 1
 }
 int utf_unicode(char* ptr){
 	unsigned char* input=(unsigned char*)ptr
@@ -1479,7 +1477,7 @@ int utf_unicode(char* ptr){
 	if (input[0] & 0xC0) == 0xC0
 //		if input[1] < 0x80 || input[1] > 0xBF => return 0
 		return (input[0] & 0x1F)<<6  | (input[1] & 0x3F)
-	return 0
+	return '?'
 }
 char* test_out(char* in){
 	in.px()

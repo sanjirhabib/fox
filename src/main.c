@@ -1,4 +1,4 @@
-#include "fox.h"
+#include <fox.h>
 int run(map* args);
 int main(int argc,char** argv){
 	gc_start();

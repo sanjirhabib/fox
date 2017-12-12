@@ -4,8 +4,6 @@
 #include <mkdio.h>
 #include <curl/curl.h>
 
-int _is_web=0;
-
 map* sql_toks(char* line){ return sql_tokenizer(&line); };
 	
 map* split_keywords(map* mp,char* words){
@@ -103,7 +101,7 @@ map* parse_where(map* cls){
 		if(eqs->len==2){
 			key=sql_str(val);
 			val=map_id(eqs,1); };
-		map_add(wheres,key,val); };
+		add(wheres,key,val); };
 	return wheres;
 };
 map* de_where(map* cls){
@@ -127,7 +125,7 @@ map* de_order(map* cls){
 		char* ord=sql_str(map_id(mp1,1));
 		int iord=1;
 		if(str_eq(ord,"desc")){ iord=-1; };
-		map_add(ret,col,int_var(iord));
+		add(ret,col,int_var(iord));
 	};
 	add(cls,"order",ret);
 	return cls;
@@ -232,7 +230,7 @@ map* sql_order(char* sql){
 		char* ord=sql_str(map_id(mp1,1));
 		int iord=1;
 		if(str_eq(ord,"desc")){ iord=-1; };
-		map_add(ret,col,int_var(iord));
+		add(ret,col,int_var(iord));
 	};
 	return ret;
 };
@@ -809,9 +807,8 @@ map* pre_tables(){
 				"id3=code",xmap(End),
 				"id4=code",xmap(End),
 				"tbl=code",xmap(End),
-				"body=text",xmap(End), End), End)
-	
-		, End);
+				"body=text",xmap(End), End), End),
+	"Mapcell*",NULL, End);
 };
 map* db_table(char* db,char* tbl){
 	return cols_table(db_cols(db,tbl),tbl,db);
@@ -848,14 +845,14 @@ map* db_cols(char* db,char* tbl){
 	add(add_key(_globals,"schema",Map),tbl,ret);
 	return ret;
 };
-map* row_ids(void* row,char* tbl,char* db){
+map* row_ids(map* row,char* tbl,char* db){
 	map* ret=new_map();
 	map* map_1=tbl_pkeys(tbl,db); for(int i=next(map_1,-1,NULL,NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i); add(ret,v,map_val(row,v)); };
 	return ret;
 };
 map* pkeys_where(char* tbl,char* db){
 	map* ret=new_map();
-	map* map_1=tbl_pkeys(tbl,db); for(int i=next(map_1,-1,NULL,NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i); map_add(ret,v,xstr(":",v, End)); };
+	map* map_1=tbl_pkeys(tbl,db); for(int i=next(map_1,-1,NULL,NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i); add(ret,v,xstr(":",v, End)); };
 	return ret;
 };
 map* tbl_row_ids(char* tbl,char* db,map* row){
@@ -1467,7 +1464,7 @@ int utf_len(char* in){
 	if(input[0] < 0x80){ return 1; };
 	if((input[0] & 0xC0) == 0xC0){ return 2; };
 	if((input[0] & 0xE0) == 0xE0){ return 3; };
-	return 0;
+	return 1;
 };
 int utf_unicode(char* ptr){
 	unsigned char* input=(unsigned char*)ptr;
@@ -1480,7 +1477,7 @@ int utf_unicode(char* ptr){
 	if((input[0] & 0xC0) == 0xC0){
 //		if input[1] < 0x80 || input[1] > 0xBF => return 0
 		return (input[0] & 0x1F)<<6  | (input[1] & 0x3F); };
-	return 0;
+	return '?';
 };
 char* test_out(char* in){
 	px(in,1);

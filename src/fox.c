@@ -53,14 +53,14 @@ int cc(char* infile, char* outfile, char* profile, char* opts, int keepfiles){
 	char* in=xstr(infile,".fox", End);
 	fox_c(in,xstr(infile,".c", End));
 	fox_h(in,xstr(infile,".h", End));
-	char* cflags="-std=gnu99 -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -Wno-unused-command-line-argument -lfoxmain";
+	char* cflags="-std=gnu99 -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -Wno-unused-command-line-argument";
 	char* xlibs="-lcrypto -lmarkdown -lcurl -lsqlite3";
 	map* switches=xmap(
-		"debug", xstr("-O0 -lfox ", cflags, " ", xlibs, End),
-		"speed", xstr("-O3 -lfox ", cflags, " ", xlibs, End),
-		"size", xstr("-Os -lfox ", cflags, End),
-		"static", xstr("-lfoxstatic -lfoxcmdstatic ", cflags, " -fdata-sections -ffunction-sections -Wl,-dead_strip", End),
-		"cgi", xstr("-Os -lfoxstatic -lfoxcgistatic ", cflags, " ", xlibs, End)
+		"debug", xstr("-O0 -lfox ", cflags, " ", xlibs, " -lfoxmain", End),
+		"speed", xstr("-O3 -lfox ", cflags, " ", xlibs, " -lfoxmain", End),
+		"size", xstr("-Os -lfox ", cflags, " -lfoxmain", End),
+		"static", xstr("-lfoxstatic -lfoxcmdstatic ", cflags, " -fdata-sections -ffunction-sections -Wl,-dead_strip -lfoxmain", End),
+		"cgi", xstr("-Os -lfoxstatic -lfoxcgistatic ", cflags, " ", xlibs, " -lfoxmaincgi", End)
 	, End);
 	profile = (map_val(switches,profile) ? map_val(switches,profile) : map_val(switches,"debug"));
 	int ret=exec(
@@ -200,17 +200,6 @@ char* va_str(char* format,va_list args){
 	char* ret=new_str(len);
 	vsnprintf(ret,len+1,format,copy);
 	va_end(copy);
-	return ret;
-};
-void* verbose(char* msg,...){
-	if(!map_val(_globals,"verbose")){ return msg; };
-	if(is_web()){ return NULL; };
-	va_list args;
-	va_start(args,msg);
-	char* ret=va_str(msg,args);
-	puts(ret);
-	va_end(args);
-	fflush(stdout);
 	return ret;
 };
 void* dx(void* data,char* name,int panic){
@@ -2734,7 +2723,6 @@ char* func_ccall(map* fn){
 			ret=xstr("call_variadic_", mtype, "(v,", map_val(fn,"name"), ",\"", map_val(fn,"name"), "\")", End);
 			break;
 		}else if(!str_end(v,"*")){
-			verbose("ignoring %s/%s/%s",map_val(fn,"name"),v,k, End);
 			return NULL; };
 		if(def){ ret=xcat(ret,xstr("v->len>=",int_str( i), " ? ", pre, mid, post, " : ", sub_str(x_c(def),0,-1), ",", End), End); }
 		else{ ret=xcat(ret,xstr(pre, mid, post, ",", End), End); }; };
@@ -3253,7 +3241,6 @@ void* call_func(map* params,char* name,map* env){
 	if(str_start(name,"php_")){ return call_php(params,sub_str(name,5,-2147483648)); };
 	map* user=map_val(map_val(map_val(_globals,"cache"),"userfuncs"),name);
 //	_globals.add_key(:callstack,Vector)[]=name //params.call_c(name)
-//	name.verbose()
 	void* ret=NULL;
 	if(user){
 		int halt=0;
@@ -3561,9 +3548,6 @@ map* command_line(char* in,int argc,char** argv){
 	px("Unrecognized argument",1);
 	px(in,1);
 	return NULL;
-};
-int is_web(){
-	return _is_web;
 };
 map* param_test(char* one,char* two){
 	return xmap("one",one,"two",two, End);
@@ -4587,6 +4571,7 @@ char* ptr_id(void* ptr){
 };
 char* today(){ return sub_str(time_str(0),0,10); };
 char* now(){ return sub_str(time_str(0),11,8); };
+int this_year(){ return str_int(sub_str(time_str(0),0,4)); };
 char* datetime(){ return time_str(0); };
 int str_ascii(char* in){ return in[0]; };
 void benchmark_gc(){
@@ -4843,6 +4828,23 @@ map* prop_map(char* in,char* name){
 		add(ret,data_unquote(map_id(val,0)),data_unquote(map_id(val,1))); };
 	return ret;
 };
+char* num_lang(char* in,char* lang){
+	if(!in || !*in){ return NULL; };
+	char buff[5]={0};
+	map* langid=xmap("en",int_var( 0), "bg",int_var( 1), "ar",int_var( 2), End);
+	int id=to_int(map_val(langid,lang));
+	int points[]={ 48, 2534, 1632 };
+	char* ret=NULL;
+	int code=0;
+	while((code=utf_unicode(in))){
+		in+=utf_len(in);
+		for(int i=0; i<3; i++){
+			if(i!=id && code>=points[i] && code<points[i]+10){
+				code-=(points[i]-points[id]);
+				break; }; };
+		ret=xcat(ret,unicode_utf(code,buff), End); };
+	return ret;
+};
 char* str_tr(char* in, map* replace){
 	if(!in){ return NULL; };
 	char* ret=NULL;
@@ -4867,21 +4869,4 @@ char* str_tr(char* in, map* replace){
 		ret=xcat(ret,sub_str(saved,0,in-saved), End);
 	};
 	return ret;	
-};
-char* num_lang(char* in,char* lang){
-	if(!in || !*in){ return NULL; };
-	char buff[5]={0};
-	map* langid=xmap("en",int_var( 0), "bg",int_var( 1), "ar",int_var( 2), End);
-	int id=to_int(map_val(langid,lang));
-	int points[]={ 48, 2534, 1632 };
-	char* ret=NULL;
-	int code=0;
-	while((code=utf_unicode(in))){
-		in+=utf_len(in);
-		for(int i=0; i<3; i++){
-			if(i!=id && code>=points[i] && code<points[i]+10){
-				code-=(points[i]-points[id]);
-				break; }; };
-		ret=xcat(ret,unicode_utf(code,buff), End); };
-	return ret;
 };
