@@ -989,17 +989,21 @@ map* conn_db(char* db){
 	return _globals.dbs[db]
 }
 map* sql_exec(char* sql,char* db,map* params=NULL) => return sql.lite_exec(db,params)
-map* lite_exec(char* sql,char* db,map* params=NULL){
+void* lite_conn(char* db){
 	cname=db
 	db=db.conn_db().file
 	if !db => "query() connection $(cname.str_quote()) not found $(_globals.dbs)".fox_error()
-	sqlite3* conn=_globals.conn[db]
-	sqlite3_stmt* stm=NULL
-	start_time()
-	if !conn
+	if !_globals.conn[db]
+		sqlite3* conn=_globals.conn[db]
 		if db.sqlite3_open_v2(&conn,SQLITE_OPEN_READWRITE|SQLITE_OPEN_URI,NULL)!=SQLITE_OK
-			return sql.sql_error(db,conn)
+			return NULL.sql_error(db,conn)
 		_globals.conn[db]=conn
+	return _globals.conn[db]
+}
+map* lite_exec(char* sql,char* db,map* params=NULL){
+	start_time()
+	sqlite3* conn=db.lite_conn()
+	sqlite3_stmt* stm=NULL
 	if conn.sqlite3_prepare_v2(sql,-1,&stm,NULL)!=SQLITE_OK
 		return sql.sql_error(db,conn)
 	int i=0
@@ -1240,7 +1244,7 @@ char* str_show(char* value,char* type,map* op=NULL,int width=0){
 	if type===:guid => return '<ID>'.str_html()
 	if type===:mins => n=value.to_int(); return mstr("%d:%02d",n/60,n%60)
 	if type===:duration => return 'Duration/Pending'
-	if type===:date => return value.human_time()
+	if type===:date => return value.human_datetime()
 	if type===:quarter => return 'Pending-Qurter'
 	if type===:image => return value ? "<img src=".._globals.base_url.."/"..value.thumb_name().."></img>" : "--"
 	return value
@@ -1248,7 +1252,7 @@ char* str_show(char* value,char* type,map* op=NULL,int width=0){
 char* cols_show(map* cols,map* row,char* name,int width=2){
 	return row[name].str_show(cols[name].type,cols[name],width)
 }
-char* human_time(char* in){
+char* human_datetime(char* in){
 	if !in => return ''
 	char buffer[64]
 	time_t time=in.str_time()
@@ -1421,7 +1425,7 @@ map* sync_sqls(map* newt,map* oldt){
 	ret[]=:_syncing.sql_rename(newt.name)
 	return ret	
 }
-int utf8_strlen(char* in){
+int utf_strlen(char* in){
 	i=0
 	j=0
 	while in[i]
@@ -1429,45 +1433,51 @@ int utf8_strlen(char* in){
 		i++
 	return j
 }
-int ucs2_to_utf8(int ucs2,char* utf8){
+char* unicode_utf(int ucs2,char* ret){
 	if ucs2 < 0x80
-		utf8[0] = ucs2
-		utf8[1] = '\0'
-		return 1
+		ret[0] = ucs2
+		ret[1] = '\0'
+		return ret
 	if ucs2 >= 0x80  && ucs2 < 0x800
-		utf8[0] = (ucs2 >> 6)   | 0xC0
-		utf8[1] = (ucs2 & 0x3F) | 0x80
-		utf8[2] = '\0'
-		return 2
+		ret[0] = (ucs2 >> 6)   | 0xC0
+		ret[1] = (ucs2 & 0x3F) | 0x80
+		ret[2] = '\0'
+		return ret
 	if ucs2 >= 0x800 && ucs2 < 0xFFFF
 		if ucs2 >= 0xD800 && ucs2 <= 0xDFFF => return 0
-		utf8[0] = ((ucs2 >> 12)	   ) | 0xE0
-		utf8[1] = ((ucs2 >> 6 ) & 0x3F) | 0x80
-		utf8[2] = ((ucs2	  ) & 0x3F) | 0x80
-		utf8[3] = '\0'
-		return 3
+		ret[0] = ((ucs2 >> 12)	   ) | 0xE0
+		ret[1] = ((ucs2 >> 6 ) & 0x3F) | 0x80
+		ret[2] = ((ucs2	  ) & 0x3F) | 0x80
+		ret[3] = '\0'
+		return ret
 	if ucs2 >= 0x10000 && ucs2 < 0x10FFFF
-		utf8[0] = 0xF0 | (ucs2 >> 18)
-		utf8[1] = 0x80 | ((ucs2 >> 12) & 0x3F)
-		utf8[2] = 0x80 | ((ucs2 >> 6) & 0x3F)
-		utf8[3] = 0x80 | (ucs2 & 0x3F)
-		utf8[4] = '\0'
-		return 4
+		ret[0] = 0xF0 | (ucs2 >> 18)
+		ret[1] = 0x80 | ((ucs2 >> 12) & 0x3F)
+		ret[2] = 0x80 | ((ucs2 >> 6) & 0x3F)
+		ret[3] = 0x80 | (ucs2 & 0x3F)
+		ret[4] = '\0'
+		return ret
+	ret[0] = '\0'
+	return ret
+}
+int utf_len(char* in){
+	unsigned char* input=(unsigned char*) in
+	if !input[0] => return 0
+	if input[0] < 0x80 => return 1
+	if (input[0] & 0xC0) == 0xC0 => return 2
+	if (input[0] & 0xE0) == 0xE0 => return 3
 	return 0
 }
-int utf8_to_ucs2(char** end_ptr){
-	unsigned char* input=(unsigned char*)*end_ptr
+int utf_unicode(char* ptr){
+	unsigned char* input=(unsigned char*)ptr
 	if !input[0] => return 0
-	if input[0] < 0x80
-		*end_ptr+=1
-		return input[0]
+	if input[0] < 0x80 => return input[0]
 	if (input[0] & 0xE0) == 0xE0
-		if input[1] < 0x80 || input[1] > 0xBF || input[2] < 0x80 || input[2] > 0xBF => return 0
-		*end_ptr+=3
+//Error checks commented
+//		if input[1] < 0x80 || input[1] > 0xBF || input[2] < 0x80 || input[2] > 0xBF => return 0
 		return (input[0] & 0x0F)<<12 | (input[1] & 0x3F)<<6  | (input[2] & 0x3F)
 	if (input[0] & 0xC0) == 0xC0
-		if input[1] < 0x80 || input[1] > 0xBF => return 0
-		*end_ptr+=2
+//		if input[1] < 0x80 || input[1] > 0xBF => return 0
 		return (input[0] & 0x1F)<<6  | (input[1] & 0x3F)
 	return 0
 }
@@ -2024,7 +2034,7 @@ char* page_html(map* data){
 	"@type": "WebSite",
 	"name": "Habib's Site",
 	"alternateName": "Sanjir Habib",
-	"url": "$(_globals.req.path)"
+	"url": "$(_globals.req.path.full.full_url())"
 	}
 	</script>
 	<link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -2087,7 +2097,7 @@ map* page_data(map* data){
 	tabs=''
 	lddata={"@context": "http://schema.org", "@type": "BreadcrumbList"}
 	i=1
-	_globals.tabs.each url, name, idx
+	_globals.tabs.each name, url, idx
 		active=''
 		if idx==_globals.tabs.map_len()-1
 			active=" class='active'"			
@@ -2095,12 +2105,8 @@ map* page_data(map* data){
 			
 		lddata.itemListElement[]={
 			"@type": "ListItem",
-			"position": i++, "item": { "@id": url.full_url(), "name": url.full_url() }
+			"position": i++, "item": { "@id": url, "name": name }
 		}
-	lddata.itemListElement[]={
-		"@type": "ListItem",
-		"position": i++, "item": { "@id": _globals.req.path.full_url(), "name": _globals.req.path.full_url() }
-	}
 	if _globals.tabs.map_len()>1
 		data.tabs="<div><ul class='nav nav-tabs'>$tabs</ul></div>"
 	data.ldmenu="<script type='application/ld+json'>$lddata</script>"
@@ -2132,4 +2138,23 @@ map* page_data(map* data){
 		login="<span class='pull-right' style='margin-right:3em;'><a href='$(home_url())login/'>Login</a> | <a href='$(home_url())register/'>Register</a></span>"
 	data.login=login
 	return data
+}
+int not_found(char* path=NULL) => "The requested content $(path or _globals.req.path.full) was not found on the server.".http_out("404 Not Found"); return -404
+int show_page(map* data) => data.page_data().page_html().http_out(); return 0
+int is_post() => return _globals.req.method===:post
+map* post_data(){
+	map* mime=env_vars().CONTENT_TYPE.header_map()
+	if mime[0]!=="multipart/form-data"
+		return _globals.req.post.amps_map()
+	ret={}
+	char* seperator=mime.boundary
+	_globals.req.post.str_split(seperator).each v,,i
+		map* mp3=v.str_split("\r\n\r\n",2)
+		if mp3.map_len()!=2 => continue
+		mp3[0].str_split("\r\n").each v2,k2,i2
+			char* name=v2.header_map().name
+			if name
+				ret[name]=mp3[1].sub_str(0,-4)
+				break
+	return ret
 }

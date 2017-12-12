@@ -177,61 +177,57 @@ char* jd_str(double jd, double tz){
 };
 double frac(double val){ return val>0 ? val-(int)val : -(val-(int)(val)); };
 char* jdstring_ar(double jd, double tz){
-	map* ret=str_split(to_str(map_id(str_split(jd_str(jd,tz)," ",0),0),"",0),"-",0);
-	return xstr(to_str(int_var(to_int(map_id(ret,0))),"",0),"-",ar_month(to_int(map_id(ret,1))),map_id(ret,2), End);
+	map* ret=str_split(map_id(str_split(jd_str(jd,tz)," ",0),0),"-",0);
+	return xstr(to_str(int_var(to_int(map_id(ret,0))),"",0),"-",month_ar(to_int(map_id(ret,1))),map_id(ret,2), End);
 };
 char* jdstring_bg(double jd, double tz){
-	map* ret=str_split(to_str(map_id(str_split(jd_str(jd,tz)," ",0),0),"",0),"-",0);
-	return xstr(to_str(int_var(to_int(map_id(ret,0))),"",0),"-",bg_month(to_int(map_id(ret,1))),map_id(ret,2), End);
+	map* ret=str_split(map_id(str_split(jd_str(jd,tz)," ",0),0),"-",0);
+	return xstr(to_str(int_var(to_int(map_id(ret,0))),"",0),"-",month_bg(to_int(map_id(ret,1))),map_id(ret,2), End);
 };
 char* date_only(char* in){ return sub_str(in,0,10); };
 char* jd_human(double jd, double tz){
-	map* ret=str_split(to_str(map_id(str_split(jd_str(jd,tz)," ",0),0),"",0),"-",0);
-	return xstr(to_str(int_var(to_int(map_id(ret,0))),"",0),"-",en_month(to_int(map_id(ret,1))),map_id(ret,2), End);
+	map* ret=str_split(map_id(str_split(jd_str(jd,tz)," ",0),0),"-",0);
+	return xstr(to_str(int_var(to_int(map_id(ret,0))),"",0),"-",month_en(to_int(map_id(ret,1))),map_id(ret,2), End);
 };
-char* wday_name2(int val){
-	map* ret=xvec("saturday","sunday","monday","tuesday","wednesday","thursday","friday", End);
+char* wday_en(int val){
+	map* ret=xvec("Saturday","Sunday","Monday","Tuesday","Wednesday","Thursday","Friday", End);
 	return map_id(ret,val%7);
 };
-char* wday_name(int val){
-	map* ret=xvec("sat","sun","mon","tue","wed","thu","fri", End);
+char* wday_en3(int val){
+	map* ret=xvec("Sat","Sun","Mon","Tue","Wed","Thu","Fri", End);
 	return map_id(ret,val%7);
 };
-char* month_name3bg(int val){
+char* month_bg3(int val){
 	map* ret=xvec("জানু","ফেব্রু:","মার্চ","এপ্রিল","মে","জুন","জুলাই","অগাষ্ট","সেপ্টে","অক্টো","নভে","ডিসে", End);
 	if(!val) {return NULL;};
 	return map_id(ret,val-1);
 };
-char* month_name_bg(int val){
+char* month_bg(int val){
 	map* ret=xvec("জানুয়ারি","ফেব্রুয়ারি","মার্চ","এপ্রিল","মে","জুন","জুলাই","অগাষ্ট","সেপ্টেম্বর","অক্টোবর","নভেম্বর","ডিসেম্বর", End);
 	if(!val) {return NULL;};
 	return map_id(ret,val-1);
 };
 char* ar_wday(int wday){
-	map* ret=xvec("الأحد","الإثنين","الثلاثاء","الأربعاء","لخميس","الجمعة","السبت", End);
+	map* ret=xvec("الأحد","الإثنين","الثلاثاء","الأربعاء","wday_ar","الجمعة","السبت", End);
 	if(!wday) {wday=7;};
 	return map_id(ret,wday-1);
 };
-char* bg_wday(int wday){
+char* wday_bg(int wday){
 	map* ret=xvec("রবি","সোম","মঙ্গল","বুধ","বৃহস্পতি","শুক্র","শনি", End);
 	if(!wday) {wday=7;};
 	return map_id(ret,wday-1);
 };
-char* ar_month(int month){
+char* month_ar(int month){
 	map* ret=xvec("جانفي","فيفري","مارس","أفريل","ماي","جوان","جويلية","أوت","سبتمبر","أكتوبر","نوفمبر","ديسمبر", End);
 	return map_id(ret,month-1);
 };
-char* bg_month(int month){
-	map* ret=xvec("জানুয়ারি","ফেব্রুয়ারি","মার্চ","এপ্রিল","মে","জুন","জুলাই","অগাস্ট","সেপ্টেম্বর","অক্টোবর","নভেম্বর","ডিসেম্বর", End);
-	return map_id(ret,month-1);
-};
-char* en_month(int val){
-	map* ret=xvec("january","february","march","april","may","june","july","august","september","october","november","december", End);
+char* month_en(int val){
+	map* ret=xvec("January","February","March","April","May","June","July","August","September","October","November","December", End);
 	if(!val) {return NULL;};
 	return map_id(ret,val-1);
 };
-char* month_name3(int val){
-	map* ret=xvec("jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec", End);
+char* month_en3(int val){
+	map* ret=xvec("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec", End);
 	if(!val) {return NULL;};
 	return map_id(ret,val-1);
 };
@@ -382,7 +378,6 @@ void hsl2rgb(double h, double s, double l,int* ret_r,int* ret_g, int* ret_b){
 map* salat_time(double jd, double lng, double lat){
 	return xmap(
 		"fajar18",double_var( fajar18(jd,lng,lat)),
-		"fajar15",double_var( fajar18(jd,lng,lat)),
 		"rise",double_var( sun_rise(jd,lng,lat)),
 		"noon",double_var( noon(jd,lng,lat)),
 		"asar1",double_var( asar1(jd,lng,lat)),
@@ -397,23 +392,21 @@ double esha(double jd, double lng, double lat){
 double fajar18(double jd, double lng, double lat){
 	return sun_rise_set(-18, -1, floor(jd + lng / 360 + 0.5) - lng / 360, lng, lat);
 };
-double fajar15(double jd, double lng, double lat){
-	return sun_rise_set(-15, -1, floor(jd + lng / 360 + 0.5) - lng / 360, lng, lat);
-};
 double noon(double jd, double lng, double lat){
 	return sun_transit(jd, lng, lat);
 };
 double asar2(double jd, double lng, double lat){
 	double noon = sun_transit(jd, lng, lat);
 	double salt = sun_alt(noon, lng, lat);
-	int asar = 90 - atand(tand(90 - salt) + 2);
+	double asar = 90 - atand(tand(90 - salt) + 2);
 	return sun_rise_set(asar, 1, floor(jd + lng / 360 + 0.5) - lng / 360, lng, lat);
 };
 double asar1(double jd, double lng, double lat){
 	double noon = sun_transit(jd, lng, lat);
 	double salt = sun_alt(noon, lng, lat);
-	int asar = 90 - atand(tand(90 - salt) + 1);
-	return sun_rise_set(asar, 1, floor(jd + lng / 360 + 0.5) - lng / 360, lng, lat);
+	double asar = 90 - atand(tand(90 - salt) + 1);
+	double ret=sun_rise_set(asar, 1, floor(jd + lng / 360 + 0.5) - lng / 360, lng, lat);
+	return ret;
 };
 /*
 double StringDMS($v){

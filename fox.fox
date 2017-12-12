@@ -31,7 +31,7 @@ void xexit(int val=0);
 void* fox_error(char* msg,int dump=0);
 void* call_php(map* params,char* func);
 
-int cgi(char* infile="main.fox", char* outfile="index.cgi",char* opts=NULL,int keepfiles=0){
+int cgi(char* infile="index.fox", char* outfile="index.cgi",char* opts=NULL,int keepfiles=0){
 	ret=infile.cc(outfile, :cgi, opts, keepfiles)
 	if ret => return ret
 	write_htaccess()
@@ -331,9 +331,11 @@ char* str_end(char* str,char* end){
 int str_start(char* str,char* start) => return str && start && str.is_str() && str.strncmp(start,start.strlen())==0
 char* str_chr(char* str,char c) => return !str||!c||!str.is_str() ? NULL : str.strchr(c)
 char* str_ltrim(char* str,char* chars=" \t\n\r"){
+	if !str || !*str => return NULL
 	return str+str.lchars(chars)
 }
 char* str_rtrim(char* str,char* chars=" \t\n\r"){
+	if !str || !*str => return NULL
 	r=str.rchars(chars)
 	if !r => return str
 	return str.sub_str(0,str.str_len()-r)
@@ -1821,9 +1823,9 @@ map* force_curly(map* mp){
 }
 map* expand_main(map* mp){
 	for int idx=1;idx<=mp->len;idx+=2
-		if mp[idx]===:main && mp[idx+2]==="(" && mp[idx+8]==="{" && !mp[idx+4].map_len() && mp[idx-2]!==:int
-			mp[idx+10].vec_splice(0,0," gc_start(); map* args=argv_map(argv, argc);".x_map())
-			mp.vec_splice(idx,7,"int main(int argc, char** argv, char** env)".x_map().vec_del(0,1)).vec_compact()
+		if mp[idx]===:run && mp[idx+2]==="(" && mp[idx+8]==="{" && !mp[idx+4].map_len() && mp[idx-2]!==:int
+//			mp[idx+10].vec_splice(0,0," gc_start(); map* args=argv_map(argv, argc);".x_map())
+			mp.vec_splice(idx,7,"int run(map* args)".x_map().vec_del(0,1)).vec_compact()
 	return mp
 }
 map* add_curly(map* mp,int recursive=1){
@@ -2367,6 +2369,7 @@ map* auto_types(map* toks,char* context=:c,int is_script=0,map* env={},map* fns=
 			if toks[i+1].is_map()
 				toks[i+1].auto_types(:expr,is_script,env,fns,func)
 			else if toks.syn_is_call(i)
+				toks[i+5].auto_types(:expr,is_script,env,fns,func)
 				name=toks.syn_is_call(i)
 				if name===:args_map
 					subs="xmap("
@@ -2378,7 +2381,8 @@ map* auto_types(map* toks,char* context=:c,int is_script=0,map* env={},map* fns=
 					params=toks.syn_func_param(i)
 					map* fn=fns[name]
 					if !fn => fn=funcs()[name]
-					if fn => params=params.param_c(env,fns,fn)
+					if fn
+						params=params.param_c(env,fns,fn)
 					toks.syn_set_param(i,params)
 			else if toks[i+1]==="[" && toks.head_type(i-2,i,env,fns).is_word("map* void*") && toks.is_typecast(head).neq("void*") && 1
 				name=toks[i+3]
@@ -2478,31 +2482,32 @@ map* add_return(map* toks){
 map* wrap_call(map* tok,char* func){
 	return [NULL,func,NULL,"(",NULL,tok,NULL,")"]
 }
-char* int_str2(long long value) => return value.int_str()
 map* type_convert(map* tok,char* outtype,map* env,map* fs,map* fn){
 	if !outtype => return tok
 	intype=tok.expr_type(0,0,env,fs)	
 	if !intype => return tok
 	if intype===outtype => return tok
-	if intype.is_word("int long size_t") || intype==="long long"
+	if intype.is_word("int double long long") && outtype.str_start(intype) && outtype[intype.str_len()]=='*' && !outtype[intype.str_len()+1]
+		return tok.vec_splice(1,0,["&",NULL])
+	if intype.is_word("int long long size_t")
 		if outtype==="void*" => return tok.wrap_call(:int_var)
 		else if outtype==="char*" => return tok.wrap_call(:int_str)
-	if intype===:double
+	else if intype==="void*"
+		if outtype===:double => return tok.wrap_call(:to_double)
+	else if intype===:double
 		if outtype==="void*" => return tok.wrap_call(:double_var)
 		else if outtype==="char*" => return tok.wrap_call(:double_str)
-//	else if intype==="map*"
-//		if outtype==="char*" => return tok.wrap_call(:json)
+	else if intype==="map*"
+		if outtype==="char*" => return tok.wrap_call(:to_str)
 	else if intype==="char*"
 		if outtype===:int => return tok.wrap_call(:stoi)
 		else if outtype==="char**"
-//			"converting $intype -> $outtype ($(tok.toks_c())) func: $(fn.func_cdecl())".px()
 			return tok.vec_splice(1,0,["&",NULL])
 	else if intype==="char**"
 		if outtype==="char*" => return tok.vec_splice(1,0,["*",NULL])
 	return tok
 }
 map* param_c(map* params,map* env,map* fs,map* fn){
-//	assert(params)
 	assert(fn)
 	if !params => return NULL
 	xparam=params.toks_split(",")
@@ -2522,7 +2527,13 @@ map* param_c(map* params,map* env,map* fs,map* fn){
 		else if xparam[i].map_len()<2
 			if !p.default => break
 			cparam[]=p.default.x_toks()[1].vec_del(-2,0).vec_compact() //x_map().colon_str().dot_key().str_dollars()
-		else cparam[]=xparam[i].type_convert(p.type,env,fs,fn)
+		else 
+//			xparam[i].dx(:IN)
+//			xparam[i].expr_type(0,0,env,fs).dx(:INTYPE)
+//			p.type.dx(:OUT)
+//			xparam[i].type_convert(p.type,env,fs,fn).toks_c().dx(:CONVERTED)
+//			"^^^^^^^^^^^^".px()
+			cparam[]=xparam[i].type_convert(p.type,env,fs,fn)
 	ret=cparam.toks_join(",")
 	return ret
 }
@@ -2686,9 +2697,8 @@ int is_func_decl(map* syn){
 	if syn[idx+7]==="{" && syn[idx+13]===";" => return 1
 	return 0
 }
-char* fox_h(char* infile,char* outfile=NULL){
-	return ("#include <fox.h>\n"..infile.file_funcs().funcs_cdecl(0)).write_file(outfile)
-}
+char* c_h(char* infile,char* outfile=NULL) => return infile.file_funcs().funcs_cdecl(0).write_file(outfile)
+char* fox_h(char* infile,char* outfile=NULL) => return ("#include <fox.h>\n"..infile.file_funcs().funcs_cdecl(0)).write_file(outfile)
 char* fox_c(char* infile, char* outfile=NULL) => return infile.file_read().x_c().write_file(outfile)
 map* x_map(char* in) => return c_tokenizer(&in,'\0')
 char* c_x(char* in) => return in.x_map().map_tox().toks_c()
@@ -2764,6 +2774,7 @@ char* callfunc_c(map* funcs){
 		if fdups[v.name] => continue
 		fdups[v.name]=1
 		if k===:args_map => continue
+		if v.name.is_word("main run run_cgi") => continue
 		str_params=v.func_ccall()
 		if(!str_params)
 			continue
@@ -3299,9 +3310,9 @@ int eval_expr_cont(map* mp,int idx,map* env,void** last,int level){
 			continue
 		else if val==="&"
 			name=mp[idx+2]
-			if !name.is_code() => "operator& on a non variable $name".fox_error()
+			if !name.is_code() => "operator& on a non variable $name".fox_error(1)
 			idx1=env.map_has_key(name)
-			if !idx1 => "variable $name doesn't exist".fox_error()
+			if !idx1 => "variable $name doesn't exist".fox_error(1)
 			ret=&(env->pairs[idx1-1].val)
 			idx+=2
 		else if val==="(" => ret=mp[idx+2].eval_toks(env); idx+=4; continue
@@ -3611,7 +3622,7 @@ map* cmdline_params(map* args,char* func){
 int test_add(int a,int b) => return a+b
 map* test_map(map* out) => return out
 
-int run_cmdline(map* args){
+int run(map* args){
 	_globals.cache.reflect=reflect()
 	if args->len==1
 		version().px();
@@ -3626,9 +3637,9 @@ int run_cmdline(map* args){
 	void* ret=NULL
 	if name.str_end(".fox")
 		_globals.args=_globals.args.vec_sub(1)
-		ret=name.file_read().run()
+		ret=name.file_read().fox_run()
 	else if !name.is_code() && !name.str_start("--")
-		ret=name.run()
+		ret=name.fox_run()
 	else
 		if name.str_start("--") => name=name.sub_str(2)
 		ret=args.vec_sub(2).cmdline_params(name).invoke(name)
@@ -4156,7 +4167,7 @@ char* fork_exec(char* cmd,map* params){
 		else if status.WIFSIGNALED() => "command %s killed".mstr(cmd)
 	return NULL
 }
-map* source_files() => return ["core.fox","fox.fox","sql.fox","cmd.fox","cgi.fox","astro/astro.h"]
+map* source_files() => return ["core.fox","fox.fox","sql.fox","cmd.fox","cgi.fox","astro/astro.h","astrostr.fox"]
 map* source_funcs(){
 	if !_globals.cache.funcs
 		map* mp={}	
@@ -4172,7 +4183,7 @@ map* funcs(){
 	if !_globals.cache.reflect=>_globals.cache.reflect=reflect()
 	return _globals.cache.funcs ? _globals.cache.funcs : _globals.cache.reflect.funcs
 }
-void* run(char* in){
+void* fox_run(char* in){
 	int halt=0
 	return in.x_toks(1).fox_eval({args: _globals.args},&halt)
 }
@@ -4604,9 +4615,7 @@ char* ptr_id(void* ptr){
 char* today() => return time_str().sub_str(0,10)
 char* now() => return time_str().sub_str(11,8)
 char* datetime() => return time_str()
-int str_ascii(char* in){
-	return in[0]
-}
+int str_ascii(char* in) => return in[0]
 void benchmark_gc(){
 	ret=[]
 	for i=0;i<1000000;i++
@@ -4859,5 +4868,47 @@ map* prop_map(char* in,char* name=NULL){
 			if name => ret.name=name
 			val[0]=:type
 		ret[val[0].data_unquote()]=val[1].data_unquote()
+	return ret
+}
+char* str_tr(char* in, map* replace){
+	if !in => return NULL
+	ret=''
+	saved=in
+	maxlen=0
+	replace.each ,key => maxlen=max(maxlen,key.str_len())
+	buff=maxlen.new_str()
+	while *in
+		while(*in && !is_alphanum(*in)) in+=in.utf_len()
+		head=in
+		while(*in && is_alphanum(*in)) in+=in.utf_len()
+		if !(in-head) => break
+		if in-head>maxlen => continue
+		buff.memcpy(head,in-head)
+		buff[in-head]='\0'
+		if !replace[buff] => continue
+		ret.=saved.sub_str(0,head-saved)
+		ret.=replace[buff]
+		saved=in
+
+	if saved<in
+		ret.=saved.sub_str(0,in-saved)
+
+	return ret	
+}
+char* num_lang(char* in,char* lang){
+	if !in || !*in => return NULL
+	char buff[5]={0}
+	langid={en: 0, bg: 1, ar: 2}
+	int id=langid[lang].to_int()
+	int points[]={ 48, 2534, 1632 }
+	ret=''
+	code=0
+	while (code=in.utf_unicode())
+		in+=in.utf_len()
+		for i=0; i<3; i++
+			if i!=id && code>=points[i] && code<points[i]+10
+				code-=(points[i]-points[id])
+				break
+		ret.=code.unicode_utf(buff)
 	return ret
 }

@@ -1,6 +1,6 @@
 CC=gcc
 INSTALL_DIR?=/usr/local
-CFLAGS=-Iinclude -std=gnu99 -Wno-logical-op-parentheses -Os -Wno-int-conversion -L/usr/lib64/ -fPIC -Wno-unused-command-line-argument -I/usr/local/opt/openssl/include -L/usr/local/lib -L/usr/local/opt/openssl/lib
+CFLAGS=-Iinclude -std=gnu99 -Wno-logical-op-parentheses -Os -Wno-int-conversion -Llib -L/usr/lib64/ -fPIC -Wno-unused-command-line-argument -I/usr/local/opt/openssl/include -L/usr/local/lib -L/usr/local/opt/openssl/lib -lm
 FOXS=fox.fox core.fox sql.fox cgi.fox cmd.fox main.fox astrostr.fox
 LIBS=-lsqlite3 -lcrypto -lmarkdown -lcurl
 HEADERS=fox.h sql.h
@@ -17,6 +17,14 @@ OBJ = $(patsubst %,obj/%,$(_OBJ))
 obj/%.o: src/%.c
 	$(CC) -c -o $@ $< $(CFLAGS) $(LIBS)
 
+obj/main.o: src/main.c
+	$(CC) -c -o $@ $< $(CFLAGS) $(LIBS)
+
+obj/memsize.o: memsize.c
+	$(CC) -c -o $@ $< $(CFLAGS) $(LIBS)
+src/main.c: main.fox
+	fox fox_c main.fox src/main.c
+
 safe:
 	$(CC) -c -o obj/fox.o src/fox.c $(CFLAGS) $(LIBS)
 	$(CC) -c -o obj/cmd.o src/cmd.c $(CFLAGS) $(LIBS)
@@ -26,17 +34,18 @@ safe:
 	$(CC) -c -o obj/main.o src/main.c $(CFLAGS) $(LIBS)
 	$(CC) -c -o obj/meta.o src/meta.c $(CFLAGS) $(LIBS)
 	$(CC) -c -o obj/memsize.o src/memsize.c $(CFLAGS) $(LIBS)
+	$(CC) -c -o obj/astrostr.o src/astrostr.c $(CFLAGS) $(LIBS)
 	rm -f lib/libfoxcmdstatic.a
 	ar rcs lib/libfoxcmdstatic.a obj/cmd.o
 	rm -f lib/libfoxstatic.a
 	ar rcs lib/libfoxstatic.a $(OBJ)
-	gcc -o bin/fox obj/main.o $(CFLAGS) -Llib -lm $(LIBS) -lfoxstatic -lfoxcmdstatic
+	gcc -o bin/fox obj/main.o $(CFLAGS) $(LIBS) -lfoxstatic -lfoxcmdstatic
 
 temp: obj/main.o $(DEPS) $(OBJ) $(FOXS) $(XLIBS)
-	gcc -o $@ obj/main.o $(CFLAGS) -Llib -lm $(LIBS) -lfoxstatic -lfoxcmdstatic
+	gcc -o $@ obj/main.o $(CFLAGS) $(LIBS) -lfoxstatic -lfoxcmdstatic
 
 bin/fox: obj/main.o $(DEPS) $(OBJ) $(FOXS) $(XLIBS)
-	gcc -o $@ obj/main.o $(CFLAGS) -Llib -lm $(LIBS) -lfoxstatic -lfoxcmdstatic -lfoxastro
+	gcc -o $@ obj/main.o $(CFLAGS) $(LIBS) -lfoxstatic -lfoxcmdstatic -lfoxastro
 	bin/fox utests
 
 src/core.c src/fox.c src/sql.c src/cgi.c src/cmd.c src/astrostr.c: $(FOXS)

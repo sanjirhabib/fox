@@ -178,60 +178,56 @@ char* jd_str(double jd, double tz){
 double frac(double val) => return val>0 ? val-(int)val : -(val-(int)(val))
 char* jdstring_ar(double jd, double tz){
 	ret=jd.jd_str(tz).str_split(" ")[0].str_split("-")
-	return ret[0].to_int().to_str().."-"..ret[1].to_int().ar_month()..ret[2]
+	return ret[0].to_int().to_str().."-"..ret[1].to_int().month_ar()..ret[2]
 }
 char* jdstring_bg(double jd, double tz){
 	ret=jd.jd_str(tz).str_split(" ")[0].str_split("-")
-	return ret[0].to_int().to_str().."-"..ret[1].to_int().bg_month()..ret[2]
+	return ret[0].to_int().to_str().."-"..ret[1].to_int().month_bg()..ret[2]
 }
 char* date_only(char* in) => return in.sub_str(0,10)
 char* jd_human(double jd, double tz){
 	ret=jd.jd_str(tz).str_split(" ")[0].str_split("-")
-	return ret[0].to_int().to_str().."-"..ret[1].to_int().en_month()..ret[2]
+	return ret[0].to_int().to_str().."-"..ret[1].to_int().month_en()..ret[2]
 }
-char* wday_name2(int val){
-	map* ret=['saturday','sunday','monday','tuesday','wednesday','thursday','friday']
+char* wday_en(int val){
+	map* ret=['Saturday','Sunday','Monday','Tuesday','Wednesday','Thursday','Friday']
 	return ret[val%7]
 }
-char* wday_name(int val){
-	map* ret=['sat','sun','mon','tue','wed','thu','fri']
+char* wday_en3(int val){
+	map* ret=['Sat','Sun','Mon','Tue','Wed','Thu','Fri']
 	return ret[val%7]
 }
-char* month_name3bg(int val){
+char* month_bg3(int val){
 	map* ret=['জানু','ফেব্রু:','মার্চ','এপ্রিল','মে','জুন','জুলাই','অগাষ্ট','সেপ্টে','অক্টো','নভে','ডিসে']
 	if(!val) return ''
 	return ret[val-1]
 }
-char* month_name_bg(int val){
+char* month_bg(int val){
 	map* ret=['জানুয়ারি','ফেব্রুয়ারি','মার্চ','এপ্রিল','মে','জুন','জুলাই','অগাষ্ট','সেপ্টেম্বর','অক্টোবর','নভেম্বর','ডিসেম্বর']
 	if(!val) return ''
 	return ret[val-1]
 }
 char* ar_wday(int wday){
-	map* ret=["الأحد","الإثنين","الثلاثاء","الأربعاء","لخميس","الجمعة","السبت"]
+	map* ret=["الأحد","الإثنين","الثلاثاء","الأربعاء","wday_ar","الجمعة","السبت"]
 	if(!wday) wday=7
 	return ret[wday-1]
 }
-char* bg_wday(int wday){
+char* wday_bg(int wday){
 	map* ret=["রবি","সোম","মঙ্গল","বুধ","বৃহস্পতি","শুক্র","শনি"]
 	if(!wday) wday=7
 	return ret[wday-1]
 }
-char* ar_month(int month){
+char* month_ar(int month){
 	map* ret=["جانفي","فيفري","مارس","أفريل","ماي","جوان","جويلية","أوت","سبتمبر","أكتوبر","نوفمبر","ديسمبر"]
 	return ret[month-1]
 }
-char* bg_month(int month){
-	map* ret=["জানুয়ারি","ফেব্রুয়ারি","মার্চ","এপ্রিল","মে","জুন","জুলাই","অগাস্ট","সেপ্টেম্বর","অক্টোবর","নভেম্বর","ডিসেম্বর"]
-	return ret[month-1]
-}
-char* en_month(int val){
-	map* ret=['january','february','march','april','may','june','july','august','september','october','november','december']
+char* month_en(int val){
+	map* ret=['January','February','March','April','May','June','July','August','September','October','November','December']
 	if(!val) return ''
 	return ret[val-1]
 }
-char* month_name3(int val){
-	map* ret=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']
+char* month_en3(int val){
+	map* ret=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 	if(!val) return ''
 	return ret[val-1]
 }
@@ -382,7 +378,6 @@ void hsl2rgb(double h, double s, double l,int* ret_r,int* ret_g, int* ret_b){
 map* salat_time(double jd, double lng, double lat){
 	return {{
 		fajar18 =fajar18(jd,lng,lat)
-		fajar15 =fajar18(jd,lng,lat)
 		rise =sun_rise(jd,lng,lat)
 		noon =noon(jd,lng,lat)
 		asar1 =asar1(jd,lng,lat)
@@ -397,23 +392,21 @@ double esha(double jd, double lng, double lat){
 double fajar18(double jd, double lng, double lat){
 	return sun_rise_set(-18, -1, floor(jd + lng / 360 + 0.5) - lng / 360, lng, lat)
 }
-double fajar15(double jd, double lng, double lat){
-	return sun_rise_set(-15, -1, floor(jd + lng / 360 + 0.5) - lng / 360, lng, lat)
-}
 double noon(double jd, double lng, double lat){
 	return sun_transit(jd, lng, lat)
 }
 double asar2(double jd, double lng, double lat){
 	noon = sun_transit(jd, lng, lat)
 	salt = sun_alt(noon, lng, lat)
-	asar = 90 - atand(tand(90 - salt) + 2)
+	double asar = 90 - atand(tand(90 - salt) + 2)
 	return sun_rise_set(asar, 1, floor(jd + lng / 360 + 0.5) - lng / 360, lng, lat)
 }
 double asar1(double jd, double lng, double lat){
 	noon = sun_transit(jd, lng, lat)
 	salt = sun_alt(noon, lng, lat)
-	asar = 90 - atand(tand(90 - salt) + 1)
-	return sun_rise_set(asar, 1, floor(jd + lng / 360 + 0.5) - lng / 360, lng, lat)
+	double asar = 90 - atand(tand(90 - salt) + 1)
+	ret=sun_rise_set(asar, 1, floor(jd + lng / 360 + 0.5) - lng / 360, lng, lat)
+	return ret
 }
 /*
 double StringDMS($v){

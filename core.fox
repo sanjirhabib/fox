@@ -389,19 +389,23 @@ char* is_blob(void* v)	=> return ptr_type(v)==Blob ? v: NULL
 map* is_vec(void* v)			=> return ptr_type(v)==Vector ? v: NULL
 map* is_hash(void* v)			=> return ptr_type(v)==Map ? v: NULL
 map* is_map(void* v)			=> return ptr_type(v)>=Map ? v: NULL
+double str_double(char* v){
+	ret=0.0
+	if !v => return ret
+	sscanf(v,"%lf",&ret)
+	return ret
+}
 double to_double(void* v){
-	if v.is_str()
-		ret=0.0
-		if !v => return ret
-		sscanf(v,"%lf",&ret)
-		return ret
+	if v.is_str() => return v.str_double()
 	return v.is_double()
 }
+long long str_int(char* v){
+	long long ret=0
+	sscanf(v,"%lld",&ret)
+	return ret
+}
 long long to_int(void* v){
-	if v.is_str()
-		long long ret=0
-		sscanf(v,"%lld",&ret)
-		return ret
+	if v.is_str() => return v.str_int()
 	return v.is_int()
 }
 int next(map* mp,int idx,char** key=NULL,void** val=NULL){

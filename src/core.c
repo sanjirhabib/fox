@@ -389,19 +389,23 @@ char* is_blob(void* v){ return ptr_type(v)==Blob ? v: NULL; };
 map* is_vec(void* v){ return ptr_type(v)==Vector ? v: NULL; };
 map* is_hash(void* v){ return ptr_type(v)==Map ? v: NULL; };
 map* is_map(void* v){ return ptr_type(v)>=Map ? v: NULL; };
+double str_double(char* v){
+	double ret=0.0;
+	if(!v){ return ret; };
+	sscanf(v,"%lf",&ret);
+	return ret;
+};
 double to_double(void* v){
-	if(is_str(v)){
-		double ret=0.0;
-		if(!v){ return ret; };
-		sscanf(v,"%lf",&ret);
-		return ret; };
+	if(is_str(v)){ return str_double(v); };
 	return is_double(v);
 };
+long long str_int(char* v){
+	long long ret=0;
+	sscanf(v,"%lld",&ret);
+	return ret;
+};
 long long to_int(void* v){
-	if(is_str(v)){
-		long long ret=0;
-		sscanf(v,"%lld",&ret);
-		return ret; };
+	if(is_str(v)){ return str_int(v); };
 	return is_int(v);
 };
 int next(map* mp,int idx,char** key,void** val){

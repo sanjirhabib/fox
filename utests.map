@@ -803,7 +803,7 @@ run/112
 	b=2
 	if a > b => return :fail
 	return :ok
-	---.run()
+	---.fox_run()
 ---
 ok
 
@@ -817,7 +817,7 @@ run/113
 	else
 		return :fail
 	return :fail
-	---.run()
+	---.fox_run()
 ---
 ok
 
@@ -826,7 +826,7 @@ run/114
 	---
 	return :ok
 	return :fail
-	---.run()
+	---.fox_run()
 ---
 ok
 
@@ -834,7 +834,7 @@ run/115
 ---
 	---
 	:ok
-	---.run()
+	---.fox_run()
 ---
 ok
 
@@ -844,7 +844,7 @@ run/116
 	int total=0
 	for i=1; i<=10; i++ => total+=i
 	return total==55 && :ok || :fail
-	---.run()
+	---.fox_run()
 ---
 ok
 
@@ -855,7 +855,7 @@ run/117
 	for i=1; i<=10; i++
 		total+=i
 	return total==55 && :ok || :fail
-	---.run()
+	---.fox_run()
 ---
 ok
 
@@ -867,7 +867,7 @@ run/118
 		if i>10 => break
 		total+=i
 	return total==55 && :ok || :fail
-	---.run()
+	---.fox_run()
 ---
 ok
 
@@ -879,7 +879,7 @@ run/119
 		if i>10 => continue
 		total+=i
 	return total==55 && :ok || :fail
-	---.run()
+	---.fox_run()
 ---
 ok
 
@@ -891,7 +891,7 @@ run/120
 		total+=i
 		i++
 	return total==55 && :ok || :fail
-	---.run()
+	---.fox_run()
 ---
 ok
 
@@ -904,7 +904,7 @@ run/121
 		if i>10 => break
 		total+=i
 	return total==55 && :ok || :fail
-	---.run()
+	---.fox_run()
 ---
 ok
 
@@ -917,7 +917,7 @@ run/122
 		if i>10 => continue
 		total+=i
 	return total==55 && :ok || :fail
-	---.run()
+	---.fox_run()
 ---
 ok
 
@@ -928,7 +928,7 @@ run/123
 		return :ok
 	}
 	return say_hello()
-	---.run()
+	---.fox_run()
 ---
 ok
 
@@ -940,7 +940,7 @@ run/124
 		return fib(val-1)+fib(val-2)
 	}
 	return fib(10) == 55 ? :ok : :fail
-	---.run()
+	---.fox_run()
 ---
 ok
 
@@ -951,7 +951,7 @@ run/125
 	for i=1;i<=10;i++
 		total+=i
 	return total == 55 ? :ok : :fail
-	---.run()
+	---.fox_run()
 ---
 ok
 
@@ -963,7 +963,7 @@ run/126
 		total+=i
 		i++
 	return total == 55 ? :ok : :fail
-	---.run()
+	---.fox_run()
 ---
 ok
 
@@ -977,7 +977,7 @@ run/127
 	mp.each v,k,i
 		total=total+v.is_int()
 	return total == 55 ? :ok : :fail
-	---.run()
+	---.fox_run()
 ---
 ok
 
