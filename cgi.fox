@@ -4,10 +4,6 @@ __attribute__((destructor)) static void maindtor(void){
 	http_out()
 	gc_end()
 }
-int main(int argc,char** argv){
-	gc_start()
-	return http_req().run()
-}
 void* px(void* str,int newline=1){
 	void* ret=str
 	str=str.to_str()

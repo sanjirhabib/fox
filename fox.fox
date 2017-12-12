@@ -53,7 +53,7 @@ int cc(char* infile, char* outfile=NULL, char* profile="debug", char* opts=NULL,
 	in=infile..".fox"
 	in.fox_c(infile..".c")
 	in.fox_h(infile..".h")
-	cflags="-std=gnu99 -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -Wno-unused-command-line-argument"
+	cflags="-std=gnu99 -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -Wno-unused-command-line-argument -lfoxmain"
 	xlibs="-lcrypto -lmarkdown -lcurl -lsqlite3"
 	switches={
 		debug: "-O0 -lfox $cflags $xlibs"
@@ -3622,33 +3622,6 @@ map* cmdline_params(map* args,char* func){
 int test_add(int a,int b) => return a+b
 map* test_map(map* out) => return out
 
-int run(map* args){
-	_globals.cache.reflect=reflect()
-	if args->len==1
-		version().px();
-		---
-		Usage: fox <function> [<arg1> <arg2> ...]
-			Run "fox help" for list of functions
-			Run "fox tutorial" for a tutorial
-		---.px()
-		return 0
-	
-	char* name=args[1]
-	void* ret=NULL
-	if name.str_end(".fox")
-		_globals.args=_globals.args.vec_sub(1)
-		ret=name.file_read().fox_run()
-	else if !name.is_code() && !name.str_start("--")
-		ret=name.fox_run()
-	else
-		if name.str_start("--") => name=name.sub_str(2)
-		ret=args.vec_sub(2).cmdline_params(name).invoke(name)
-	if _printed => return ret.is_i() ? ret.is_int() : 0
-	if ret.is_map() => ret.json(1).px(); return 0
-	if ret.is_blob() => ret.print()
-	else if ret.is_str() || ret.is_num() => ret.to_str().px()
-	return ret.is_i() ? ret.is_int() : 0
-}
 int utests(char* test=NULL,char* file="utests.map"){
 	mp=file.file_vec()
 	errs=0

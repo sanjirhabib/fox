@@ -4,10 +4,6 @@ __attribute__((destructor)) static void maindtor(void){
 	http_out(NULL,"200 OK","text/html; charset=utf-8",NULL);
 	gc_end();
 };
-int main(int argc,char** argv){
-	gc_start();
-	return run(http_req());
-};
 void* px(void* str,int newline){
 	void* ret=str;
 	str=to_str(str,"",0);

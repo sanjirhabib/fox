@@ -501,7 +501,6 @@ map* param_test(char* one, char* two);
 map* cmdline_params(map* args, char* func);
 int test_add(int a, int b);
 map* test_map(map* out);
-int run(map* args);
 int utests(char* test, char* file);
 char* file_path(char* file);
 map* load_global(char* file);

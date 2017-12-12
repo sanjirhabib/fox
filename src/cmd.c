@@ -9,10 +9,6 @@ void* px(void* str,int newline){
 	if(newline){ print("\n",stdout); };
 	return ret;
 };
-int main(int argc,char** argv){
-	gc_start();
-	return run(argv_map(argv,argc));
-};
 void xexit(int val){
 	gc_end();
 	exit(val);

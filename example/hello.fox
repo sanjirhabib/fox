@@ -1,6 +1,6 @@
 #include "hello.h"
 
-main(){
+run(){
 	"
 	Total $(args.map_len()) command line arguments
 	those are $args
