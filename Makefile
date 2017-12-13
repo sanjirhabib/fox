@@ -51,16 +51,20 @@ safe:
 	$(CC) -c -o obj/main.o src/main.c $(CFLAGS) $(LIBS)
 	$(CC) -c -o obj/run.o src/run.c $(CFLAGS) $(LIBS)
 	$(CC) -c -o obj/meta.o src/meta.c $(CFLAGS) $(LIBS)
-	$(CC) -c -o obj/memsize.o src/memsize.c $(CFLAGS) $(LIBS)
-	$(CC) -c -o obj/md5.o src/md5.c $(CFLAGS) $(LIBS)
+	$(CC) -c -o obj/memsize.o memsize.c $(CFLAGS) $(LIBS)
+	$(CC) -c -o obj/md5.o md5.c $(CFLAGS) $(LIBS)
 	$(CC) -c -o obj/astrostr.o src/astrostr.c $(CFLAGS) $(LIBS)
+	$(CC) -c -o obj/main.o src/main.c $(CFLAGS) $(LIBS)
+	$(CC) -c -o obj/maincgi.o src/maincgi.c $(CFLAGS) $(LIBS)
+	$(CC) -c -o obj/run.o src/run.c $(CFLAGS) $(LIBS)
+	$(CC) -c astro/astro.c -o obj/astro.o $(CFLAGS)
 	rm -f lib/libfoxcmdstatic.a
 	ar rcs lib/libfoxcmdstatic.a obj/cmd.o
-	rm -f lib/libfoxmai.a
-	ar rcs lib/libfoxmai.a obj/main.o
+	rm -f lib/libfoxmain.a
+	ar rcs lib/libfoxmain.a obj/main.o
 	rm -f lib/libfoxstatic.a
 	ar rcs lib/libfoxstatic.a $(OBJ)
-	gcc -o bin/fox obj/foxmain.o $(CFLAGS) $(LIBS) -lfoxstatic -lfoxcmdstatic
+	gcc -o bin/fox obj/run.o $(CFLAGS) $(LIBS) -lfoxstatic -lfoxcmdstatic -lfoxastro -lfoxmain
 
 temp: obj/main.o $(DEPS) $(OBJ) $(FOXS) $(XLIBS)
 	gcc -o $@ obj/main.o $(CFLAGS) $(LIBS) -lfoxstatic -lfoxcmdstatic

@@ -56,12 +56,13 @@ int cc(char* infile, char* outfile, char* profile, char* opts, int keepfiles){
 	//-I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib 
 	char* cflags="-std=gnu99 -Wno-unused-command-line-argument";
 	char* xlibs="-lmarkdown -lcurl -lsqlite3";
+	// -fdata-sections -ffunction-sections -Wl,-dead_strip -Wl,-emain
 	map* switches=xmap(
 		"debug", xstr("-O0 -lfox ", cflags, " ", xlibs, " -lfoxmain", End),
 		"speed", xstr("-O3 -lfox ", cflags, " ", xlibs, " -lfoxmain", End),
 		"size", xstr("-Os -lfox ", cflags, " -lfoxmain", End),
 		"static", xstr("-lfoxstatic -lfoxcmdstatic ", cflags, " -fdata-sections -ffunction-sections -Wl,-dead_strip -lfoxmain", End),
-		"cgi", xstr("-Os -lfoxstatic -lfoxcgistatic ", cflags, " ", xlibs, " -lfoxmaincgi -fdata-sections -ffunction-sections -Wl,-dead_strip", End)
+		"cgi", xstr("-Os -lfoxstatic -lfoxcgistatic ", cflags, " ", xlibs, " -lfoxmaincgi", End)
 	, End);
 	profile = (map_val(switches,profile) ? map_val(switches,profile) : map_val(switches,"debug"));
 	int ret=exec(

@@ -56,12 +56,13 @@ int cc(char* infile, char* outfile=NULL, char* profile="debug", char* opts=NULL,
 	//-I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib 
 	cflags="-std=gnu99 -Wno-unused-command-line-argument"
 	xlibs="-lmarkdown -lcurl -lsqlite3"
+	// -fdata-sections -ffunction-sections -Wl,-dead_strip -Wl,-emain
 	switches={
 		debug: "-O0 -lfox $cflags $xlibs -lfoxmain"
 		speed: "-O3 -lfox $cflags $xlibs -lfoxmain"
 		size: "-Os -lfox $cflags -lfoxmain"
 		static: "-lfoxstatic -lfoxcmdstatic $cflags -fdata-sections -ffunction-sections -Wl,-dead_strip -lfoxmain"
-		cgi: "-Os -lfoxstatic -lfoxcgistatic $cflags $xlibs -lfoxmaincgi -fdata-sections -ffunction-sections -Wl,-dead_strip"
+		cgi: "-Os -lfoxstatic -lfoxcgistatic $cflags $xlibs -lfoxmaincgi"
 	}
 	profile = switches[profile] or switches[:debug]
 	ret="gcc $infile.c -o $outfile $profile $opts -std=gnu99 -Wno-logical-op-parentheses -lm 2>&1"
