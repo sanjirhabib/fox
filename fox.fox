@@ -53,14 +53,15 @@ int cc(char* infile, char* outfile=NULL, char* profile="debug", char* opts=NULL,
 	in=infile..".fox"
 	in.fox_c(infile..".c")
 	in.fox_h(infile..".h")
-	cflags="-std=gnu99 -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -Wno-unused-command-line-argument"
-	xlibs="-lcrypto -lmarkdown -lcurl -lsqlite3"
+	//-I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib 
+	cflags="-std=gnu99 -Wno-unused-command-line-argument"
+	xlibs="-lmarkdown -lcurl -lsqlite3"
 	switches={
 		debug: "-O0 -lfox $cflags $xlibs -lfoxmain"
 		speed: "-O3 -lfox $cflags $xlibs -lfoxmain"
 		size: "-Os -lfox $cflags -lfoxmain"
 		static: "-lfoxstatic -lfoxcmdstatic $cflags -fdata-sections -ffunction-sections -Wl,-dead_strip -lfoxmain"
-		cgi: "-Os -lfoxstatic -lfoxcgistatic $cflags $xlibs -lfoxmaincgi"
+		cgi: "-Os -lfoxstatic -lfoxcgistatic $cflags $xlibs -lfoxmaincgi -fdata-sections -ffunction-sections -Wl,-dead_strip"
 	}
 	profile = switches[profile] or switches[:debug]
 	ret="gcc $infile.c -o $outfile $profile $opts -std=gnu99 -Wno-logical-op-parentheses -lm 2>&1"
@@ -2821,7 +2822,7 @@ char* foxh(){
 
 	#include <signal.h>
 	#include <sqlite3.h>
-	#include <openssl/md5.h>
+//	#include <openssl/md5.h>
 
 	enum Types {
 		Null,Int,Double,String,Blob,Map,Vector,Index,Keys,Cell,Cell2,Tail
@@ -4751,11 +4752,13 @@ char* str_hex(char* in){
 		sprintf(ret+i*2,"%02x",((unsigned char*)in)[i])
 	return ret
 }
-char* md5(char* in){
-	ret=new_blob(16)
-	MD5((unsigned char*)in,in.str_len(),(unsigned char*)ret)
-	return ret.str_hex()
-}
+char* c_md5(char* in, size_t initial_len, char* out);
+//char* md5(char* in){
+//	ret=new_blob(16)
+//	MD5((unsigned char*)in,in.str_len(),(unsigned char*)ret)
+//	return ret.str_hex()
+//}
+char* md5(char* in) => char ret[33]; return c_md5(in,in.str_len(),ret).str_dup()
 map* data_map(char* in) => return data_map2(&in)
 map* data_map2(char** in,int level=0){
 	if !in||!*in||!**in => return NULL
@@ -4827,6 +4830,65 @@ map* prop_map(char* in,char* name=NULL){
 			val[0]=:type
 		ret[val[0].data_unquote()]=val[1].data_unquote()
 	return ret
+}
+int utf_strlen(char* in){
+	i=0
+	j=0
+	while in[i]
+		if (in[i] & 0xc0) != 0x80 => j++
+		i++
+	return j
+}
+char* unicode_utf(int ucs2,char* ret){
+//	if !ucs2
+//		ret[0]='\0'
+//		return ret
+	if ucs2 < 0x80
+		ret[0] = ucs2
+		ret[1] = '\0'
+		return ret
+	if ucs2 >= 0x80  && ucs2 < 0x800
+		ret[0] = (ucs2 >> 6)   | 0xC0
+		ret[1] = (ucs2 & 0x3F) | 0x80
+		ret[2] = '\0'
+		return ret
+	if ucs2 >= 0x800 && ucs2 < 0xFFFF
+		if ucs2 >= 0xD800 && ucs2 <= 0xDFFF => return 0
+		ret[0] = ((ucs2 >> 12)	   ) | 0xE0
+		ret[1] = ((ucs2 >> 6 ) & 0x3F) | 0x80
+		ret[2] = ((ucs2	  ) & 0x3F) | 0x80
+		ret[3] = '\0'
+		return ret
+	if ucs2 >= 0x10000 && ucs2 < 0x10FFFF
+		ret[0] = 0xF0 | (ucs2 >> 18)
+		ret[1] = 0x80 | ((ucs2 >> 12) & 0x3F)
+		ret[2] = 0x80 | ((ucs2 >> 6) & 0x3F)
+		ret[3] = 0x80 | (ucs2 & 0x3F)
+		ret[4] = '\0'
+		return ret
+	ret[0] = '\0'
+	return ret
+}
+int utf_len(char* in){
+	unsigned char* input=(unsigned char*) in
+	if !input[0] => return 0
+	if input[0] < 0x80 => return 1
+	if (input[0] & 0xE0) == 0xE0 => return 3
+	if (input[0] & 0xC0) == 0xC0 => return 2
+	return 1
+}
+int utf_unicode(char* ptr){
+	unsigned char* input=(unsigned char*)ptr
+	if !input[0] => return 0
+	if input[0] < 0x80 => return input[0]
+	if (input[0] & 0xE0) == 0xE0
+//Error checks commented
+		if input[1] < 0x80 || input[1] > 0xBF || input[2] < 0x80 || input[2] > 0xBF => return 0
+		return (input[0] & 0x0F)<<12 | (input[1] & 0x3F)<<6  | (input[2] & 0x3F)
+	if (input[0] & 0xC0) == 0xC0
+		if input[1] < 0x80 || input[1] > 0xBF => return 0
+		return (input[0] & 0x1F)<<6  | (input[1] & 0x3F)
+	return '?'
 }
 char* num_lang(char* in,char* lang){
 	if !in || !*in => return NULL

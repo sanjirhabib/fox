@@ -30,7 +30,7 @@
 
 #include <signal.h>
 #include <sqlite3.h>
-#include <openssl/md5.h>
+//	#include <openssl/md5.h>
 
 enum Types {
 	Null,Int,Double,String,Blob,Map,Vector,Index,Keys,Cell,Cell2,Tail
@@ -563,6 +563,7 @@ map* prop_vec_toks(char* in);
 map* prop_toks(char* in, map* name);
 map* split_by(char* str, char term, int max);
 char* str_hex(char* in);
+char* c_md5(char* in, size_t initial_len, char* out);
 char* md5(char* in);
 map* data_map(char* in);
 map* data_map2(char** in, int level);
@@ -571,6 +572,10 @@ char* skip_upto(char* in, char* chars);
 void* data_unquote(char* in);
 map* prop_vec(char* in);
 map* prop_map(char* in, char* name);
+int utf_strlen(char* in);
+char* unicode_utf(int ucs2, char* ret);
+int utf_len(char* in);
+int utf_unicode(char* ptr);
 char* num_lang(char* in, char* lang);
 char* str_tr(char* in, map* replace);
 map* sql_toks(char* line);
@@ -722,10 +727,6 @@ map* db_meta(char* db);
 map* tbl_cols(char* table, char* db);
 map* db_sync(char* db, int go);
 map* sync_sqls(map* newt, map* oldt);
-int utf_strlen(char* in);
-char* unicode_utf(int ucs2, char* ret);
-int utf_len(char* in);
-int utf_unicode(char* ptr);
 char* test_out(char* in);
 map* sql_sums(char* sql, char* db, map* cols, map* params);
 int sql_count(char* sql, char* db, map* params);
@@ -770,6 +771,7 @@ size_t fox_curl_cat(void* ptr, size_t size, size_t num, void* old);
 char* fox_curl(char* url);
 char* full_url(char* url);
 char* url_abs(char* abs, char* rel);
+char* base_url(char* path);
 char* home_url(char* path);
 char* show_port();
 map* lite_trigger_slno(char* name, char* pkey, char* by);

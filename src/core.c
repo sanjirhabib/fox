@@ -40,8 +40,11 @@ char* stack_str(){
 	void *array[400];
 	size_t size=backtrace(array,400);
 	char** lines=backtrace_symbols(array,size);
-	char* ret=NULL;
-	for(int i=0;i<size;i++){ ret=xcat(ret,lines[i],"\n", End); };
+	char* ret="\n";
+	for(int i=0; i<size; i++){
+		char* part=sub_str(lines[i],str_len("3|||index.cgi|||||||||||||||||||||||||||0x0000000109c950d8|"),-2147483648);
+		if(strstr(lines[i]," stack_str ") || strstr(lines[i],".dylib ") || strstr(lines[i]," fox_error ") || strstr(lines[i]," start ") || strstr(lines[i]," 0x0 ") || strstr(lines[i]," run ") || strstr(lines[i]," main ")){ continue; };
+		ret=xcat(ret,part,"\n", End); };
 	return ret;
 };
 void fox_stack_dump(){ fox_error("Crashed!\n",1); };
@@ -241,7 +244,13 @@ char* int_str(long long value){
 	if(neg){ string[0]='-'; };
 	return str_dup(string);
 };
-int str_eq(char* str,char* str1){ return !str||!str1||!is_str(str) ? 0 : strcmp(str,str1)==0; };
+int str_eq(char* str,char* str1){
+	if(!str && !str1){ return 1; };
+	if(is_str(str) && is_str(str1)){ return strcmp(str,str1) ? 0 : 1; };
+	if(!str && is_str(str1) && !str_len(str1)){ return 1; };
+	if(!str1 && is_str(str) && !str_len(str)){ return 1; };
+	return 0;
+};
 size_t str_hash(unsigned char *str){
 	int c;
 	size_t ret = 5381;

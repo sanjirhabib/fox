@@ -19,9 +19,7 @@ void xexit(int val=0){
 void* fox_error(char* msg,int dump=0){
 	---
 	$msg
-	System Stack Dump
 	$(stack_str().str_replace("\n","<br/>"))
-	Eval Stack Dump
 	---.http_error("500 Internal Server Error")
 	return NULL
 }

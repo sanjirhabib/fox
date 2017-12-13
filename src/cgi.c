@@ -19,9 +19,7 @@ void xexit(int val){
 void* fox_error(char* msg,int dump){
 	http_error(xstr("", 
 	msg, "\n", 
-	"System Stack Dump\n", 
-	str_replace(stack_str(),"\n","<br/>"), "\n", 
-	"Eval Stack Dump", 
+	str_replace(stack_str(),"\n","<br/>"), 
 	"", End),"500 Internal Server Error");
 	return NULL;
 };

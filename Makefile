@@ -7,7 +7,7 @@ HEADERS=fox.h sql.h
 _XLIBS=libfoxstatic.a libfox.so libfoxcgi.so libfoxcgistatic.a libfoxcmdstatic.a libfoxastro.a libfoxmain.a libfoxmaincgi.a
 XLIBS=$(patsubst %,lib/%,$(_XLIBS))
 DEPS=$(patsubst %,include/%,$(HEADERS))
-_OBJ=core.o meta.o fox.o memsize.o sql.o astro.o astrostr.o
+_OBJ=core.o meta.o fox.o memsize.o sql.o astro.o astrostr.o md5.o
 OBJ = $(patsubst %,obj/%,$(_OBJ))
 
 .DEFAULT_GOAL := bin/fox
@@ -33,6 +33,9 @@ obj/maincgi.o: src/maincgi.c
 obj/memsize.o: memsize.c
 	$(CC) -c -o $@ $< $(CFLAGS) $(LIBS)
 
+obj/md5.o: md5.c
+	$(CC) -c -o $@ $< $(CFLAGS) $(LIBS)
+
 src/main.c: main.fox
 	fox fox_c $^ $@
 
@@ -49,6 +52,7 @@ safe:
 	$(CC) -c -o obj/run.o src/run.c $(CFLAGS) $(LIBS)
 	$(CC) -c -o obj/meta.o src/meta.c $(CFLAGS) $(LIBS)
 	$(CC) -c -o obj/memsize.o src/memsize.c $(CFLAGS) $(LIBS)
+	$(CC) -c -o obj/md5.o src/md5.c $(CFLAGS) $(LIBS)
 	$(CC) -c -o obj/astrostr.o src/astrostr.c $(CFLAGS) $(LIBS)
 	rm -f lib/libfoxcmdstatic.a
 	ar rcs lib/libfoxcmdstatic.a obj/cmd.o

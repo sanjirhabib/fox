@@ -1423,62 +1423,6 @@ map* sync_sqls(map* newt,map* oldt){
 	ret[]=:_syncing.sql_rename(newt.name)
 	return ret	
 }
-int utf_strlen(char* in){
-	i=0
-	j=0
-	while in[i]
-		if (in[i] & 0xc0) != 0x80 => j++
-		i++
-	return j
-}
-char* unicode_utf(int ucs2,char* ret){
-	if ucs2 < 0x80
-		ret[0] = ucs2
-		ret[1] = '\0'
-		return ret
-	if ucs2 >= 0x80  && ucs2 < 0x800
-		ret[0] = (ucs2 >> 6)   | 0xC0
-		ret[1] = (ucs2 & 0x3F) | 0x80
-		ret[2] = '\0'
-		return ret
-	if ucs2 >= 0x800 && ucs2 < 0xFFFF
-		if ucs2 >= 0xD800 && ucs2 <= 0xDFFF => return 0
-		ret[0] = ((ucs2 >> 12)	   ) | 0xE0
-		ret[1] = ((ucs2 >> 6 ) & 0x3F) | 0x80
-		ret[2] = ((ucs2	  ) & 0x3F) | 0x80
-		ret[3] = '\0'
-		return ret
-	if ucs2 >= 0x10000 && ucs2 < 0x10FFFF
-		ret[0] = 0xF0 | (ucs2 >> 18)
-		ret[1] = 0x80 | ((ucs2 >> 12) & 0x3F)
-		ret[2] = 0x80 | ((ucs2 >> 6) & 0x3F)
-		ret[3] = 0x80 | (ucs2 & 0x3F)
-		ret[4] = '\0'
-		return ret
-	ret[0] = '\0'
-	return ret
-}
-int utf_len(char* in){
-	unsigned char* input=(unsigned char*) in
-	if !input[0] => return 0
-	if input[0] < 0x80 => return 1
-	if (input[0] & 0xC0) == 0xC0 => return 2
-	if (input[0] & 0xE0) == 0xE0 => return 3
-	return 1
-}
-int utf_unicode(char* ptr){
-	unsigned char* input=(unsigned char*)ptr
-	if !input[0] => return 0
-	if input[0] < 0x80 => return input[0]
-	if (input[0] & 0xE0) == 0xE0
-//Error checks commented
-//		if input[1] < 0x80 || input[1] > 0xBF || input[2] < 0x80 || input[2] > 0xBF => return 0
-		return (input[0] & 0x0F)<<12 | (input[1] & 0x3F)<<6  | (input[2] & 0x3F)
-	if (input[0] & 0xC0) == 0xC0
-//		if input[1] < 0x80 || input[1] > 0xBF => return 0
-		return (input[0] & 0x1F)<<6  | (input[1] & 0x3F)
-	return '?'
-}
 char* test_out(char* in){
 	in.px()
 	return in
@@ -1578,11 +1522,17 @@ char* str_html(char* in){
 void header(char* str) => str.print(); "\r\n".print()
 char* http_out(char* str=NULL,char* status="200 OK",char* mime="text/html; charset=utf-8",map* headers=NULL){
 	static int callonce=0
-	if _globals.sessid
-		sess=_globals.sess
+	sess=_globals.sess.json()
+	if sess==="{}" => sess=NULL
+	if _globals.sess_str!==sess
+		sess=_globals.sess_str
 		_globals.sess=NULL
-		sess.json().write_file("/tmp/sess.$(sess_id())",0,0)
-		_globals.sessid=NULL
+		_globals.sess_str=NULL
+		sid=_globals.sess_id
+		if !sid
+			sid=sess_newid()
+			:sessid.cookie_set(sid)
+		sess.write_file("/tmp/sess.$sid",0,0)
 	if callonce => return str
 	callonce=1
 	out=_globals.out..str
@@ -1660,24 +1610,21 @@ map* parse_url(char* path){
 	ret={url: path}
 	two=path.str_split("?",2)
 	ret.path=two[0]
-	ret.gets=two[1].amps_map()
+	ret.get=two[1].amps_map()
 	return ret
 }
 char* url_host(char* url) => return url.regexp("://([^:/]+)")[1]
 map* sess_init(){
 	sid=env_vars().HTTP_COOKIE.header_map().sessid
-	sess={}
-	if !sid
-		sid=sess_newid()
-		:sessid.cookie_set(sid)
-	else
-		sess="/tmp/sess.$sid".file_read(0).xjson_map()
-	_globals.sessid=sid
-	_globals.sess=sess
-	return sess
+	if !sid => return NULL
+	sess="/tmp/sess.$sid".file_read(0)
+	_globals.sess_id=sid
+	_globals.sess_str=sess
+	_globals.sess=sess.xjson_map()
+	return _globals.sess
 }
 void	sess_add(char* name, char* value) => _globals.sess[name]=value
-char*	sess_id()		=> return _globals.sessid
+char*	sess_id()		=> return _globals.sess_id
 char*	sess_file()		=> return sess_id() ? "/tmp/sess.$(sess_id())" : NULL
 char*	sess_newid()	=> return rand_str(24)
 void cookie_set(char* name,char* value,char* path="/",char* expire=NULL){
@@ -1911,6 +1858,7 @@ char* fox_curl(char* url){
 	return res ? NULL : ret
 }
 char* full_url(char* url=NULL) => return (_globals.req.protocol or :http).."://"..(_globals.req.server or :localhost)..show_port().."/"..url.str_ltrim("/")
+//char* full_path(char* url=NULL) => return "/"..url.str_ltrim("/")
 char* url_abs(char* abs, char* rel){
 	if !rel => return abs
 	if rel.str_start("./") => return abs..rel.sub_str(2)
@@ -1919,11 +1867,13 @@ char* url_abs(char* abs, char* rel){
 	level=0
 	while srel.str_start("../") => srel+=3; level++
 	base=abs.str_split("/")
-	level=max(base.map_len()-level-1,3)
+	if abs.strstr("://") => level=max(base.map_len()-level-1,3)
+	else level=max(base.map_len()-level-1,0)
 	ret=base.vec_sub(0,level).map_join("/")
 	return ret.."/"..srel
 }
-char* home_url(char* path=NULL) => return _globals.req.path.home.full_url().url_abs(path)
+char* base_url(char* path=NULL) => return _globals.tabs.map_key(0).url_abs(path)
+char* home_url(char* path=NULL) => return _globals.req.path.home.url_abs(path)
 char* show_port(){
 	if !_globals.req.port => return ''
 	if _globals.req.protocol===:http && _globals.req.port==="80" => return ''
@@ -2022,7 +1972,7 @@ map* lite_trigger_tree(char* name,char* pkey){
 	]
 }
 char* page_html(map* data){
-	return ---
+	head=---
 	<!DOCTYPE html>
 	<html><head><meta charset='utf-8'>
 	<title>$(data.title)</title>
@@ -2051,6 +2001,16 @@ char* page_html(map* data){
 	$(data.header)
 	<link rel='icon' href='$(data.logo)'></link>
 	</head><body>
+
+	---;
+	if _globals.req.get._print
+		return ---
+		$head
+		$(data.body)
+		</body></html>
+		---
+	return ---
+	$head
 	<div class='row-fluid alert-success'><span class='span8'>$(data.msg)</span>$(data.login)</div>
 	<div class=row-fluid>
 	<div class='span3' style='text-align:center;'><a href='$(data.home)'><img style='width:auto;height:100px;padding:.3em;' src='$(data.logo)'></img></a></div>
@@ -2086,6 +2046,7 @@ map* page_data(map* data){
 		head.="<script async src='$v'></script>\n"
 	data.header=head..data.css
 		..(_globals.css and "<style>\n".._globals.css.map_join("\n").."</style>")
+	if _globals.req.get._print => return data
 	data.footer=---
 	Run Time: $(run_time())ms=$(gc_time())GC+$(run_time()-total_time()-gc_time())Code+$(total_time())DB
 	Malloc: $(total_kb())KB. Total: $(max_mem()/1024)KB.
@@ -2131,9 +2092,9 @@ map* page_data(map* data){
 	data.body=body
 	login=''
 	if _globals.sess.user
-		login="<span class='pull-right'>$(_globals.sess.user) as $(_globals.sess.role) | <a href='$(home_url())logout/'>Logout</a> &nbsp; </span>"
+		login="<span class='pull-right'>$(_globals.sess.user) as $(_globals.sess.role) | <a href='$(base_url())logout/'>Logout</a> &nbsp; </span>"
 	else
-		login="<span class='pull-right' style='margin-right:3em;'><a href='$(home_url())login/'>Login</a> | <a href='$(home_url())register/'>Register</a></span>"
+		login="<span class='pull-right' style='margin-right:3em;'><a href='$(base_url())login/'>Login</a> | <a href='$(base_url())register/'>Register</a></span>"
 	data.login=login
 	return data
 }

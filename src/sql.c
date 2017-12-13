@@ -808,7 +808,7 @@ map* pre_tables(){
 				"id4=code",xmap(End),
 				"tbl=code",xmap(End),
 				"body=text",xmap(End), End), End),
-	"Mapcell*",NULL, End);
+	"line",NULL, End);
 };
 map* db_table(char* db,char* tbl){
 	return cols_table(db_cols(db,tbl),tbl,db);
@@ -1423,62 +1423,6 @@ map* sync_sqls(map* newt,map* oldt){
 	vec_add(ret,sql_rename("_syncing",map_val(newt,"name")));
 	return ret;	
 };
-int utf_strlen(char* in){
-	int i=0;
-	int j=0;
-	while(in[i]){
-		if((in[i] & 0xc0) != 0x80){ j++; };
-		i++; };
-	return j;
-};
-char* unicode_utf(int ucs2,char* ret){
-	if(ucs2 < 0x80){
-		ret[0] = ucs2;
-		ret[1] = '\0';
-		return ret; };
-	if(ucs2 >= 0x80  && ucs2 < 0x800){
-		ret[0] = (ucs2 >> 6)   | 0xC0;
-		ret[1] = (ucs2 & 0x3F) | 0x80;
-		ret[2] = '\0';
-		return ret; };
-	if(ucs2 >= 0x800 && ucs2 < 0xFFFF){
-		if(ucs2 >= 0xD800 && ucs2 <= 0xDFFF){ return 0; };
-		ret[0] = ((ucs2 >> 12)	   ) | 0xE0;
-		ret[1] = ((ucs2 >> 6 ) & 0x3F) | 0x80;
-		ret[2] = ((ucs2	  ) & 0x3F) | 0x80;
-		ret[3] = '\0';
-		return ret; };
-	if(ucs2 >= 0x10000 && ucs2 < 0x10FFFF){
-		ret[0] = 0xF0 | (ucs2 >> 18);
-		ret[1] = 0x80 | ((ucs2 >> 12) & 0x3F);
-		ret[2] = 0x80 | ((ucs2 >> 6) & 0x3F);
-		ret[3] = 0x80 | (ucs2 & 0x3F);
-		ret[4] = '\0';
-		return ret; };
-	ret[0] = '\0';
-	return ret;
-};
-int utf_len(char* in){
-	unsigned char* input=(unsigned char*) in;
-	if(!input[0]){ return 0; };
-	if(input[0] < 0x80){ return 1; };
-	if((input[0] & 0xC0) == 0xC0){ return 2; };
-	if((input[0] & 0xE0) == 0xE0){ return 3; };
-	return 1;
-};
-int utf_unicode(char* ptr){
-	unsigned char* input=(unsigned char*)ptr;
-	if(!input[0]){ return 0; };
-	if(input[0] < 0x80){ return input[0]; };
-	if((input[0] & 0xE0) == 0xE0){
-//Error checks commented
-//		if input[1] < 0x80 || input[1] > 0xBF || input[2] < 0x80 || input[2] > 0xBF => return 0
-		return (input[0] & 0x0F)<<12 | (input[1] & 0x3F)<<6  | (input[2] & 0x3F); };
-	if((input[0] & 0xC0) == 0xC0){
-//		if input[1] < 0x80 || input[1] > 0xBF => return 0
-		return (input[0] & 0x1F)<<6  | (input[1] & 0x3F); };
-	return '?';
-};
 char* test_out(char* in){
 	px(in,1);
 	return in;
@@ -1578,11 +1522,17 @@ char* str_html(char* in){
 void header(char* str){ print(str,stdout); print("\r\n",stdout); };
 char* http_out(char* str,char* status,char* mime,map* headers){
 	static int callonce=0;
-	if(map_val(_globals,"sessid")){
-		void* sess=map_val(_globals,"sess");
+	char* sess=json(map_val(_globals,"sess"),0);
+	if(str_eq(sess,"{}")){ sess=NULL; };
+	if(!str_eq(map_val(_globals,"sess_str"),sess)){
+		sess=map_val(_globals,"sess_str");
 		add(_globals,"sess",NULL);
-		write_file(json(sess,0),xstr("/tmp/sess.", sess_id(), End),0,0);
-		add(_globals,"sessid",NULL); };
+		add(_globals,"sess_str",NULL);
+		void* sid=map_val(_globals,"sess_id");
+		if(!sid){
+			sid=sess_newid();
+			cookie_set("sessid",sid,"/",NULL); };
+		write_file(sess,xstr("/tmp/sess.", sid, End),0,0); };
 	if(callonce){ return str; };
 	callonce=1;
 	char* out=xstr(map_val(_globals,"out"),str, End);
@@ -1660,24 +1610,21 @@ map* parse_url(char* path){
 	map* ret=xmap("url", path, End);
 	map* two=str_split(path,"?",2);
 	add(ret,"path",map_id(two,0));
-	add(ret,"gets",amps_map(map_id(two,1)));
+	add(ret,"get",amps_map(map_id(two,1)));
 	return ret;
 };
 char* url_host(char* url){ return map_id(regexp(url,"://([^:/]+)"),1); };
 map* sess_init(){
 	void* sid=map_val(header_map(map_val(env_vars(),"HTTP_COOKIE")),"sessid");
-	map* sess=new_map();
-	if(!sid){
-		sid=sess_newid();
-		cookie_set("sessid",sid,"/",NULL);
-	}else{
-		sess=xjson_map(file_read(xstr("/tmp/sess.", sid, End),0),Map); };
-	add(_globals,"sessid",sid);
-	add(_globals,"sess",sess);
-	return sess;
+	if(!sid){ return NULL; };
+	char* sess=file_read(xstr("/tmp/sess.", sid, End),0);
+	add(_globals,"sess_id",sid);
+	add(_globals,"sess_str",sess);
+	add(_globals,"sess",xjson_map(sess,Map));
+	return map_val(_globals,"sess");
 };
 void	sess_add(char* name, char* value){ add(add_key(_globals,"sess",Map),name,value); };
-char*	sess_id(){ return map_val(_globals,"sessid"); };
+char*	sess_id(){ return map_val(_globals,"sess_id"); };
 char*	sess_file(){ return sess_id() ? xstr("/tmp/sess.", sess_id(), End) : NULL; };
 char*	sess_newid(){ return rand_str(24); };
 void cookie_set(char* name,char* value,char* path,char* expire){
@@ -1911,6 +1858,7 @@ char* fox_curl(char* url){
 	return res ? NULL : ret;
 };
 char* full_url(char* url){ return xstr(((map_val(map_val(_globals,"req"),"protocol") ? map_val(map_val(_globals,"req"),"protocol") : "http")),"://",((map_val(map_val(_globals,"req"),"server") ? map_val(map_val(_globals,"req"),"server") : "localhost")),show_port(),"/",str_ltrim(url,"/"), End); };
+//char* full_path(char* url=NULL) => return "/"..url.str_ltrim("/")
 char* url_abs(char* abs, char* rel){
 	if(!rel){ return abs; };
 	if(str_start(rel,"./")){ return xstr(abs,sub_str(rel,2,-2147483648), End); };
@@ -1919,11 +1867,13 @@ char* url_abs(char* abs, char* rel){
 	int level=0;
 	while(str_start(srel,"../")){ srel+=3; level++; };
 	map* base=str_split(abs,"/",0);
-	level=max(map_len(base)-level-1,3);
+	if(strstr(abs,"://")){ level=max(map_len(base)-level-1,3); }
+	else {level=max(map_len(base)-level-1,0);};
 	char* ret=map_join(vec_sub(base,0,level),"/");
 	return xstr(ret,"/",srel, End);
 };
-char* home_url(char* path){ return url_abs(full_url(map_val(map_val(map_val(_globals,"req"),"path"),"home")),path); };
+char* base_url(char* path){ return url_abs(map_key(map_val(_globals,"tabs"),0),path); };
+char* home_url(char* path){ return url_abs(map_val(map_val(map_val(_globals,"req"),"path"),"home"),path); };
 char* show_port(){
 	if(!map_val(map_val(_globals,"req"),"port")){ return NULL; };
 	if(str_eq(map_val(map_val(_globals,"req"),"protocol"),"http") && str_eq(map_val(map_val(_globals,"req"),"port"),"80")){ return NULL; };
@@ -2022,7 +1972,7 @@ map* lite_trigger_tree(char* name,char* pkey){
 	, End);
 };
 char* page_html(map* data){
-	return xstr("", 
+	char* head=xstr("", 
 	"<!DOCTYPE html>\n", 
 	"<html><head><meta charset='utf-8'>\n", 
 	"<title>", map_val(data,"title"), "</title>\n", 
@@ -2051,6 +2001,16 @@ char* page_html(map* data){
 	map_val(data,"header"), "\n", 
 	"<link rel='icon' href='", map_val(data,"logo"), "'></link>\n", 
 	"</head><body>\n", 
+	"", 
+	"", End);
+	if(map_val(map_val(map_val(_globals,"req"),"get"),"_print")){
+		return xstr("", 
+		head, "\n", 
+		map_val(data,"body"), "\n", 
+		"</body></html>", 
+		"", End); };
+	return xstr("", 
+	head, "\n", 
 	"<div class='row-fluid alert-success'><span class='span8'>", map_val(data,"msg"), "</span>", map_val(data,"login"), "</div>\n", 
 	"<div class=row-fluid>\n", 
 	"<div class='span3' style='text-align:center;'><a href='", map_val(data,"home"), "'><img style='width:auto;height:100px;padding:.3em;' src='", map_val(data,"logo"), "'></img></a></div>\n", 
@@ -2086,6 +2046,7 @@ map* page_data(map* data){
 		head=xcat(head,xstr("<script async src='", v, "'></script>\n", End), End); };
 	add(data,"header",xstr(head,map_val(data,"css")
 		,((map_val(_globals,"css") ? xstr("<style>\n",map_join(map_val(_globals,"css"),"\n"),"</style>", End) : NULL)), End));
+	if(map_val(map_val(map_val(_globals,"req"),"get"),"_print")){ return data; };
 	add(data,"footer",xstr("", 
 	"Run Time: ",int_str( run_time()), "ms=",int_str( gc_time()), "GC+",int_str( run_time()-total_time()-gc_time()), "Code+",int_str( total_time()), "DB\n", 
 	"Malloc: ",int_str( total_kb()), "KB. Total: ",int_str( max_mem()/1024), "KB.\n", 
@@ -2131,9 +2092,9 @@ map* page_data(map* data){
 	add(data,"body",body);
 	char* login=NULL;
 	if(map_val(map_val(_globals,"sess"),"user")){
-		login=xstr("<span class='pull-right'>", map_val(map_val(_globals,"sess"),"user"), " as ", map_val(map_val(_globals,"sess"),"role"), " | <a href='", home_url(NULL), "logout/'>Logout</a> &nbsp; </span>", End);
+		login=xstr("<span class='pull-right'>", map_val(map_val(_globals,"sess"),"user"), " as ", map_val(map_val(_globals,"sess"),"role"), " | <a href='", base_url(NULL), "logout/'>Logout</a> &nbsp; </span>", End);
 	}else{
-		login=xstr("<span class='pull-right' style='margin-right:3em;'><a href='", home_url(NULL), "login/'>Login</a> | <a href='", home_url(NULL), "register/'>Register</a></span>", End); };
+		login=xstr("<span class='pull-right' style='margin-right:3em;'><a href='", base_url(NULL), "login/'>Login</a> | <a href='", base_url(NULL), "register/'>Register</a></span>", End); };
 	add(data,"login",login);
 	return data;
 };

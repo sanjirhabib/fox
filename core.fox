@@ -40,8 +40,11 @@ char* stack_str(){
 	void *array[400]
 	size_t size=array.backtrace(400)
 	char** lines=array.backtrace_symbols(size)
-	ret=''
-	for i=0;i<size;i++ => ret.=lines[i].."\n"
+	ret="\n"
+	for i=0; i<size; i++
+		part=lines[i].sub_str("3|||index.cgi|||||||||||||||||||||||||||0x0000000109c950d8|".str_len())
+		if lines[i].strstr(" stack_str ") || lines[i].strstr(".dylib ") || lines[i].strstr(" fox_error ") || lines[i].strstr(" start ") || lines[i].strstr(" 0x0 ") || lines[i].strstr(" run ") || lines[i].strstr(" main ") => continue
+		ret.=part.."\n"
 	return ret
 }
 void fox_stack_dump() => fox_error("Crashed!\n",1)
@@ -241,7 +244,13 @@ char* int_str(long long value){
 	if neg => string[0]='-'
 	return string.str_dup()
 }
-int str_eq(char* str,char* str1) => return !str||!str1||!str.is_str() ? 0 : str.strcmp(str1)==0
+int str_eq(char* str,char* str1){
+	if !str && !str1 => return 1
+	if str.is_str() && str1.is_str() => return str.strcmp(str1) ? 0 : 1
+	if !str && str1.is_str() && !str1.str_len() => return 1
+	if !str1 && str.is_str() && !str.str_len() => return 1
+	return 0
+}
 size_t str_hash(unsigned char *str){
 	int c
 	size_t ret = 5381
