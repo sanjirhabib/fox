@@ -14,7 +14,7 @@ int run(map* args){
 	void* ret=NULL;
 	if(str_end(name,".fox")){
 		add(_globals,"args",vec_sub(map_val(_globals,"args"),1,0));
-		ret=fox_run(file_read(name,1));
+		ret=fox_run(file_read(name,1,1));
 	}else if(!is_code(name) && !str_start(name,"--")){
 		ret=fox_run(name);
 	}else{

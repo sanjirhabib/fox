@@ -1,6 +1,6 @@
 CC=gcc
 INSTALL_DIR?=/usr/local
-CFLAGS=-Iinclude -std=gnu99 -Wno-logical-op-parentheses -Os -Wno-int-conversion -Llib -L/usr/lib64/ -fPIC -Wno-unused-command-line-argument -I/usr/local/opt/openssl/include -L/usr/local/lib -L/usr/local/opt/openssl/lib -lm
+CFLAGS=-m64 -Iinclude -std=gnu99 -Wno-logical-op-parentheses -Os -Wno-int-conversion -Llib -L/usr/lib64/ -fPIC -Wno-unused-command-line-argument -I/usr/local/opt/openssl/include -L/usr/local/lib -L/usr/local/opt/openssl/lib -lm -g
 FOXS=fox.fox core.fox sql.fox cgi.fox cmd.fox main.fox astrostr.fox maincgi.fox
 LIBS=-lsqlite3 -lcrypto -lmarkdown -lcurl
 HEADERS=fox.h sql.h
@@ -20,7 +20,7 @@ obj/%.o: src/%.c
 obj/main.o: src/main.c
 	$(CC) -c -o $@ $< $(CFLAGS) $(LIBS)
 
-src/run.c: run.fox
+src/run.c: run.fox fox.fox
 	fox fox_c run.fox src/run.c
 
 
@@ -42,7 +42,7 @@ src/main.c: main.fox
 src/maincgi.c: maincgi.fox
 	fox fox_c $^ $@
 
-safe:
+fox: $(FOXS)
 	$(CC) -c -o obj/fox.o src/fox.c $(CFLAGS) $(LIBS)
 	$(CC) -c -o obj/cmd.o src/cmd.c $(CFLAGS) $(LIBS)
 	$(CC) -c -o obj/sql.o src/sql.c $(CFLAGS) $(LIBS)
@@ -64,13 +64,13 @@ safe:
 	ar rcs lib/libfoxmain.a obj/main.o
 	rm -f lib/libfoxstatic.a
 	ar rcs lib/libfoxstatic.a $(OBJ)
-	gcc -o bin/fox obj/run.o $(CFLAGS) $(LIBS) -lfoxstatic -lfoxcmdstatic -lfoxastro -lfoxmain
+	$(CC) -o fox obj/run.o $(CFLAGS) $(LIBS) -lfoxstatic -lfoxcmdstatic -lfoxastro -lfoxmain
 
 temp: obj/main.o $(DEPS) $(OBJ) $(FOXS) $(XLIBS)
-	gcc -o $@ obj/main.o $(CFLAGS) $(LIBS) -lfoxstatic -lfoxcmdstatic
+	$(CC) -o $@ obj/main.o $(CFLAGS) $(LIBS) -lfoxstatic -lfoxcmdstatic
 
 bin/fox: obj/run.o $(DEPS) $(OBJ) $(FOXS) $(XLIBS) Makefile
-	gcc -o $@ obj/run.o $(CFLAGS) $(LIBS) -lfoxstatic -lfoxcmdstatic -lfoxastro -lfoxmain
+	$(CC) -o $@ obj/run.o $(CFLAGS) $(LIBS) -lfoxstatic -lfoxcmdstatic -lfoxastro -lfoxmain
 	bin/fox utests
 
 src/core.c src/fox.c src/sql.c src/cgi.c src/cmd.c src/astrostr.c: $(FOXS)
@@ -79,11 +79,11 @@ src/core.c src/fox.c src/sql.c src/cgi.c src/cmd.c src/astrostr.c: $(FOXS)
 
 lib/libfoxcgi.so: $(OBJ) obj/cgi.o
 	rm -f $@
-	gcc -shared -o $@ $^ $(LIBS) $(CFLAGS)
+	$(CC) -shared -o $@ $^ $(LIBS) $(CFLAGS)
 
 lib/libfox.so: $(OBJ) obj/cmd.o
 	rm -f $@
-	gcc -shared -o $@ $^ $(LIBS) $(CFLAGS)
+	$(CC) -shared -o $@ $^ $(LIBS) $(CFLAGS)
 
 lib/libfoxcgistatic.a: obj/cgi.o
 	rm -f $@
@@ -136,3 +136,8 @@ tests: bin/fox
 	bin/fox utests
 www:
 	cd www && make
+safe: bin/fox
+	cp fox /tmp/fox.`now`
+	cp bin/fox .
+	touch *.fox && make
+

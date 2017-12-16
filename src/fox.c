@@ -54,7 +54,7 @@ int cc(char* infile, char* outfile, char* profile, char* opts, int keepfiles){
 	fox_c(in,xstr(infile,".c", End));
 	fox_h(in,xstr(infile,".h", End));
 	//-I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib 
-	char* cflags="-std=gnu99 -Wno-unused-command-line-argument";
+	char* cflags="-m64 -std=gnu99 -Wno-unused-command-line-argument -g";
 	char* xlibs="-lmarkdown -lcurl -lsqlite3";
 	// -fdata-sections -ffunction-sections -Wl,-dead_strip -Wl,-emain
 	map* switches=xmap(
@@ -88,7 +88,8 @@ void write_source(){
 		fox_c(infile,xstr(file_rename(infile,"src",".fox",NULL,NULL,NULL),".c", End));
 		fox_h(infile,xstr(file_rename(infile,"include",".fox",NULL,NULL,NULL),".h", End)); };
 	write_foxh(file_rename("fox.h","include",NULL,NULL,NULL,NULL));
-	write_meta(file_rename("meta.c","src",NULL,NULL,NULL,NULL));
+	write_file(funcs_meta(source_funcs(),NULL),file_rename("meta.c","src",NULL,NULL,NULL,NULL),0,1);
+	px(mem_usage(),1);
 };
 char* file_rename(char* file,char* dir,char* delext,char* addext,char* prefix,char* postfix){
 	char* olddir=file_dir(file);
@@ -232,7 +233,7 @@ char* write_file(char* data,char* filename,int readonly,int verbose){
 	if(readonly){ chmod(filename,0444); };
 	return data;
 };
-char* file_read(char* filename,int error_on_fail){
+char* file_read(char* filename, int istext, int error_on_fail){
 	assert(filename);
 	FILE* fp=fopen(filename,"r");
 	size_t size=0;
@@ -240,7 +241,7 @@ char* file_read(char* filename,int error_on_fail){
 	if(!fp){ return error_on_fail ? fox_error(xstr("Can't read file ", filename, End),1) : NULL; };
 	fseek(fp,0,SEEK_END);
 	size=ftell(fp);
-	char* ret=new_blob(size);
+	char* ret=istext ? new_str(size) : new_blob(size);
 	fseek(fp,0,SEEK_SET);
 	read=fread(ret,1,size,fp);
 	fclose(fp);
@@ -327,13 +328,13 @@ char* str_ltrim(char* str,char* chars){
 };
 char* str_rtrim(char* str,char* chars){
 	if(!str || !*str){ return NULL; };
-	int r=rchars(str,chars);
+	int r=rchars(str,chars,0);
 	if(!r){ return str; };
 	return sub_str(str,0,str_len(str)-r);
 };
 char* str_trim(char* str,char* chars){
 	int l=lchars(str,chars);
-	int r=rchars(str,chars);
+	int r=rchars(str,chars,0);
 	if(!l && !r){ return str; };
 	return sub_str(str,l,str_len(str)-l-r);
 };
@@ -357,10 +358,10 @@ int lchars(char* str,char* chars){
 	};
 	return ret;
 };
-int rchars(char* str,char* chars){
+int rchars(char* str,char* chars,int off){
 	if(!str||!chars){ return 0; };
 	int ret=0;
-	int len=str_len(str);
+	int len=str_len(str)+off;
 	while(ret<len){
 		if(strchr(chars,str[len-ret-1])){ ret++; }
 		else {break;};
@@ -937,7 +938,19 @@ map* vec_splice(map* mp,int from,int del,map* add){
 };
 char* str_has(char* str,char* sub){
 	if(!str||!sub||!is_str(str)){ return NULL; };
-	return strstr(str,sub);
+	return str_str(str,sub);
+};
+char* str_str(char* in, char* sub){
+	int len=str_len(in);
+	int sublen=str_len(sub);
+	for(int i=0; i<=len-sublen; i++){
+		int ok=1;
+		for(int j=0; j<sublen; j++){
+			if(sub[j]!=in[i+j]){
+				ok=0;
+				break; }; };
+		if(ok){ return in+i; }; };
+	return NULL;
 };
 void gotoxy(int x,int y){
 	_printed=1;
@@ -2145,8 +2158,8 @@ map* syn_funcs(map* mp,int with_body){
 			add(ret,map_val(fn,"name"),fn); }; };
 	return ret;
 };
-map* file_vec(char* in){ return str_vec(file_read(in,1)); };
-map* file_map(char* in){ return str_map(file_read(in,1),Map); };
+map* file_vec(char* in){ return str_vec(file_read(in,1,1)); };
+map* file_map(char* in){ return str_map(file_read(in,1,1),Map); };
 map* map_keys(map* mp){
 	map* ret=new_vec();
 	for(int next1=next(mp,-1,NULL,NULL); has_id(mp,next1); next1++){ char* k=map_key(mp, next1); vec_add(ret,k); };
@@ -2269,7 +2282,7 @@ map* call_count(map* toks,map* counter,char* infunc){
 	return counter;
 };
 map* file_deadcode(char* file){
-	map* funcs=x_funcs(file_read(file,1),1);
+	map* funcs=x_funcs(file_read(file,1,1),1);
 	map* ret=new_map();
 	for(int i=next(funcs,-1,NULL,NULL); has_id(funcs,i); i++){ void* v=map_id(funcs,i); char* k=map_key(funcs, i);
 		call_count(map_val(v,"body"),ret,k); };
@@ -2690,7 +2703,7 @@ int is_func_decl(map* syn){
 };
 char* c_h(char* infile,char* outfile){ return write_file(funcs_cdecl(file_funcs(infile,0),0),outfile,0,1); };
 char* fox_h(char* infile,char* outfile){ return write_file((xstr("#include <fox.h>\n",funcs_cdecl(file_funcs(infile,0),0), End)),outfile,0,1); };
-char* fox_c(char* infile, char* outfile){ return write_file(x_c(file_read(infile,1)),outfile,0,1); };
+char* fox_c(char* infile, char* outfile){ return write_file(x_c(file_read(infile,1,1)),outfile,0,1); };
 map* x_map(char* in){ return c_tokenizer(&in,'\0'); };
 char* c_x(char* in){ return toks_c(map_tox(x_map(in))); };
 
@@ -3162,24 +3175,24 @@ char* write_phpconfig(){
 	""
 	"","config.m4",0,1);
 };
-char* write_meta(char* outfile){
-	map* funcs=source_funcs();
-	char* ret=write_file(x_c(xstr("", 
-	"/* This is a generated file. To change it, edit function write_meta() in fox.c */\n", 
+char* funcs_meta(map* funcs, char* prefix){
+	if(prefix){prefix=xstr(prefix,"_", End);};
+	return x_c(xstr("", 
+	"/* This is a generated file. To change it, edit function funcs_meta() in fox.c */\n", 
 	"#include \"sqlite3.h\"\n", 
 	"#include \"fox.h\"\n", 
 	"\n", 
-	"char* version(){\n", 
+	"char* ", prefix, "version(){\n", 
 	"\treturn \"Fox: build: ", increase_version(), ", date: ", time_str(0), " [%s old]\".mstr(\"", time_str(0), "\".time_ago());\n", 
 	"}\n", 
-	"void* invoke(map* v,char* name){\n", 
+	"void* ", prefix, "invoke(map* v,char* name){\n", 
 	"	unsigned long long idn=str_hash((unsigned char*)name)\n", 
 	"	switch(idn){\n", 
 	"//", callfunc_c(funcs), "\n", 
 	"	}\n", 
 	"\treturn \"invoke(): Function $name not defined\".fox_error()\n", 
 	"}\n", 
-	"map* reflect(){\n", 
+	"map* ", prefix, "reflect(){\n", 
 	"	return {\n", 
 	"\t\tfuncs: ", map_ccode(funcs), ",\n", 
 	"\t\tmacros: ", map_ccode(source_macros()), ",\n", 
@@ -3187,9 +3200,7 @@ char* write_meta(char* outfile){
 	"	}\n", 
 	"}\n", 
 	"", 
-	"", End)),outfile,0,1);
-	px(mem_usage(),1);
-	return ret;
+	"", End));
 };
 map* eval_params(map* sent,char* name,map* env){
 	assert(name);
@@ -3532,7 +3543,7 @@ int str_char_count(char* str,char c){
 };
 char* write_c(char* infile,char* outfile){
 	source_funcs();
-	return write_file(x_c(file_read(infile,1)),outfile,1,1);
+	return write_file(x_c(file_read(infile,1,1)),outfile,1,1);
 };
 map* command_line(char* in,int argc,char** argv){
 	if(argc==1 || (argc==2 && str_eq(argv[1],"-h"))){ px(in,1); return NULL; };
@@ -3597,8 +3608,6 @@ map* cmdline_params(map* args,char* func){
 			curr++; }; };
 	if(named_param){
 		add(ret,named_param,int_var(1)); };
-	for(int i2=next(params,-1,NULL,NULL); has_id(params,i2); i2++){ void* v2=map_id(params,i2); char* k2=map_key(params, i2);
-		if(str_eq(map_val(v2,"type"),"map*")) {}; };
 	ret=eval_params(ret,func,NULL);
 	for(int i3=next(ret,-1,NULL,NULL); has_id(ret,i3); i3++){ void* v3=map_id(ret,i3); char* k3=map_key(ret, i3);
 		if(str_eq(map_val(map_val(params,k3),"type"),"map*")){
@@ -3629,7 +3638,7 @@ char* file_path(char* file){
 	return sub_str(file,0,i);
 };
 map* load_global(char* file){
-	map* ret=str_map(file_read(file,1),Map);
+	map* ret=str_map(file_read(file,1,1),Map);
 	map_merge(_globals,ret);
 	return ret;
 };
@@ -4136,7 +4145,7 @@ map* source_funcs(){
 		add(add_key(_globals,"cache",Map),"funcs",mp); };
 	return map_val(map_val(_globals,"cache"),"funcs");
 };
-map* file_funcs(char* filename,int withbody){ return x_funcs(file_read(filename,1),withbody); };
+map* file_funcs(char* filename,int withbody){ return x_funcs(file_read(filename,1,1),withbody); };
 char* help(){ return funcs_cdecl(funcs(),1); };
 map* funcs(){
 	if(!map_val(map_val(_globals,"cache"),"reflect")){add(add_key(_globals,"cache",Map),"reflect",reflect()); };
@@ -4239,9 +4248,10 @@ time_t str_time(char* in){
 	tm.tm_year=atoi(sub_str(in,0,4))-1900;
 	tm.tm_mon=atoi(sub_str(in,5,2))-1;
 	tm.tm_mday=atoi(sub_str(in,8,2));
-	tm.tm_hour=atoi(sub_str(in,11,2));
-	tm.tm_min=atoi(sub_str(in,14,2));
-	tm.tm_sec=atoi(sub_str(in,17,2));
+	if(str_len(in)==19){
+		tm.tm_hour=atoi(sub_str(in,11,2));
+		tm.tm_min=atoi(sub_str(in,14,2));
+		tm.tm_sec=atoi(sub_str(in,17,2)); };
 	return mktime(&tm);
 };
 char* time_str(time_t timer){
@@ -4250,7 +4260,31 @@ char* time_str(time_t timer){
 	strftime(buffer,20, "%Y-%m-%d %H:%M:%S",localtime(&timer));
 	return str_dup(buffer);
 };
-char* increase_version(){ return write_file(int_str((atoi(file_read(".version.txt",1))+1)),".version.txt",0,1); };
+char* tz_dst(char* tz, char* date){
+	time_t ret=str_time(date);
+	if(tz){ setenv("TZ", tz, 1); };
+	struct tm* tm=localtime(&ret);
+	return tm->tm_isdst==1 ? "DST" : NULL;
+};
+double tz_offset(char* tz, char* date){
+//in decimal hours
+	time_t ret=str_time(date);
+	struct tm* tm=gmtime(&ret);
+	if(tz){ setenv("TZ", tz, 1); };
+	struct tm* tml=localtime(&ret);
+	tm->tm_isdst = tml->tm_isdst;
+	time_t gm=mktime(tm);
+	return floor((ret-gm)+.5)/3600;
+};
+char* tz_utc(char* tz, char* date){
+	double off=tz_offset(tz,date);
+	if(!off){ return "UTC"; };
+	char sign=off<0 ? '-' : '+';
+	off=fabs(off);
+	if(off-floor(off)<1/100.){ return mstr("UTC%c%d",sign,(int)off, End); };
+	return mstr("UTC%c%d:%02d",sign,(int)off,(int)((off-(int)off)*60+0.5), End);
+};
+char* increase_version(){ return write_file(int_str((atoi(file_read(".version.txt",1,1))+1)),".version.txt",0,1); };
 int call_variadic_int(map* mp,void* fp,char* name){
 	int(*ptr)(void* param1,...)=fp;
 	if(!mp){ return ptr(End); };
@@ -4588,11 +4622,7 @@ map* ping_map(map* in){ return in; };
 char* str_join(char* str1,char* joiner,char* str2){
 	if(!str_len(str1)){ return str2; };
 	if(!str_len(str2)){ return str1; };
-	char* ret=NULL;
-	ret=xcat(ret,str1, End);
-	ret=xcat(ret,joiner, End);
-	ret=xcat(ret,str2, End);
-	return ret;
+	return xstr(str1,joiner,str2, End);
 };
 map* read_paren(map* mp,char** line,map*(*func)(char**)){
 	char* str=*line;
@@ -4754,11 +4784,6 @@ char* str_hex(char* in){
 	return ret;
 };
 char* c_md5(char* in, size_t initial_len, char* out);
-//char* md5(char* in){
-//	ret=new_blob(16)
-//	MD5((unsigned char*)in,in.str_len(),(unsigned char*)ret)
-//	return ret.str_hex()
-//}
 char* md5(char* in){ char ret[33]; return str_dup(c_md5(in,str_len(in),ret)); };
 map* data_map(char* in){ return data_map2(&in,0); };
 map* data_map2(char** in,int level){

@@ -31,7 +31,7 @@ void xexit(int val=0);
 void* fox_error(char* msg,int dump=0);
 void* call_php(map* params,char* func);
 
-int cgi(char* infile="index.fox", char* outfile="index.cgi",char* opts=NULL,int keepfiles=0){
+int cgi(char* infile="index.fox", char* outfile="index.cgi",char* opts=NULL,int keepfiles=1){
 	ret=infile.cc(outfile, :cgi, opts, keepfiles)
 	if ret => return ret
 	write_htaccess()
@@ -54,7 +54,7 @@ int cc(char* infile, char* outfile=NULL, char* profile="debug", char* opts=NULL,
 	in.fox_c(infile..".c")
 	in.fox_h(infile..".h")
 	//-I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib 
-	cflags="-std=gnu99 -Wno-unused-command-line-argument"
+	cflags="-m64 -std=gnu99 -Wno-unused-command-line-argument -g"
 	xlibs="-lmarkdown -lcurl -lsqlite3"
 	// -fdata-sections -ffunction-sections -Wl,-dead_strip -Wl,-emain
 	switches={
@@ -88,7 +88,8 @@ void write_source(){
 		infile.fox_c(infile.file_rename(:src,".fox")..".c")
 		infile.fox_h(infile.file_rename(:include,".fox")..".h")
 	"fox.h".file_rename(:include).write_foxh()
-	"meta.c".file_rename(:src).write_meta()
+	source_funcs().funcs_meta().write_file("meta.c".file_rename(:src))
+	mem_usage().px()
 }
 char* file_rename(char* file,char* dir=NULL,char* delext=NULL,char* addext=NULL,char* prefix=NULL,char* postfix=NULL){
 	olddir=file.file_dir()
@@ -232,7 +233,7 @@ char* write_file(char* data,char* filename,int readonly=0,int verbose=1){
 	if readonly => filename.chmod(0444)
 	return data
 }
-char* file_read(char* filename,int error_on_fail=1){
+char* file_read(char* filename, int istext=1, int error_on_fail=1){
 	assert(filename)
 	FILE* fp=filename.fopen(:r)
 	size_t size=0
@@ -240,7 +241,7 @@ char* file_read(char* filename,int error_on_fail=1){
 	if !fp => return error_on_fail ? "Can't read file $filename".fox_error(1) : NULL
 	fp.fseek(0,SEEK_END)
 	size=fp.ftell()
-	ret=size.new_blob()
+	ret=istext ? size.new_str() : size.new_blob()
 	fp.fseek(0,SEEK_SET)
 	read=ret.fread(1,size,fp)
 	fp.fclose()
@@ -357,10 +358,10 @@ int lchars(char* str,char* chars){
 	
 	return ret
 }
-int rchars(char* str,char* chars){
+int rchars(char* str,char* chars,int off=0){
 	if !str||!chars => return 0
 	ret=0
-	len=str.str_len()
+	len=str.str_len()+off
 	while ret<len
 		if chars.strchr(str[len-ret-1]) => ret++
 		else break
@@ -937,7 +938,19 @@ map* vec_splice(map* mp,int from,int del,map* add){
 }
 char* str_has(char* str,char* sub){
 	if !str||!sub||!str.is_str() => return NULL
-	return str.strstr(sub)
+	return str.str_str(sub)
+}
+char* str_str(char* in, char* sub){
+	len=in.str_len()
+	sublen=sub.str_len()
+	for i=0; i<=len-sublen; i++
+		ok=1
+		for j=0; j<sublen; j++
+			if sub[j]!=in[i+j]
+				ok=0
+				break
+		if ok => return in+i
+	return NULL
 }
 void gotoxy(int x,int y){
 	_printed=1
@@ -3162,24 +3175,24 @@ char* write_phpconfig(){
 
 	---'.write_file("config.m4")
 }
-char* write_meta(char* outfile){
-	map* funcs=source_funcs()
-	ret=---
-	/* This is a generated file. To change it, edit function write_meta() in fox.c */
+char* funcs_meta(map* funcs, char* prefix=''){
+	prefix&&=prefix.."_"
+	return ---
+	/* This is a generated file. To change it, edit function funcs_meta() in fox.c */
 	#include "sqlite3.h"
 	#include "fox.h"
 
-	char* version(){
+	char* $(prefix)version(){
 		return "Fox: build: $(increase_version()), date: $(time_str()) [%s old]".mstr("$(time_str())".time_ago());
 	}
-	void* invoke(map* v,char* name){
+	void* $(prefix)invoke(map* v,char* name){
 		unsigned long long idn=str_hash((unsigned char*)name)
 		switch(idn){
 	//$(funcs.callfunc_c())
 		}
 		return "invoke(): Function $$name not defined".fox_error()
 	}
-	map* reflect(){
+	map* $(prefix)reflect(){
 		return {
 			funcs: $(funcs.map_ccode()),
 			macros: $(source_macros().map_ccode()),
@@ -3187,9 +3200,7 @@ char* write_meta(char* outfile){
 		}
 	}
 
-	---.x_c().write_file(outfile,0)
-	mem_usage().px()
-	return ret
+	---.x_c()
 }
 map* eval_params(map* sent,char* name,map* env=NULL){
 	name.assert()
@@ -3597,8 +3608,6 @@ map* cmdline_params(map* args,char* func){
 			curr++
 	if named_param
 		ret[named_param]=1
-	params.each v2,k2,i2
-		if v2.type==="map*"
 	ret=ret.eval_params(func,NULL)
 	ret.each v3,k3,i3
 		if params[k3].type==="map*"
@@ -4239,9 +4248,10 @@ time_t str_time(char* in){
 	tm.tm_year=in.sub_str(0,4).atoi()-1900
 	tm.tm_mon=in.sub_str(5,2).atoi()-1
 	tm.tm_mday=in.sub_str(8,2).atoi()
-	tm.tm_hour=in.sub_str(11,2).atoi()
-	tm.tm_min=in.sub_str(14,2).atoi()
-	tm.tm_sec=in.sub_str(17,2).atoi()
+	if in.str_len()==19
+		tm.tm_hour=in.sub_str(11,2).atoi()
+		tm.tm_min=in.sub_str(14,2).atoi()
+		tm.tm_sec=in.sub_str(17,2).atoi()
 	return mktime(&tm)
 }
 char* time_str(time_t timer=0){
@@ -4249,6 +4259,30 @@ char* time_str(time_t timer=0){
 	if !timer => timer=time(0)
 	strftime(buffer,20, "%Y-%m-%d %H:%M:%S",localtime(&timer))
 	return buffer.str_dup()
+}
+char* tz_dst(char* tz=NULL, char* date=NULL){
+	time_t ret=date.str_time()
+	if tz => setenv(:TZ, tz, 1);
+	struct tm* tm=localtime(&ret)
+	return tm->tm_isdst==1 ? :DST : ''
+}
+double tz_offset(char* tz=NULL, char* date=NULL){
+//in decimal hours
+	time_t ret=date.str_time()
+	struct tm* tm=gmtime(&ret)
+	if tz => setenv(:TZ, tz, 1);
+	struct tm* tml=localtime(&ret)
+	tm->tm_isdst = tml->tm_isdst
+	time_t gm=mktime(tm)
+	return floor((ret-gm)+.5)/3600
+}
+char* tz_utc(char* tz, char* date=NULL){
+	double off=tz.tz_offset(date)
+	if !off => return :UTC
+	sign=off<0 ? '-' : '+'
+	off=fabs(off)
+	if off-floor(off)<1/100. => return mstr("UTC%c%d",sign,(int)off)
+	return mstr("UTC%c%d:%02d",sign,(int)off,(int)((off-(int)off)*60+0.5))
 }
 char* increase_version() => return (".version.txt".file_read().atoi()+1).int_str().write_file(".version.txt")
 int call_variadic_int(map* mp,void* fp,char* name){
@@ -4588,11 +4622,7 @@ map* ping_map(map* in) => return in
 char* str_join(char* str1,char* joiner,char* str2){
 	if !str1.str_len() => return str2
 	if !str2.str_len() => return str1
-	ret=''
-	ret.=str1
-	ret.=joiner
-	ret.=str2
-	return ret
+	return str1..joiner..str2
 }
 map* read_paren(map* mp,char** line,map*(*func)(char**)){
 	str=*line
@@ -4754,11 +4784,6 @@ char* str_hex(char* in){
 	return ret
 }
 char* c_md5(char* in, size_t initial_len, char* out);
-//char* md5(char* in){
-//	ret=new_blob(16)
-//	MD5((unsigned char*)in,in.str_len(),(unsigned char*)ret)
-//	return ret.str_hex()
-//}
 char* md5(char* in) => char ret[33]; return c_md5(in,in.str_len(),ret).str_dup()
 map* data_map(char* in) => return data_map2(&in)
 map* data_map2(char** in,int level=0){

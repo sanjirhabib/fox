@@ -45,9 +45,10 @@ char* stack_str(){
 		char* part=sub_str(lines[i],str_len("3|||index.cgi|||||||||||||||||||||||||||0x0000000109c950d8|"),-2147483648);
 		if(strstr(lines[i]," stack_str ") || strstr(lines[i],".dylib ") || strstr(lines[i]," fox_error ") || strstr(lines[i]," start ") || strstr(lines[i]," 0x0 ") || strstr(lines[i]," run ") || strstr(lines[i]," main ")){ continue; };
 		ret=xcat(ret,part,"\n", End); };
+//		ret.=lines[i].."\n"
 	return ret;
 };
-void fox_stack_dump(){ fox_error("Crashed!\n",1); };
+void fox_stack_dump(){ fox_error("Error:\n",1); };
 size_t blob_size(char* in){
 	if(!in){ return 0; };
 	char* head=ptr_head(in);
@@ -74,12 +75,8 @@ char* blob_dup(char* str, int len){
 };
 char* str_dup_len(char* str, int len){
 	if(!str){ return NULL; };
-	if(is_blob(str)){
-		return memcpy(new_blob(len),str,len); };
-	char* ret=new_str(len);
-	memcpy(ret,str,len);
-	ret[len]='\0';
-	return ret;
+	char* ret=is_blob(str) ? new_blob(len) : new_str(len);
+	return memcpy(ret,str,len);
 };
 char* str_dup(char* str){ return str_dup_len(str,str_len(str)); };
 char* sub_str(char* src,int from,int len){
@@ -92,13 +89,7 @@ char* sub_str(char* src,int from,int len){
 	if(len<=0){ return NULL; };
 	if(from>=slen){ return NULL; };
 	if(from+len>=slen){ return str_dup((src+from)); };
-//	if src.is_blob() => fox_stack_dump()
-//	return src.str_dup_len(len)
-	char* ret=new_str(len);
-	memcpy(ret,src+from,len);
-	assert(!ret[len]);
-	assert(str_len(ret)==len);
-	return ret;
+	return str_dup_len((src+from),len);
 };
 char* print(char* str,FILE* fp){
 	_printed=1;

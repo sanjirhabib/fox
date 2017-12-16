@@ -45,9 +45,10 @@ char* stack_str(){
 		part=lines[i].sub_str("3|||index.cgi|||||||||||||||||||||||||||0x0000000109c950d8|".str_len())
 		if lines[i].strstr(" stack_str ") || lines[i].strstr(".dylib ") || lines[i].strstr(" fox_error ") || lines[i].strstr(" start ") || lines[i].strstr(" 0x0 ") || lines[i].strstr(" run ") || lines[i].strstr(" main ") => continue
 		ret.=part.."\n"
+//		ret.=lines[i].."\n"
 	return ret
 }
-void fox_stack_dump() => fox_error("Crashed!\n",1)
+void fox_stack_dump() => fox_error("Error:\n",1)
 size_t blob_size(char* in){
 	if !in => return 0
 	char* head=in.ptr_head()
@@ -60,7 +61,7 @@ int str_len(char* str){
 	if type==String => return str.strlen()
 	return 0
 }
-char* new_blob(int size){
+char* new_blob(int size=0){
 	char* ret=fox_alloc(size+8+1,Blob)
 	*(size_t*)ret=size
 	ret+=sizeof(size_t)
@@ -74,12 +75,8 @@ char* blob_dup(char* str, int len){
 }
 char* str_dup_len(char* str, int len){
 	if !str => return NULL
-	if str.is_blob()
-		return new_blob(len).memcpy(str,len)
-	char* ret=new_str(len)
-	ret.memcpy(str,len)
-	ret[len]='\0'
-	return ret
+	ret=str.is_blob() ? len.new_blob() : len.new_str()
+	return ret.memcpy(str,len)
 }
 char* str_dup(char* str) => return str.str_dup_len(str.str_len())
 char* sub_str(char* src,int from,int len=-2147483648){
@@ -92,13 +89,7 @@ char* sub_str(char* src,int from,int len=-2147483648){
 	if len<=0 => return NULL
 	if from>=slen => return NULL
 	if from+len>=slen => return (src+from).str_dup()
-//	if src.is_blob() => fox_stack_dump()
-//	return src.str_dup_len(len)
-	char* ret=new_str(len)
-	ret.memcpy(src+from,len)
-	assert(!ret[len])
-	assert(ret.str_len()==len)
-	return ret
+	return (src+from).str_dup_len(len)
 }
 char* print(char* str,FILE* fp=stdout){
 	_printed=1
