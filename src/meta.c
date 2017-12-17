@@ -1,9 +1,9 @@
-/* This is a generated file. To change it, edit function write_meta() in fox.c */
+/* This is a generated file. To change it, edit function funcs_meta() in fox.c */
 #include "sqlite3.h"
 #include "fox.h"
 
 char* version(){
-	return mstr("Fox: build: 6230, date: 2017-12-17 14:44:25 [%s old]",time_ago("2017-12-17 14:44:25"), End);
+	return mstr("Fox: build: 6231, date: 2017-12-17 15:03:45 [%s old]",time_ago("2017-12-17 15:03:45"), End);
 };
 void* invoke(map* v,char* name){
 	unsigned long long idn=str_hash((unsigned char*)name);

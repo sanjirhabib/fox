@@ -711,6 +711,7 @@ int fox_gc(){
 	jmp_buf regs={0}
 	setjmp(regs)
 	roots=root_ptrs()
+	_gcdata.max_roots=max(_gcdata.max_roots,roots->len)
 	for int i=0; i<roots->len; i++ => roots->vars[i].gc_mark()
 	int freed=gc_sweep()
 	_gcdata.gcruns++

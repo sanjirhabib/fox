@@ -87,6 +87,7 @@ struct gcdata {
 	int inalloc;
 	int gctime;
 	int gcmax;
+	int max_roots;
 	struct timeval run_time;
 	struct timeval time;
 	size_t clockstart;

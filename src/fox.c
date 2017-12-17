@@ -2893,6 +2893,7 @@ char* foxh(){
 	"	int inalloc;\n"
 	"	int gctime;\n"
 	"	int gcmax;\n"
+	"	int max_roots;\n"
 	"	struct timeval run_time;\n"
 	"	struct timeval time;\n"
 	"	size_t clockstart;\n"

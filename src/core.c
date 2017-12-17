@@ -711,6 +711,7 @@ int fox_gc(){
 	jmp_buf regs={0};
 	setjmp(regs);
 	map* roots=root_ptrs();
+	_gcdata.max_roots=max(_gcdata.max_roots,roots->len);
 	for(int i=0; i<roots->len; i++){ gc_mark(roots->vars[i]); };
 	int freed=gc_sweep();
 	_gcdata.gcruns++;
@@ -982,7 +983,7 @@ map* env_vars(){
 	return ret;
 };
 map* argv_map(char** argv,int argc){
-//	_gcdata.stack_head=(void**)argv
+	_gcdata.stack_head=(void**)argv;
 	map* ret=new_vec();
 	ret->len=argc;
 	ret->vars=(void**)argv;
