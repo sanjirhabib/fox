@@ -2857,7 +2857,6 @@ char* foxh(){
 	"} map;\n"
 	"\n"
 	"#define each_mem(pg,i) int i=0; for(mempage* pg=_gcdata.pages;i<_gcdata.total_pages;i++,pg=_gcdata.pages+i)\n"
-	"#define gc_start() void* __sp=NULL;init_gc(&__sp)\n"
 	"#define max(a,b) ((a)>(b)?(a):(b))\n"
 	"#define min(a,b) ((a)<(b)?(a):(b))\n"
 	"#ifdef __MINGW32__\n"

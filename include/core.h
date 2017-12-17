@@ -121,5 +121,4 @@ int block_head(int no, mempage* pg);
 void init_rand();
 void* map_val(map* mp, char* key);
 map* env_vars();
-map* argv_map(char** argv, int argc);
-int init_gc(void** sp);
+map* argv_map(char** argv, int argc, void** globals);
