@@ -11,6 +11,9 @@ double dhaka_lng(){return 90+25.0/60.0;} //90d 25m
 double dhaka_lat(){return 23+48.0/60.0;} //23d 48m
 double kaba_lng(){return 39.8262013;}
 double kaba_lat(){return 21.4224945;}
+double qibla_direction(double lng, double lat){
+	return bearing(lng, lat, kaba_lng(), kaba_lat())
+}
 double kaba_sun_set(double jd){ return sun_set(jd,kaba_lng(),kaba_lat());}
 double kaba_moon_set(double jd){ return moon_set(jd,kaba_lng(),kaba_lat());}
 double hijri_month_length(int lun){
@@ -334,13 +337,13 @@ void rgb2hsl(int r, int g, int b, double* out_h, double* out_s, double*out_l){
 double jday(double jd) => return floor(jd - 0.5) + 0.5
 char* bearing_name3(double lng1, double lat1, double lng2, double lat2){
 	id=bearing_name(lng1, lat1, lng2, lat2)
-	names={ n: 'north', ne: 'north east', e: 'east', se: 'south east', s: 'south', sw: 'south west', w: 'west', nw: 'north west'}
+	names={ N: 'North', NE: 'North East', E: 'East', SE: 'South East', S: 'South', SW: 'South West', W: 'West', NW: 'North West'}
 	return names[id]
 }
 char* bearing_name(double lng1, double lat1, double lng2, double lat2){
 	ret=bearing(lng1, lat1, lng2, lat2)
 	direct=(int)((ret+22.5)/45)
-	char* names[]={"n","ne","e","se","s","sw","w","nw","n"}
+	char* names[]={"N","NE","E","SE","S","SW","W","NW","N"}
 	return names[direct]
 }
 static double hue_2_rgb(double v1, double v2, double v_h){

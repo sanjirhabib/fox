@@ -2134,7 +2134,7 @@ map* page_data(map* data){
 	data.login=login
 	return data
 }
-int not_found(char* path=NULL) => "The requested content $(path or _globals.req.path.full) was not found on the server.".http_out("404 Not Found"); return -404
+void* not_found(char* path=NULL) => "The requested content $(path or _globals.req.path.full) was not found on the server.".http_out("404 Not Found"); return NULL
 int show_page(map* data) => data.page_data().page_html().http_out(); return 0
 int is_post() => return _globals.req.method===:post
 map* post_data(){

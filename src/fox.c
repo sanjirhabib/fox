@@ -54,7 +54,7 @@ int cc(char* infile, char* outfile, char* profile, char* opts, int keepfiles){
 	fox_c(in,xstr(infile,".c", End));
 	fox_h(in,xstr(infile,".h", End));
 	//-I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib 
-	char* cflags="-m64 -std=gnu99 -Wno-unused-command-line-argument -g";
+	char* cflags="-m64 -std=gnu99 -Wno-unused-command-line-argument";
 	char* xlibs="-lmarkdown -lcurl -lsqlite3";
 	// -fdata-sections -ffunction-sections -Wl,-dead_strip -Wl,-emain
 	map* switches=xmap(
@@ -4267,7 +4267,7 @@ char* tz_dst(char* tz, char* date){
 	return tm->tm_isdst==1 ? "DST" : NULL;
 };
 double tz_offset(char* tz, char* date){
-//in decimal hours
+//in hours
 	time_t ret=str_time(date);
 	struct tm* tm=gmtime(&ret);
 	if(tz){ setenv("TZ", tz, 1); };
@@ -4276,8 +4276,8 @@ double tz_offset(char* tz, char* date){
 	time_t gm=mktime(tm);
 	return floor((ret-gm)+.5)/3600;
 };
-char* tz_utc(char* tz, char* date){
-	double off=tz_offset(tz,date);
+char* tz_utc(char* tz, char* date){ return offset_utc(tz_offset(tz,date)); };
+char* offset_utc(double off){
 	if(!off){ return "UTC"; };
 	char sign=off<0 ? '-' : '+';
 	off=fabs(off);

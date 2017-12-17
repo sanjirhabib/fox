@@ -198,7 +198,7 @@ map* lite_trigger_slno(char* name, char* pkey, char* by);
 map* lite_trigger_tree(char* name, char* pkey);
 char* page_html(map* data);
 map* page_data(map* data);
-int not_found(char* path);
+void* not_found(char* path);
 int show_page(map* data);
 int is_post();
 map* post_data();

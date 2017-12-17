@@ -937,16 +937,6 @@ map* ptrs_vec(void** ptrs,int len){
 	ret->vars=ptrs;
 	return ret;
 };
-int init_gc(void** sp){
-	_clockstart=clock_cycles();
-	_gcdata.run_time=microtime();
-	_gcdata.stack_head=sp;
-	*sp=_globals=new_map();
-	signal(SIGSEGV,fox_signal_handler);
-	signal(SIGABRT,fox_signal_handler);
-	init_rand();
-	return 0;
-};
 int exec(char* cmd,char** output){
 	FILE* fp;
 	char buff[2048];
@@ -992,9 +982,20 @@ map* env_vars(){
 	return ret;
 };
 map* argv_map(char** argv,int argc){
+//	_gcdata.stack_head=(void**)argv
 	map* ret=new_vec();
 	ret->len=argc;
 	ret->vars=(void**)argv;
 	add(_globals,"args",ret);
 	return ret;
+};
+int init_gc(void** sp){
+	_clockstart=clock_cycles();
+	_gcdata.run_time=microtime();
+	_gcdata.stack_head=sp;
+	*sp=_globals=new_map();
+	signal(SIGSEGV,fox_signal_handler);
+	signal(SIGABRT,fox_signal_handler);
+	init_rand();
+	return 0;
 };

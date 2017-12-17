@@ -54,7 +54,7 @@ int cc(char* infile, char* outfile=NULL, char* profile="debug", char* opts=NULL,
 	in.fox_c(infile..".c")
 	in.fox_h(infile..".h")
 	//-I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib 
-	cflags="-m64 -std=gnu99 -Wno-unused-command-line-argument -g"
+	cflags="-m64 -std=gnu99 -Wno-unused-command-line-argument"
 	xlibs="-lmarkdown -lcurl -lsqlite3"
 	// -fdata-sections -ffunction-sections -Wl,-dead_strip -Wl,-emain
 	switches={
@@ -4267,7 +4267,7 @@ char* tz_dst(char* tz=NULL, char* date=NULL){
 	return tm->tm_isdst==1 ? :DST : ''
 }
 double tz_offset(char* tz=NULL, char* date=NULL){
-//in decimal hours
+//in hours
 	time_t ret=date.str_time()
 	struct tm* tm=gmtime(&ret)
 	if tz => setenv(:TZ, tz, 1);
@@ -4276,8 +4276,8 @@ double tz_offset(char* tz=NULL, char* date=NULL){
 	time_t gm=mktime(tm)
 	return floor((ret-gm)+.5)/3600
 }
-char* tz_utc(char* tz, char* date=NULL){
-	double off=tz.tz_offset(date)
+char* tz_utc(char* tz, char* date=NULL) => return tz.tz_offset(date).offset_utc()
+char* offset_utc(double off){
 	if !off => return :UTC
 	sign=off<0 ? '-' : '+'
 	off=fabs(off)

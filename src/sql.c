@@ -2134,7 +2134,7 @@ map* page_data(map* data){
 	add(data,"login",login);
 	return data;
 };
-int not_found(char* path){ http_out(xstr("The requested content ", (path ? path : map_val(map_val(map_val(_globals,"req"),"path"),"full")), " was not found on the server.", End),"404 Not Found","text/html; charset=utf-8",NULL); return -404; };
+void* not_found(char* path){ http_out(xstr("The requested content ", (path ? path : map_val(map_val(map_val(_globals,"req"),"path"),"full")), " was not found on the server.", End),"404 Not Found","text/html; charset=utf-8",NULL); return NULL; };
 int show_page(map* data){ http_out(page_html(page_data(data)),"200 OK","text/html; charset=utf-8",NULL); return 0; };
 int is_post(){ return str_eq(map_val(map_val(_globals,"req"),"method"),"post"); };
 map* post_data(){

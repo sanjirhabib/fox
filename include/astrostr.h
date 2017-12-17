@@ -5,6 +5,7 @@ double dhaka_lng();
 double dhaka_lat();
 double kaba_lng();
 double kaba_lat();
+double qibla_direction(double lng, double lat);
 double kaba_sun_set(double jd);
 double kaba_moon_set(double jd);
 double hijri_month_length(int lun);
