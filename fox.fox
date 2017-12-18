@@ -8,7 +8,7 @@ TODO:
 CONSIDER:
 	sym(char*);
 */
-#include "fox.h"
+#include <fox.h>
 
 #define MAXMEM 10*1024*1024
 #define MIN_CHAIN 1
@@ -18,36 +18,23 @@ CONSIDER:
 #endif
 
 
-char* strstr(const char* str1,const char* str2);
-int chdir(const char* path);
-void* invoke(map* v,char* name);
-map* reflect();
-int max_mem();
-int curr_mem();
-char* version();
-map* args_map();
-void* px(void* str,int newline=1);
-void xexit(int val=0);
-void* fox_error(char* msg,int dump=0);
-void* call_php(map* params,char* func);
+//char* strstr(const char* str1,const char* str2);
+//int chdir(const char* path);
+//int max_mem();
+//int curr_mem();
+//void* invoke(map* v,char* name);
+//map* reflect();
+//char* version();
+//map* args_map();
+//void* px(void* str,int newline=1);
+//void xexit(int val=0);
+//void* fox_error(char* msg,int dump=0);
+//void* call_php(map* params,char* func);
 
-int cgi(char* infile="index.fox", char* outfile="index.cgi",char* opts=NULL,int keepfiles=1){
-	ret=infile.cc(outfile, :cgi, opts, keepfiles)
-	if ret => return ret
-	write_htaccess()
-	return ret
+int cgi(char* infile="index.fox", char* profile=:cgi, char* outfile="index.cgi",char* opts=NULL,int keepfiles=1){
+	return infile.cc(profile, outfile, opts, keepfiles)
 }
-char* write_htaccess(){
-	if ".htaccess".is_file() => return NULL
-	return ---
-	RewriteEngine On
-	RewriteCond %{REQUEST_FILENAME} !-f
-	RewriteCond %{REQUEST_FILENAME} !-d
-	RewriteRule ^(.+)$ index.cgi [L,QSA]
-
-	---.write_file(".htaccess")
-}
-int cc(char* infile, char* outfile=NULL, char* profile="debug", char* opts=NULL, int keepfiles=0){
+int cc(char* infile, char* profile="debug", char* outfile=NULL, char* opts=NULL, int keepfiles=0){
 	infile=infile.file_rename(,".fox")
 	if !outfile => outfile=infile
 	in=infile..".fox"
@@ -58,11 +45,12 @@ int cc(char* infile, char* outfile=NULL, char* profile="debug", char* opts=NULL,
 	xlibs="-lmarkdown -lcurl -lsqlite3"
 	// -fdata-sections -ffunction-sections -Wl,-dead_strip -Wl,-emain
 	switches={
-		debug: "-O0 -lfox $cflags $xlibs -lfoxmain"
+		debug: "-g -O0 -lfox $cflags $xlibs -lfoxmain"
 		speed: "-O3 -lfox $cflags $xlibs -lfoxmain"
 		size: "-Os -lfox $cflags -lfoxmain"
 		static: "-lfoxstatic -lfoxcmdstatic $cflags -fdata-sections -ffunction-sections -Wl,-dead_strip -lfoxmain"
 		cgi: "-Os -lfoxstatic -lfoxcgistatic $cflags $xlibs -lfoxmaincgi"
+		scgi: "-Os -lfoxstatic -lfoxcgistatic $cflags $xlibs -lfoxmaincgi -fdata-sections -ffunction-sections -Wl,-dead_strip "
 	}
 	profile = switches[profile] or switches[:debug]
 	ret="gcc $infile.c -o $outfile $profile $opts -std=gnu99 -Wno-logical-op-parentheses -lm 2>&1"
@@ -83,11 +71,11 @@ char* file_dir(char* file){
 }
 void write_source(){
 	source_funcs()
+	"fox.h".file_rename(:include).write_foxh()
 	source_files().each infile
 		if infile.str_end(".h") => continue
 		infile.fox_c(infile.file_rename(:src,".fox")..".c")
-		infile.fox_h(infile.file_rename(:include,".fox")..".h")
-	"fox.h".file_rename(:include).write_foxh()
+		//infile.fox_h(infile.file_rename(:include,".fox")..".h")
 	source_funcs().funcs_meta().write_file("meta.c".file_rename(:src))
 	mem_usage().px()
 }
@@ -147,7 +135,7 @@ char* mem_usage(){
 	totaltime=total_time()
 	gctime=gc_time()
 	codetime=runtime-totaltime-gctime
-	return "Memory:%s-%s [%d%% garbage], Pages: %d/%d, GC runs=%d-%d, Time=%d[gc]+%d[code]=%d ms [%d%% gc] GC Max: %d msec".mstr(
+	return "Memory:%s-%s [%d%% garbage], Pages: %d/%d, GC runs=%d-%d, Time=%d[gc]+%d[code]=%d ms [%d%% gc] GC Max: %d msec, Root Objs: %d".mstr(
 		_gcdata.max_mem.int_kb(),
 		max_mem().int_kb(),
 		(_gcdata.max_mem-_gcdata.max_used)*100/_gcdata.max_mem,
@@ -159,7 +147,8 @@ char* mem_usage(){
 		codetime,
 		runtime,
 		gctime*100/(codetime+gctime),
-		_gcdata.gcmax/1000
+		_gcdata.gcmax/1000,
+		_gcdata.max_roots
 	)
 }
 char* int_kb(size_t i,char* unit=:B){
@@ -936,10 +925,6 @@ map* vec_splice(map* mp,int from,int del,map* add){
 	if offset<0 => memset(mp->vars+mp->len,0,sizeof(void*)*offset*-1)
 	return mp
 }
-char* str_has(char* str,char* sub){
-	if !str||!sub||!str.is_str() => return NULL
-	return str.str_str(sub)
-}
 char* str_str(char* in, char* sub){
 	len=in.str_len()
 	sublen=sub.str_len()
@@ -1084,20 +1069,6 @@ char* str_lower(char* s){
 	for(;*s;++s) *s=tolower(*s)
 	return ret
 }
-map* str_split(char* str,char* by,int limit=0){
-	if !str => return NULL
-	ret=[]
-	head=str
-	end=''
-	int found=0
-	while (end=head.str_has(by))
-		ret[]=head.sub_str(0,end-head)
-		head=end+by.str_len()
-		if limit && ++found==limit-1 => break
-	
-	ret[]=head.str_dup() //head.str_dup()
-	return ret
-}
 char* toks_str(map* mp){
 	ret=''
 	mp.each val => ret.=val.is_map() ? val.toks_str() : val
@@ -1222,7 +1193,7 @@ char* has_word(char* str,char* words){
 	word=words.str_dup()
 	int total=word.terminate_words()
 	for int i=0;i<total;i++
-		ret=str.strstr(word)
+		char* ret=str.strstr(word)
 		if ret => return ret
 		word+=word.str_len()+1
 	
@@ -2106,7 +2077,7 @@ int stm_start(map* mp,int idx,char* terms="};,).>:"){
 		idx-=2
 	return idx+2
 }
-map* syn_func(map* syn,int with_body=0){
+map* syn_func(map* syn,int with_body=0,char* filename=NULL){
 	len=syn.map_len()
 	map* body=NULL
 	params_at=5
@@ -2131,6 +2102,7 @@ map* syn_func(map* syn,int with_body=0){
 		if v3.is_word(:inline) => type.vec_del(i3,2)
 	ret={name: name, type: type.toks_c(), decltype: decltype, params: params}
 	if with_body => ret.body=body
+	if filename => ret.file=filename
 	return ret
 }
 map* file_callmap(char* filename) => return filename.file_funcs(1).func_depends()
@@ -2138,22 +2110,20 @@ map* func_depend(map* mp,map* ret={}){
 	for int i=0; i<mp.map_len(); i+=2
 		if mp[i+1].is_map() => mp[i+1].func_depend(ret); continue
 		name=mp.syn_is_call(i)
-		if name => ret[name]=name
+		if name => ret[name]=funcs()[name].file
 	return ret
 }
 map* func_depends(map* mp){
 	ret={}
 	mp.each fn,name
-		name.px()
-		ret.name=fn.body.func_depend()
-		ret.name.each val => "\t$val".px()
+		fn.body.func_depend().each val,key => "$name $key $val".px()
 	return ret
 }
-map* syn_funcs(map* mp,int with_body=0){
+map* syn_funcs(map* mp,int with_body=0,char* filename=NULL){
 	ret={}
 	for int i=1; i<mp.map_len(); i+=2
 		if mp[i].is_func_decl()
-			fn=mp[i].syn_func(with_body)
+			fn=mp[i].syn_func(with_body,filename)
 			if fn.name===:main => continue
 			ret[fn.name]=fn
 	return ret
@@ -2209,12 +2179,12 @@ map* c_structs(char* in){
 			ret[toks[hascurly+6]]=ret[name]
 	return ret
 }
-map* x_funcs(char* in,int with_body=0){
+map* x_funcs(char* in,int with_body=0,char* filename=NULL){
 	return in.x_map()
 		.add_curly(0)
 		.add_semicolon(0)
 		.toks_syn(0)
-		.syn_funcs(with_body)
+		.syn_funcs(with_body,filename)
 }
 map* x_toks(char* in,int is_script=0){
 	if !in => return NULL
@@ -2777,7 +2747,7 @@ char* callfunc_c(map* funcs){
 		if fdups[v.name] => continue
 		fdups[v.name]=1
 		if k===:args_map => continue
-		if v.name.is_word("main run run_cgi") => continue
+		if v.name.is_word("main run") => continue
 		str_params=v.func_ccall()
 		if(!str_params)
 			continue
@@ -2799,7 +2769,10 @@ char* func_cdecl(map* fn,int show_default=1){
 }
 char* funcs_cdecl(map* fns=funcs(),int show_default=1){
 	ret=""
-	fns.each v ,k,i=> ret=ret.str_join("\n",v.func_cdecl(show_default))
+	fns.each v, k, i
+		if k.is_word("main") => continue
+		ret.=v.func_cdecl(show_default)
+		ret.="\n"
 	return ret
 }
 char* foxh(){
@@ -2908,7 +2881,13 @@ char* foxh(){
 
 	#define End (char*)(0x0FF1B14E059AD3BA)
 
-	void* php_global(char* name);
+	void* invoke(map* v,char* name);
+	char* strstr(const char* str1,const char* str2);
+	int chdir(const char* path);
+	int max_mem();
+	int curr_mem();
+	map* reflect();
+	char* version();
 
 	---'
 }
@@ -3202,73 +3181,62 @@ char* funcs_meta(map* funcs, char* prefix=''){
 
 	---.x_c()
 }
-map* eval_params(map* sent,char* name,map* env=NULL){
-	name.assert()
-	ret={}
-	fn=funcs()[name]
-	if !fn => "Function $name() not found".fox_error()
-	named=0
-	fn.params.each v,k,i
-		if k==="..."
-			for int i2=i; i2<=sent->len; i2++
-				ret[]=sent[i2]
-			break
-		else if sent.map_has_key(k)
-			named=1
-			ret[k]=sent[k]
-		else if !named && sent.map_len()>i && sent.map_key(i).is_i()
-			ret[k]=sent[i]
-		else if env.map_has_key(k)
-			named=1
-			ret[k]=env[k]
-		else if k===:env
-			ret[k]=env
-		else if v.default
-			ret[k]=v.default.eval()
-		else
-			"Parameter missing in $(fn.name)($k=?) in $(fn.func_cdecl())\nargs=$(sent.json())".fox_error()
-			assert(0)
-	return ret
+map* funcs(){
+	if !_globals.cache.reflect=>_globals.cache.reflect=reflect()
+	return _globals.cache.funcs ? _globals.cache.funcs : _globals.cache.reflect.funcs
 }
-char* to_c(void* val){
-	if !val => return :NULL
-	if val.is_i() => return val.is_int().int_str()
-	if val.is_f() => return val.is_double().double_str()
-	if val.is_str() => return val.str_quote()
-	if val.is_map() => return val.json()
-	assert(0)
-	return :fox_error
+void* fox_run(char* in){
+	int halt=0
+	return in.x_toks(1).fox_eval({args: _globals.args},&halt)
 }
-char* str_shorten(char* in,int max=40){
-	if in.str_len()>max => return in.sub_str(0,max).."..."
-	return in
-}
-char* call_c(map* params,char* name){
-	ret=[]
-	params.each v,,i
-		ret[]=v.to_c().str_shorten()
-	return "$name($(ret.map_join(\", \")))"
-}
-void* call_func(map* params,char* name,map* env=NULL){
-	params=params.eval_params(name,env)
-	if name.str_start(:php_) => return params.call_php(name.sub_str(5))
-	map* user=_globals.cache.userfuncs[name]
-//	_globals.add_key(:callstack,Vector)[]=name //params.call_c(name)
+void* fox_eval(map* mp,map* env,int* halt){
+	if !mp => return NULL
+	assert(mp.ptr_type()==Vector)
+	enum {HBreak=1, HReturn, HContinue};
+	void* v=mp[1]
 	void* ret=NULL
-	if user
-		int halt=0
-		ret=user.fox_eval(params,&halt)
+	if v.is_map()
+		mp.each v3,k3,i3
+			ret=v3.fox_eval(env,halt)
+			if *halt => return ret
+		return ret
+	if v===:if
+		idx=5
+		while 1
+			if mp[idx].eval_toks(env).is_true()
+				return mp[idx+6].fox_eval(env,halt)
+			else if mp[idx+10]===:else
+				if mp[idx+12]===:if => idx+=16
+				else return mp[idx+14].fox_eval(env,halt)
+			else
+				return NULL
+	else if v===:while
+		while mp[5].eval_toks(env).is_true()
+			ret=mp[11].fox_eval(env,halt)
+			if *halt==HContinue => *halt=0
+			else if *halt==HBreak => *halt=0; break
+			else if *halt => break
+		return ret
+	else if v===:for
+		map* conds=mp[5]
+		for conds[1].eval_toks(env); conds[3].eval_toks(env).is_true(); conds[5].eval_toks(env)
+			ret=mp[11].fox_eval(env,halt)
+			if *halt==HContinue => *halt=0
+			else if *halt==HBreak => *halt=0; break
+			else if *halt => break
+		return ret
+	else if v===:return
+		*halt=HReturn
+		return mp.eval_toks(env)
+	else if v===:break
+		*halt=HBreak
+	else if v===:continue
+		*halt=HContinue
+	else if mp.is_func_decl()
+		return ret
 	else
-		ret=params.invoke(name)
-//	_globals.callstack.vec_del(-1)
+		return mp.eval_toks(env)
 	return ret
-}
-void* data_exec(void* data,map* env=NULL){
-	if !data => return NULL
-	if data.is_str() => return data	
-	if !data.is_map() => return data.to_str()
-	char* func=data[0]
-	return data.map_del(0).vec_compact().call_func(func,env)
 }
 static void* eval_toks(map* mp,map* env){
 	int idx=1
@@ -3278,6 +3246,33 @@ static void* eval_expr(map* mp,int* idx,map* env,int level){
 	void* last=NULL
 	*idx=mp.eval_expr_cont(*idx,env,&last,level)
 	return last
+}
+void* binary_op(void* left, char oper, void* right){
+	if left.is_f()||right.is_f()
+		double a=left.is_double()
+		double b=right.is_double()
+		if oper=='+' => return (a+b).double_var()
+		if oper=='-' => return (a-b).double_var()
+		if oper=='/' => return (a/b).double_var()
+		if oper=='*' => return (a*b).double_var()
+		return 0.double_var()
+		"Unknown operator $oper".fox_error()
+	long long a=left.is_int()
+	long long b=right.is_int()
+	if oper=='+' => return (a+b).int_var()
+	if oper=='-' => return (a-b).int_var()
+	if oper=='/' => return (a/b).int_var()
+	if oper=='*' => return (a*b).int_var()
+	"Unknown operator $oper".fox_error()
+	return NULL
+}
+int is_true(void * val){
+	if !val => return 0
+	if val.is_i() => return val.is_int()
+	if val.is_f() => return val.is_double()
+	if val.is_map() => return val.map_len()
+	if val.is_str() => return val.str_len()
+	return 1
 }
 void* eval(char* in,map* env=NULL){
 	return in.x_toks().eval_toks(env)
@@ -3440,32 +3435,71 @@ int eval_expr_cont(map* mp,int idx,map* env,void** last,int level){
 	*last=ret
 	return idx
 }
-void* binary_op(void* left, char oper, void* right){
-	if left.is_f()||right.is_f()
-		double a=left.is_double()
-		double b=right.is_double()
-		if oper=='+' => return (a+b).double_var()
-		if oper=='-' => return (a-b).double_var()
-		if oper=='/' => return (a/b).double_var()
-		if oper=='*' => return (a*b).double_var()
-		return 0.double_var()
-		"Unknown operator $oper".fox_error()
-	long long a=left.is_int()
-	long long b=right.is_int()
-	if oper=='+' => return (a+b).int_var()
-	if oper=='-' => return (a-b).int_var()
-	if oper=='/' => return (a/b).int_var()
-	if oper=='*' => return (a*b).int_var()
-	"Unknown operator $oper".fox_error()
-	return NULL
+void* call_func(map* params,char* name,map* env=NULL){
+	params=params.eval_params(name,env)
+	if name.str_start(:php_) => return params.call_php(name.sub_str(5))
+	map* user=_globals.cache.userfuncs[name]
+	void* ret=NULL
+	if user
+		int halt=0
+		ret=user.fox_eval(params,&halt)
+	else
+		ret=params.invoke(name)
+	return ret
 }
-int is_true(void * val){
-	if !val => return 0
-	if val.is_i() => return val.is_int()
-	if val.is_f() => return val.is_double()
-	if val.is_map() => return val.map_len()
-	if val.is_str() => return val.str_len()
-	return 1
+void* data_exec(void* data,map* env=NULL){
+	if !data => return NULL
+	if data.is_str() => return data	
+	if !data.is_map() => return data.to_str()
+	char* func=data[0]
+	return data.map_del(0).vec_compact().call_func(func,env)
+}
+map* eval_params(map* sent,char* name,map* env=NULL){
+	name.assert()
+	ret={}
+	fn=funcs()[name]
+	if !fn => "Function $name() not found".fox_error()
+	named=0
+	fn.params.each v,k,i
+		if k==="..."
+			for int i2=i; i2<=sent->len; i2++
+				ret[]=sent[i2]
+			break
+		else if sent.map_has_key(k)
+			named=1
+			ret[k]=sent[k]
+		else if !named && sent.map_len()>i && sent.map_key(i).is_i()
+			ret[k]=sent[i]
+		else if env.map_has_key(k)
+			named=1
+			ret[k]=env[k]
+		else if k===:env
+			ret[k]=env
+		else if v.default
+			ret[k]=v.default.eval()
+		else
+			"Parameter missing in $(fn.name)($k=?) in $(fn.func_cdecl())\nargs=$(sent.json())".fox_error()
+			assert(0)
+	return ret
+}
+char* to_c(void* val){
+	if !val => return :NULL
+	if val.is_i() => return val.is_int().int_str()
+	if val.is_f() => return val.is_double().double_str()
+	if val.is_str() => return val.str_quote()
+	if val.is_map() => return val.json()
+	assert(0)
+	return :fox_error
+}
+char* str_shorten(char* in,int max=40){
+	if in.str_len()>max => return in.sub_str(0,max).."..."
+	return in
+}
+char* call_c(map* params,char* name){
+	ret=[]
+	params.each v,,i
+		ret[]=v.to_c().str_shorten()
+	return "$name($(ret.map_join(\", \")))"
 }
 char* read_line(FILE* fp){
 	char buff[1024]
@@ -4135,7 +4169,7 @@ char* fork_exec(char* cmd,map* params){
 		else if status.WIFSIGNALED() => "command %s killed".mstr(cmd)
 	return NULL
 }
-map* source_files() => return ["core.fox","fox.fox","sql.fox","cmd.fox","cgi.fox","astro/astro.h","astrostr.fox"]
+map* source_files() => return ["astrostr.fox", "cgi.fox", "cmd.fox", "core.fox", "fox.fox", "generator.fox", "main.fox", "maincgi.fox", "run.fox", "sql.fox", "astro/astro.h"]
 map* source_funcs(){
 	if !_globals.cache.funcs
 		map* mp={}	
@@ -4145,65 +4179,8 @@ map* source_funcs(){
 		_globals.cache.funcs=mp
 	return _globals.cache.funcs
 }
-map* file_funcs(char* filename,int withbody=0) => return filename.file_read().x_funcs(withbody)
+map* file_funcs(char* filename,int withbody=0) => return filename.file_read().x_funcs(withbody,filename)
 char* help() => return funcs().funcs_cdecl()
-map* funcs(){
-	if !_globals.cache.reflect=>_globals.cache.reflect=reflect()
-	return _globals.cache.funcs ? _globals.cache.funcs : _globals.cache.reflect.funcs
-}
-void* fox_run(char* in){
-	int halt=0
-	return in.x_toks(1).fox_eval({args: _globals.args},&halt)
-}
-void* fox_eval(map* mp,map* env,int* halt){
-	if !mp => return NULL
-	assert(mp.ptr_type()==Vector)
-	enum {HBreak=1, HReturn, HContinue};
-	void* v=mp[1]
-	void* ret=NULL
-	if v.is_map()
-		mp.each v3,k3,i3
-			ret=v3.fox_eval(env,halt)
-			if *halt => return ret
-		return ret
-	if v===:if
-		idx=5
-		while 1
-			if mp[idx].eval_toks(env).is_true()
-				return mp[idx+6].fox_eval(env,halt)
-			else if mp[idx+10]===:else
-				if mp[idx+12]===:if => idx+=16
-				else return mp[idx+14].fox_eval(env,halt)
-			else
-				return NULL
-	else if v===:while
-		while mp[5].eval_toks(env).is_true()
-			ret=mp[11].fox_eval(env,halt)
-			if *halt==HContinue => *halt=0
-			else if *halt==HBreak => *halt=0; break
-			else if *halt => break
-		return ret
-	else if v===:for
-		map* conds=mp[5]
-		for conds[1].eval_toks(env); conds[3].eval_toks(env).is_true(); conds[5].eval_toks(env)
-			ret=mp[11].fox_eval(env,halt)
-			if *halt==HContinue => *halt=0
-			else if *halt==HBreak => *halt=0; break
-			else if *halt => break
-		return ret
-	else if v===:return
-		*halt=HReturn
-		return mp.eval_toks(env)
-	else if v===:break
-		*halt=HBreak
-	else if v===:continue
-		*halt=HContinue
-	else if mp.is_func_decl()
-		return ret
-	else
-		return mp.eval_toks(env)
-	return ret
-}
 void src(map* mp,int from=0,int len=0,char* msg=NULL){
 	if !len => len=mp->len-from
 	"$(mp.vec_sub(from,len).json())".px()
@@ -4242,47 +4219,6 @@ map* toks_syn(map* toks,int recurse=1){
 	if line.map_len() => ret.xadd(NULL,line)
 	if toks.map_len()%2 => ret.xadd(NULL,[toks[toks.map_len()-1],NULL])
 	return ret
-}
-time_t str_time(char* in){
-	struct tm tm={0}
-	tm.tm_year=in.sub_str(0,4).atoi()-1900
-	tm.tm_mon=in.sub_str(5,2).atoi()-1
-	tm.tm_mday=in.sub_str(8,2).atoi()
-	if in.str_len()==19
-		tm.tm_hour=in.sub_str(11,2).atoi()
-		tm.tm_min=in.sub_str(14,2).atoi()
-		tm.tm_sec=in.sub_str(17,2).atoi()
-	return mktime(&tm)
-}
-char* time_str(time_t timer=0){
-	char buffer[20]
-	if !timer => timer=time(0)
-	strftime(buffer,20, "%Y-%m-%d %H:%M:%S",localtime(&timer))
-	return buffer.str_dup()
-}
-char* tz_dst(char* tz=NULL, char* date=NULL){
-	time_t ret=date.str_time()
-	if tz => setenv(:TZ, tz, 1);
-	struct tm* tm=localtime(&ret)
-	return tm->tm_isdst==1 ? :DST : ''
-}
-double tz_offset(char* tz=NULL, char* date=NULL){
-//in hours
-	time_t ret=date.str_time()
-	struct tm* tm=gmtime(&ret)
-	if tz => setenv(:TZ, tz, 1);
-	struct tm* tml=localtime(&ret)
-	tm->tm_isdst = tml->tm_isdst
-	time_t gm=mktime(tm)
-	return floor((ret-gm)+.5)/3600
-}
-char* tz_utc(char* tz, char* date=NULL) => return tz.tz_offset(date).offset_utc()
-char* offset_utc(double off){
-	if !off => return :UTC
-	sign=off<0 ? '-' : '+'
-	off=fabs(off)
-	if off-floor(off)<1/100. => return mstr("UTC%c%d",sign,(int)off)
-	return mstr("UTC%c%d:%02d",sign,(int)off,(int)((off-(int)off)*60+0.5))
 }
 char* increase_version() => return (".version.txt".file_read().atoi()+1).int_str().write_file(".version.txt")
 int call_variadic_int(map* mp,void* fp,char* name){
@@ -4833,7 +4769,7 @@ char* skip_upto(char* in,char* chars=" \t\n\r"){
 void* data_unquote(char* in){
 	if !in || !in.str_len() => return NULL
 	if "\"'`".str_chr(*in) => return in.str_unquote()
-	if *in=='=' => return in.sub_str(1).eval()
+	if *in=='=' => return in //return in.sub_str(1).eval()
 	if in.str_start("---") => return in.sub_str(3,-3)
 	if *in=='{' => return in.sub_str(1,-1).prop_map()
 	if *in=='[' => return in.sub_str(1,-1).prop_vec()
@@ -4957,4 +4893,22 @@ char* str_tr(char* in, map* replace){
 		ret.=saved.sub_str(0,in-saved)
 
 	return ret	
+}
+time_t str_time(char* in){
+	if !in => return time(0)
+	struct tm tm={0}
+	tm.tm_year=in.sub_str(0,4).atoi()-1900
+	tm.tm_mon=in.sub_str(5,2).atoi()-1
+	tm.tm_mday=in.sub_str(8,2).atoi()
+	if in.str_len()==19
+		tm.tm_hour=in.sub_str(11,2).atoi()
+		tm.tm_min=in.sub_str(14,2).atoi()
+		tm.tm_sec=in.sub_str(17,2).atoi()
+	return mktime(&tm)
+}
+char* time_str(time_t timer=0){
+	char buffer[20]
+	if !timer => timer=time(0)
+	strftime(buffer,20, "%Y-%m-%d %H:%M:%S",localtime(&timer))
+	return buffer.str_dup()
 }

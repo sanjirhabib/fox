@@ -2012,11 +2012,11 @@ char* page_html(map* data){
 	"<title>", map_val(data,"title"), "</title>\n", 
 	"<script type=\"application/ld+json\">\n", 
 	"{\n", 
-	"\"@context\": \"http://schema.org\",\n", 
-	"\"@type\": \"WebSite\",\n", 
-	"\"name\": \"Habib's Site\",\n", 
-	"\"alternateName\": \"Sanjir Habib\",\n", 
-	"url\": \"", full_url(map_val(map_val(map_val(_globals,"req"),"path"),"full")), "\"", 
+	"	\"@context\": \"http://schema.org\",\n", 
+	"	\"@type\": \"WebSite\",\n", 
+	"	\"name\": \"Habib's Site\",\n", 
+	"	\"alternateName\": \"Sanjir Habib\",\n", 
+	"\t\"url\": \"", full_url(map_val(map_val(map_val(_globals,"req"),"path"),"full")), "\"\n", 
 	"}\n", 
 	"</script>\n", 
 	"<link rel=\"apple-touch-icon\" href=\"/apple-touch-icon.png\">\n", 
@@ -2085,7 +2085,7 @@ map* page_data(map* data){
 	if(map_val(map_val(map_val(_globals,"req"),"get"),"_print")){ return data; };
 	add(data,"footer",xstr("", 
 	"Run Time: ",int_str( run_time()), "ms=",int_str( gc_time()), "GC+",int_str( run_time()-total_time()-gc_time()), "Code+",int_str( total_time()), "DB\n", 
-	"Malloc: ",int_str( total_kb()), "KB. Total: ",int_str( max_mem()/1024), "KB.\n", 
+	"Heap: ",int_str( total_kb()), "KB. Stack: ", _gcdata.max_roots, " Ptrs Total: ", max_mem()/1024, "KB.\n", 
 	"GC: ",int_str( gc_runs()), "runs.", 
 	"", End));
 	add(data,"footer",xcat(map_val(data,"footer"),((map_val(_globals,"js") ? xstr("<script>\n",map_join(map_val(_globals,"js"),"\n"),"</script>", End) : NULL)), End));
@@ -2198,4 +2198,57 @@ char* add_tab(char* path,char* name){
 			name=str_title(sub_str(path,i+1,-1)); }; };
 	add(add_key(_globals,"tabs",Map),path,name);
 	return name;
+};
+char* tz_dst(char* tz, char* date){
+	time_t ret=str_time(date);
+	if(tz){ setenv("TZ", tz, 1); };
+	struct tm* tm=localtime(&ret);
+	return tm->tm_isdst==1 ? "DST" : NULL;
+};
+double tz_offset(char* tz, char* date){
+//in hours
+	time_t ret=str_time(date);
+	struct tm tm={0};
+	gmtime_r(&ret,&tm);
+	if(tz){ setenv("TZ", tz, 1); };
+	struct tm tml={0};
+	localtime_r(&ret,&tml);
+	tm.tm_isdst = tml.tm_isdst;
+	time_t gm=mktime(&tm);
+	return (ret-gm)/3600.0;
+};
+char* tz_utc(char* tz, char* date){ return offset_utc(tz_offset(tz,date)); };
+char* offset_utc(double off){
+	if(!off){ return "UTC"; };
+	char sign=off<0 ? '-' : '+';
+	off=fabs(off);
+	if(off-floor(off)<1/100.){ return mstr("UTC%c%d",sign,(int)off, End); };
+	return mstr("UTC%c%d:%02d",sign,(int)off,(int)((off-(int)off)*60+0.5), End);
+};
+char* date_ymd(char* in,int* year, int* month,int* day){
+	*year=*month=*day=0;
+	if(!in){ return NULL; };
+	sscanf(in,"%04d-%02d-%02d",year,month,day);
+	return in;
+};
+char* date_human(char* in){
+	int year=0;
+	int month=0;
+	int day=0;
+	date_ymd(in,&year,&month,&day);
+	return xstr(int_str(day),"-",month_en3(month),"-",int_str(year), End);
+};
+char* tz_human(double tz){
+	if(!tz){ return "UTC"; };
+	int mins=(int)(frac(tz)*60);
+	if(!mins){ return mstr("UTC%c%d", tz<0 ? '-' : '+', abs((int)(tz)), mins, End); };
+	return mstr("UTC%c%d:%d", tz<0 ? '-' : '+', (int)(tz), mins, End);
+};
+map* tz_data(char* name,char* date){
+	return xmap(
+		"name", name,
+		"offset",double_var( tz_offset(name,date)),
+		"dst", tz_dst(name,date),
+		"utc", tz_utc(name,date)
+	, End);
 };

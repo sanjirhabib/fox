@@ -1,4 +1,4 @@
-#include "fox.h"
+#include <fox.h>
 int run(map* args){
 	add(add_key(_globals,"cache",Map),"reflect",reflect());
 	if(args->len==1){

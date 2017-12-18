@@ -1,0 +1,55 @@
+#line 2 "/web/fox/generator.fox"
+#include <fox.h>
+
+char* gen_htaccess(char* outfile=NULL){
+	return ---
+	RewriteEngine On
+	#RewriteCond %{HTTPS} off
+	#RewriteRule (.*) https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+	RewriteCond %{REQUEST_FILENAME} !-f
+	RewriteCond %{REQUEST_FILENAME} !-d
+	RewriteRule ^(.+)$ index.cgi [L,QSA]
+	<FilesMatch "\.(db|txt|sql)$">
+	Order allow,deny
+	Deny from all
+	</FilesMatch>
+
+	---.write_file(outfile)
+}
+char* gen_cgi_makefile(char* name, char* outfile=NULL){
+	return ---
+	all:
+		fox cgi $name.fox
+	fox:
+		cd /web/fox && make install && cd -
+	c:
+		fox cgi salat.fox --keepfiles=1
+	
+	---.write_file(outfile)
+}
+char* gen_fox_cgi(char* name,char* outfile=NULL){
+	return ---
+	#line 2 "$name.fox"
+	#include "$name.h"
+
+	int run(map* req){
+		_globals.dbs.$name="$name.db"
+		path=_globals.paths
+
+		if "/".get().end
+			{{
+				title $(name.str_title())'s Application
+			}}.show_page()
+
+		not_found()
+		return 0
+	}
+
+	---.write_file(outfile)
+}
+int cgi_init(char* name){
+	if !(name..".fox").is_file() => name.gen_fox_cgi(name..".fox")
+	if !".htaccess".is_file() => ".htaccess".gen_htaccess()
+	if !:Makefile.is_file() => name.gen_cgi_makefile(:Makefile)
+	return 0
+}

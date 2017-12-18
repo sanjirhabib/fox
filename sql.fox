@@ -2012,11 +2012,11 @@ char* page_html(map* data){
 	<title>$(data.title)</title>
 	<script type="application/ld+json">
 	{
-	"@context": "http://schema.org",
-	"@type": "WebSite",
-	"name": "Habib's Site",
-	"alternateName": "Sanjir Habib",
-	"url": "$(_globals.req.path.full.full_url())"
+		"@context": "http://schema.org",
+		"@type": "WebSite",
+		"name": "Habib's Site",
+		"alternateName": "Sanjir Habib",
+		"url": "$(_globals.req.path.full.full_url())"
 	}
 	</script>
 	<link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -2085,7 +2085,7 @@ map* page_data(map* data){
 	if _globals.req.get._print => return data
 	data.footer=---
 	Run Time: $(run_time())ms=$(gc_time())GC+$(run_time()-total_time()-gc_time())Code+$(total_time())DB
-	Malloc: $(total_kb())KB. Total: $(max_mem()/1024)KB.
+	Heap: $(total_kb())KB. Stack: $(_gcdata.max_roots) Ptrs Total: $(max_mem()/1024)KB.
 	GC: $(gc_runs())runs.
 	---
 	data.footer.=(_globals.js and "<script>\n".._globals.js.map_join("\n").."</script>")
@@ -2198,4 +2198,57 @@ char* add_tab(char* path=NULL,char* name=NULL){
 			name=path.sub_str(i+1,-1).str_title()
 	_globals.tabs[path]=name
 	return name
+}
+char* tz_dst(char* tz=NULL, char* date=NULL){
+	time_t ret=date.str_time()
+	if tz => setenv(:TZ, tz, 1);
+	struct tm* tm=localtime(&ret)
+	return tm->tm_isdst==1 ? :DST : ''
+}
+double tz_offset(char* tz=NULL, char* date=NULL){
+//in hours
+	time_t ret=date.str_time()
+	struct tm tm={0}
+	gmtime_r(&ret,&tm)
+	if tz => setenv(:TZ, tz, 1)
+	struct tm tml={0}
+	localtime_r(&ret,&tml)
+	tm.tm_isdst = tml.tm_isdst
+	time_t gm=mktime(&tm)
+	return (ret-gm)/3600.0
+}
+char* tz_utc(char* tz, char* date=NULL) => return tz.tz_offset(date).offset_utc()
+char* offset_utc(double off){
+	if !off => return :UTC
+	sign=off<0 ? '-' : '+'
+	off=fabs(off)
+	if off-floor(off)<1/100. => return mstr("UTC%c%d",sign,(int)off)
+	return mstr("UTC%c%d:%02d",sign,(int)off,(int)((off-(int)off)*60+0.5))
+}
+char* date_ymd(char* in,int* year, int* month,int* day){
+	*year=*month=*day=0
+	if !in => return NULL
+	sscanf(in,"%04d-%02d-%02d",year,month,day)
+	return in
+}
+char* date_human(char* in){
+	year=0
+	month=0
+	day=0
+	in.date_ymd(year,month,day)
+	return day.."-"..month.month_en3().."-"..year
+}
+char* tz_human(double tz){
+	if !tz => return :UTC
+	mins=(int)(frac(tz)*60)
+	if !mins => return mstr("UTC%c%d", tz<0 ? '-' : '+', abs((int)(tz)), mins)
+	return mstr("UTC%c%d:%d", tz<0 ? '-' : '+', (int)(tz), mins)
+}
+map* tz_data(char* name,char* date=NULL){
+	return {{
+		name =name
+		offset =name.tz_offset(date)
+		dst =name.tz_dst(date)
+		utc =name.tz_utc(date)
+	}}
 }

@@ -1,14 +1,15 @@
 CC=gcc
 INSTALL_DIR?=/usr/local
 CFLAGS=-m64 -Iinclude -std=gnu99 -Wno-logical-op-parentheses -Os -Wno-int-conversion -Llib -L/usr/lib64/ -fPIC -Wno-unused-command-line-argument -I/usr/local/opt/openssl/include -L/usr/local/lib -L/usr/local/opt/openssl/lib -lm
-FOXS=fox.fox core.fox sql.fox cgi.fox cmd.fox main.fox astrostr.fox maincgi.fox
+FOXS=fox.fox core.fox sql.fox cgi.fox cmd.fox main.fox astrostr.fox maincgi.fox generator.fox
 LIBS=-lsqlite3 -lcrypto -lmarkdown -lcurl
 HEADERS=fox.h sql.h
 _XLIBS=libfoxstatic.a libfox.so libfoxcgi.so libfoxcgistatic.a libfoxcmdstatic.a libfoxastro.a libfoxmain.a libfoxmaincgi.a
 XLIBS=$(patsubst %,lib/%,$(_XLIBS))
 DEPS=$(patsubst %,include/%,$(HEADERS))
-_OBJ=core.o meta.o fox.o memsize.o sql.o astro.o astrostr.o md5.o
+_OBJ=core.o meta.o fox.o memsize.o sql.o astro.o astrostr.o md5.o generator.o
 OBJ = $(patsubst %,obj/%,$(_OBJ))
+CFILES = $(patsubst %.fox,src/%.c,$(FOXS))
 
 .DEFAULT_GOAL := bin/fox
 
@@ -17,30 +18,6 @@ OBJ = $(patsubst %,obj/%,$(_OBJ))
 obj/%.o: src/%.c
 	$(CC) -c -o $@ $< $(CFLAGS) $(LIBS)
 
-obj/main.o: src/main.c
-	$(CC) -c -o $@ $< $(CFLAGS) $(LIBS)
-
-src/run.c: run.fox fox.fox
-	fox fox_c run.fox src/run.c
-
-
-obj/run.o: src/run.c
-	$(CC) -c -o $@ $< $(CFLAGS) $(LIBS)
-
-obj/maincgi.o: src/maincgi.c
-	$(CC) -c -o $@ $< $(CFLAGS) $(LIBS)
-
-obj/memsize.o: memsize.c
-	$(CC) -c -o $@ $< $(CFLAGS) $(LIBS)
-
-obj/md5.o: md5.c
-	$(CC) -c -o $@ $< $(CFLAGS) $(LIBS)
-
-src/main.c: main.fox
-	fox fox_c $^ $@
-
-src/maincgi.c: maincgi.fox
-	fox fox_c $^ $@
 
 fox: $(FOXS)
 	$(CC) -c -o obj/fox.o src/fox.c $(CFLAGS) $(LIBS)
@@ -57,6 +34,7 @@ fox: $(FOXS)
 	$(CC) -c -o obj/main.o src/main.c $(CFLAGS) $(LIBS)
 	$(CC) -c -o obj/maincgi.o src/maincgi.c $(CFLAGS) $(LIBS)
 	$(CC) -c -o obj/run.o src/run.c $(CFLAGS) $(LIBS)
+	$(CC) -c -o obj/generator.o src/generator.c $(CFLAGS) $(LIBS)
 	$(CC) -c astro/astro.c -o obj/astro.o $(CFLAGS)
 	rm -f lib/libfoxcmdstatic.a
 	ar rcs lib/libfoxcmdstatic.a obj/cmd.o
@@ -73,9 +51,9 @@ bin/fox: obj/run.o $(DEPS) $(OBJ) $(FOXS) $(XLIBS) Makefile
 	$(CC) -o $@ obj/run.o $(CFLAGS) $(LIBS) -lfoxstatic -lfoxcmdstatic -lfoxastro -lfoxmain
 	bin/fox utests
 
-src/core.c src/fox.c src/sql.c src/cgi.c src/cmd.c src/astrostr.c: $(FOXS)
+$(CFILES) src/meta.c: $(FOXS)
+	echo $(CFILES)
 	fox write_source
-
 
 lib/libfoxcgi.so: $(OBJ) obj/cgi.o
 	rm -f $@
@@ -108,9 +86,6 @@ lib/libfoxastro.a: obj/astro.o
 lib/libfoxstatic.a: $(OBJ)
 	rm -f $@
 	ar rcs $@ $^
-
-src/meta.c: $(FOXS) include/fox.h
-	fox write_meta src/meta.c
 
 obj/astro.o: astro/astro.c
 	cd astro && make

@@ -1,4 +1,4 @@
-#include "astrostr.h"
+#include <fox.h>
 
 void hijri_month_cache_bd(){
 	for(int i=0;i<2000*12;i++) {printf("%09.1f\n",hijri_month_start_bd2(i));};

@@ -2,6 +2,6 @@
 int run(map* req);
 int main(int argc,char** argv){
 	map* globals=NULL
-	argv.argv_map(argc,&globals)
+	argv.argv_map(argc,(void**)&globals)
 	return http_req().run()
 }

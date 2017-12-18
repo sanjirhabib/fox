@@ -1,6 +1,6 @@
 #line 2 "/web/fox/core.fox"
 //#define NDEBUG
-#include "fox.h"
+#include <fox.h>
 
 #define MAXMEM 10*1024*1024
 #define MIN_CHAIN 1
@@ -995,4 +995,22 @@ map* argv_map(char** argv,int argc,void** globals){
 	ret->vars=(void**)argv
 	_globals.args=ret
 	return ret
+}
+map* str_split(char* str,char* by,int limit=0){
+	if !str => return NULL
+	ret=[]
+	head=str
+	end=''
+	int found=0
+	while (end=head.str_has(by))
+		ret[]=head.sub_str(0,end-head)
+		head=end+by.str_len()
+		if limit && ++found==limit-1 => break
+	
+	ret[]=head.str_dup() //head.str_dup()
+	return ret
+}
+char* str_has(char* str,char* sub){
+	if !str||!sub||!str.is_str() => return NULL
+	return str.str_str(sub)
 }
