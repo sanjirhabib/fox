@@ -17,50 +17,6 @@ CONSIDER:
 #define assert(x) if(!(x)){ fox_error("Assert failed!",1); }
 #endif
 
-
-//char* strstr(const char* str1,const char* str2);
-//int chdir(const char* path);
-//int max_mem();
-//int curr_mem();
-//void* invoke(map* v,char* name);
-//map* reflect();
-//char* version();
-//map* args_map();
-//void* px(void* str,int newline=1);
-//void xexit(int val=0);
-//void* fox_error(char* msg,int dump=0);
-//void* call_php(map* params,char* func);
-
-int cgi(char* infile, char* profile, char* outfile,char* opts,int keepfiles){
-	return cc(infile,profile, outfile, opts, keepfiles);
-};
-int cc(char* infile, char* profile, char* outfile, char* opts, int keepfiles){
-	infile=file_rename(infile,NULL,".fox",NULL,NULL,NULL);
-	if(!outfile){ outfile=infile; };
-	char* in=xstr(infile,".fox", End);
-	fox_c(in,xstr(infile,".c", End));
-	fox_h(in,xstr(infile,".h", End));
-	//-I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib 
-	char* cflags="-m64 -std=gnu99 -Wno-unused-command-line-argument";
-	char* xlibs="-lmarkdown -lcurl -lsqlite3";
-	// -fdata-sections -ffunction-sections -Wl,-dead_strip -Wl,-emain
-	map* switches=xmap(
-		"debug", xstr("-g -O0 -lfox ", cflags, " ", xlibs, " -lfoxmain", End),
-		"speed", xstr("-O3 -lfox ", cflags, " ", xlibs, " -lfoxmain", End),
-		"size", xstr("-Os -lfox ", cflags, " -lfoxmain", End),
-		"static", xstr("-lfoxstatic -lfoxcmdstatic ", cflags, " -fdata-sections -ffunction-sections -Wl,-dead_strip -lfoxmain", End),
-		"cgi", xstr("-Os -lfoxstatic -lfoxcgistatic ", cflags, " ", xlibs, " -lfoxmaincgi", End),
-		"scgi", xstr("-Os -lfoxstatic -lfoxcgistatic ", cflags, " ", xlibs, " -lfoxmaincgi -fdata-sections -ffunction-sections -Wl,-dead_strip ", End)
-	, End);
-	profile = (map_val(switches,profile) ? map_val(switches,profile) : map_val(switches,"debug"));
-	int ret=exec(
-		px(
-		xstr("gcc ", infile, ".c -o ", outfile, " ", profile, " ", opts, " -std=gnu99 -Wno-logical-op-parentheses -lm 2>&1", End),1),NULL);
-	if(!keepfiles){
-		remove((xstr(infile,".c", End)));	
-		remove((xstr(infile,".h", End))); };	
-	return ret;
-};
 char* file_dir(char* file){
 	int len=str_len(file);
 	int i=0;
@@ -68,16 +24,6 @@ char* file_dir(char* file){
 		if(file[i]=='/'){ break; }; };
 	if(i==-1){ return NULL; };
 	return sub_str(file,0,i+1);
-};
-void write_source(){
-	source_funcs();
-	write_foxh(file_rename("fox.h","include",NULL,NULL,NULL,NULL));
-	map* map_1=source_files(); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* infile=map_id(map_1,next1);
-		if(str_end(infile,".h")){ continue; };
-		fox_c(infile,xstr(file_rename(infile,"src",".fox",NULL,NULL,NULL),".c", End)); };
-		//infile.fox_h(infile.file_rename(:include,".fox")..".h")
-	write_file(funcs_meta(source_funcs(),NULL),file_rename("meta.c","src",NULL,NULL,NULL,NULL),0,1);
-	px(mem_usage(),1);
 };
 char* file_rename(char* file,char* dir,char* delext,char* addext,char* prefix,char* postfix){
 	char* olddir=file_dir(file);
@@ -91,45 +37,6 @@ char* file_rename(char* file,char* dir,char* delext,char* addext,char* prefix,ch
 	return xstr(sane_dir(olddir),ret, End);
 };
 char* sane_dir(char* dir){ return dir ? xstr(str_rtrim(dir,"/"),"/", End) : NULL; };
-char* write_configm4(char* name, char* outfile){
-	char* NAME=str_upper(str_dup(name));
-	return write_file(xstr("", 
-	"PHP_ARG_WITH(", name, ", for ", name, " support,\n", 
-	"Make sure that the comment is aligned:\n", 
-	"[  --with-", name, "             Include ", name, " support])\n", 
-	"if test \"$PHP_", NAME, "\" != \"no\"; then\n", 
-	"\n", 
-	NAME, "_DIR=\"/usr/local\"\n", 
-	"\n", 
-	"if test -z \"", xstr("$",NAME, End), "_DIR\"; then\n", 
-	"  AC_MSG_RESULT([not found])\n", 
-	"  AC_MSG_ERROR([Please reinstall the ", name, " distribution])\n", 
-	"fi\n", 
-	"\n", 
-	"# --with-", name, " -> add include path\n", 
-	"PHP_ADD_INCLUDE(", xstr("$",NAME, End), "_DIR/include)\n", 
-	"\n", 
-	"# --with-", name, " -> check for lib and symbol presence\n", 
-	"LIBNAME=fox # you may want to change this\n", 
-	"LIBSYMBOL=init_gc # you most likely want to change this \n", 
-	"\n", 
-	"PHP_CHECK_LIBRARY($LIBNAME,$LIBSYMBOL,\n", 
-	"[\n", 
-	"  PHP_ADD_LIBRARY_WITH_PATH($LIBNAME, ", xstr("$",NAME, End), "_DIR/lib, ", NAME, "_SHARED_LIBADD)\n", 
-	"  AC_DEFINE(HAVE_", NAME, "LIB,1,[ ])\n", 
-	"],[\n", 
-	"  AC_MSG_ERROR([wrong fox lib version or lib not found])\n", 
-	"],[\n", 
-	"  -L", xstr("$",NAME, End), "_DIR/$PHP_LIBDIR -lm\n", 
-	"])\n", 
-	"\n", 
-	"PHP_SUBST(", NAME, "_SHARED_LIBADD)\n", 
-	"\n", 
-	"  PHP_NEW_EXTENSION(", name, ", ", name, ".c ", name, "php.c, $ext_shared,, -DZEND_ENABLE_STATIC_TSRMLS_CACHE=1)\n", 
-	"fi\n", 
-	"", 
-	"", End),outfile,0,1);
-};
 char* mem_usage(){
 	int runtime=run_time();
 	int totaltime=total_time();
@@ -830,7 +737,6 @@ int check_chains(mempage* pg,int line){
 //	"sort ok on %d points\n".printf(pg->chains.len)
 	return 0;
 };
-int total_kb(){ return _gcdata.max_mem/1024; };
 int page_maps(char* title){
 	printf("%s\n",title);
 	each_mem(pg,mem_i) {page_map(pg);};
@@ -2105,20 +2011,6 @@ map* syn_func(map* syn,int with_body,char* filename){
 	if(filename){ add(ret,"file",filename); };
 	return ret;
 };
-map* file_callmap(char* filename){ return func_depends(file_funcs(filename,1)); };
-map* func_depend(map* mp,map* ret){
-	for(int i=0; i<map_len(mp); i+=2){
-		if(is_map(map_id(mp,i+1))){ func_depend(map_id(mp,i+1),ret); continue; };
-		char* name=syn_is_call(mp,i);
-		if(name){ add(ret,name,map_val(map_val(funcs(),name),"file")); }; };
-	return ret;
-};
-map* func_depends(map* mp){
-	map* ret=new_map();
-	for(int next1=next(mp,-1,NULL,NULL); has_id(mp,next1); next1++){ void* fn=map_id(mp,next1); char* name=map_key(mp, next1);
-		map* map_1=func_depend(map_val(fn,"body"),new_map()); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* val=map_id(map_1,next1); char* key=map_key(map_1, next1); px(xstr(name, " ", key, " ", val, End),1); }; };
-	return ret;
-};
 map* syn_funcs(map* mp,int with_body,char* filename){
 	map* ret=new_map();
 	for(int i=1; i<map_len(mp); i+=2){
@@ -2129,7 +2021,6 @@ map* syn_funcs(map* mp,int with_body,char* filename){
 	return ret;
 };
 map* file_vec(char* in){ return str_vec(file_read(in,1,1)); };
-map* file_map(char* in){ return str_map(file_read(in,1,1),Map); };
 map* map_keys(map* mp){
 	map* ret=new_vec();
 	for(int next1=next(mp,-1,NULL,NULL); has_id(mp,next1); next1++){ char* k=map_key(mp, next1); vec_add(ret,k); };
@@ -2186,25 +2077,6 @@ map* x_funcs(char* in,int with_body,char* filename){
 		add_curly(
 		x_map(in),0),0),0),with_body,filename);
 };
-map* x_toks(char* in,int is_script){
-	if(!in){ return NULL; };
-	return single_quotes(
-		auto_types(
-		inline_vectors(
-		string_operators(
-		heredoc_str(
-		toks_syn(
-		dot_each(
-		dot_func(
-		expand_main(
-		add_semicolon(
-		force_curly(
-		add_curly(
-		str_dollars(
-		dot_key(
-		colon_str(
-		x_map(in)))),1)),1)))),1)))),"c", is_script,new_map(),new_map(),NULL,0));
-};
 map* func_params(map* func){ return toks_split(func_param(func),",",0); };
 map* func_param(map* func){ return map_id(func,next_tok(func,0,"(",0)+2); };
 map* func_add_param(map* func,map* add){
@@ -2260,145 +2132,6 @@ map* file_deadcode(char* file){
 		if(!map_val(ret,k2)){ px(k2,1); }; };
 	return ret;
 };
-map* auto_types(map* toks,char* context,int is_script,map* env,map* fns,map* func,int idx){
-	int temp=0;
-	if(!toks){ return toks; };
-	if(str_eq(context,"c")){
-		env=xmap("_globals" , "map*", End);
-		for(int i=0; i<toks->len; i+=2){
-			void* tok=map_id(toks,i+1);
-			if(is_func_decl(tok)){
-				map* fn=syn_func(tok,1,NULL);
-				add(fns,map_val(fn,"name"),fn);
-				syn_remove_default(tok); }; };
-		for(int i=next(fns,-1,NULL,NULL); has_id(fns,i); i++){ void* fn=map_id(fns,i); char* name=map_key(fns, i);
-			map* fenv=map_dup(env);	
-			map* map_1=map_val(fn,"params"); for(int i2=next(map_1,-1,NULL,NULL); has_id(map_1,i2); i2++){ void* op=map_id(map_1,i2); char* param=map_key(map_1, i2);
-				add(fenv,param,map_val(op,"type")); };
-			auto_types(add_return(map_val(fn,"body")),"body",is_script,fenv,fns,fn,0);
-			if(is_script){
-				if(map_val(fn,"body")){ add(add_key(add_key(_globals,"cache",Map),"userfuncs",Map),map_val(fn,"name"),map_val(fn,"body")); };
-				add(add_key(add_key(add_key(_globals,"cache",Map),"reflect",Map),"funcs",Map),map_val(fn,"name"),map_del_key(fn,"body")); }; };
-		return auto_types(toks,"body",is_script,env,fns,NULL,0);
-	}else if(str_eq(context,"body")){
-		for(int j=0; j<toks->len; j+=2){
-			void* tok=map_id(toks,j+1);
-			if(is_func_decl(tok)){
-				continue;
-			}else if(syn_is_macro(tok,0)){
-				map* expanded=toks_syn(syn_expand_macro(vec_dup(tok),0),1);
-				map* last=map_id(expanded,map_len(expanded)-1);
-				auto_types(vec_compact(vec_del(expanded,-2,1)),"body",is_script,env,fns,func,0);
-				auto_types(vec_merge(last,vec_sub(tok,8,0)),"syn",is_script,env,fns,func,0);
-				if(is_script){
-					vec_splice(toks,j+1,1,expanded); };
-			}else {auto_types(tok,"syn",is_script,env,fns,func,0);}; };
-		return toks;
-	}else if(str_eq(context,"syn")){
-		if(is_var_decl(toks)){
-			char* type=syn_var_type(toks);
-			char* name=syn_var_name(toks);
-			add(env,name,type);
-			auto_types(toks,"expr",is_script,env,fns,func,syn_assign_val(toks));
-		}else if(is_flow(toks)){
-			char* type=syn_flow_name(toks);
-			if(str_eq(type,"for")){
-				env=map_dup(env);
-				auto_types(map_id(syn_flow_condition(toks,0),1),"syn",is_script,env,fns,NULL,0); };
-			int i=0;
-			map* body=NULL;
-			while((body=syn_flow_condition(toks,i++))){
-				auto_types(body,"expr",is_script,map_dup(env),fns,func,0); };
-			i=0;
-			while((body=syn_flow_body(toks,i++))){
-				auto_types(body,"body",is_script,map_dup(env),fns,func,0); };
-		}else if(is_assign(toks)){
-			auto_types(toks,"expr",is_script,env,fns,func,0);
-			if(is_word(syn_is_call(toks,str_eq(map_id(toks,1),"return") ? 2 : 0),"map_val map_id")){
-				auto_types(toks,"expr",is_script,env,fns,func,0);
-				int from=syn_assign_val(toks);
-				int upto=next_tok(toks,syn_assign_val(toks),"; =",0);
-				int len=0;
-				if(upto){ len=upto-from-1; };
-				map* val=vec_slice(toks,from,len);
-				vec_compact(vec_del(vec_compact(toks),next_tok(toks,0,"=",0)-1,2));
-				auto_types(map_assign(toks,val),"expr",is_script,env,fns,func,0);
-				return toks; };
-			char* name=syn_var_name(toks);
-			char* type=syn_var_type(toks);
-			if(*name!='_' && !map_val(env,name) && !str_len(type)){
-				type=expr_type(toks,syn_assign_val(toks),0,env,fns);
-				if(type){
-					vec_splice(toks,1,0,vec_compact(vec_del(x_map(xstr(type, " ", End)),0,1)));
-					add(env,name,type);
-				}else{
-					px(xstr(map_val(func,"name"), "(): unknown var ", name, End),1); }; };
-			auto_types(toks,"expr",is_script,env,fns,func,syn_assign_val(toks));
-		}else{
-			auto_types(toks,"expr",is_script,env,fns,func,0); };
-		return toks;
-	}else if(str_eq(context,"expr")){
-		int head=idx;
-		for(int i=idx; i<toks->len; i+=2){
-			if(is_map(map_id(toks,i+1))){
-				auto_types(map_id(toks,i+1),"expr",is_script,env,fns,func,0);
-			}else if(syn_is_call(toks,i)){
-				auto_types(map_id(toks,i+5),"expr",is_script,env,fns,func,0);
-				char* name=syn_is_call(toks,i);
-				if(str_eq(name,"args_map")){
-					char* subs="xmap(";
-					map* map_1=map_val(func,"params"); for(int i2=next(map_1,-1,NULL,NULL); has_id(map_1,i2); i2++){ char* k2=map_key(map_1, i2);
-						subs=xcat(subs,":",k2,",",k2,",", End); };
-					map* mp4=vec_compact(vec_del(colon_str(x_map(xstr(subs, " End)", End))),0,1));
-					vec_splice(toks,i+1,7,mp4);
-				}else{
-					map* params=syn_func_param(toks,i);
-					map* fn=map_val(fns,name);
-					if(!fn){ fn=map_val(funcs(),name); };
-					if(fn){
-						params=param_c(params,env,fns,fn); };
-					syn_set_param(toks,i,params); };
-			}else if(str_eq(map_id(toks,i+1),"[") && is_word(head_type(toks,i-2,i,env,fns),"map* void*") && neq(is_typecast(toks,head),"void*") && 1){
-				void* name=map_id(toks,i+3);
-				if(!map_len(name)){ name=xvec(NULL,"NULL", End); };
-				head=expr_head(toks,i-2,".");
-				map* mid=vec_merge(xadd(vec_splice(vec_sub(toks,head+1,i-head-1),0,0,xvec(NULL, End)),NULL,",", End),name);
-				char* callfunc=str_eq(expr_type(name,0,0,env,fns),"int") ? "map_id" : "map_val";
-				vec_splice(toks,head+1,i+5-head,xvec(callfunc,NULL,"(",NULL,mid,NULL,")", End));
-				i=head;
-			}else if(str_eq(map_id(toks,i+1),".") && is_name(map_id(toks,i+3)) && expr_head(toks,i-2,".")<i){
-				head=expr_head(toks,i-2,".");
-				if(head==i){ fox_error(xstr("Can't find header for ", json(toks,0), " @ ",int_str( i), End),0); };
-				if(is_word(syn_is_call(toks,i+2),"each")){
-					map* mid=vec_splice(vec_sub(toks,head+1,i-head-1),0,0,xvec(NULL, End));
-					map* params=toks_split(syn_func_param(toks,i+2),",",0);
-					if(syn_is_call(mid,0)){
-						temp++;
-						char* varname=xstr("map_",int_str(temp), End);
-						syn_set_param(toks,i+2,toks_join(vec_splice(params,0,0,xvec(xvec(NULL,varname, End), End)),","));
-						vec_splice(toks,head+1,i-head+2,vec_merge(vec_merge(vec_splice(x_map(xstr("map* ", varname, "=", End)),0,1,NULL),mid),xvec(NULL,";"," ", End)));
-					}else{
-						params=toks_join(vec_splice(params,0,0,xvec(mid, End)),",");
-						syn_set_param(toks,i+2,params);
-						vec_del(toks,head+1,i-head+2);
-						vec_compact(toks); };
-					i=head;
-				}else if(syn_is_call(toks,i+2)){
-					map* mid=vec_splice(vec_sub(toks,head+1,i-head-1),0,0,xvec(NULL, End));
-					vec_del(toks,head+1,i-head+2);
-					map* params=vec_splice(toks_split(syn_func_param(toks,i+2),",",0),0,0,xvec(mid, End));
- 					params=toks_join(params,",");
-					syn_set_param(toks,i+2,params);
-					vec_compact(toks);
-					i=head-2;
-				}else if(is_word(expr_type(toks,head,i,env,fns),"map* void*") && neq(is_typecast(toks,head),"void*")){
-					void* name=map_id(toks,i+3);
-					map* mid=vec_splice(xadd(vec_sub(toks,head+1,i-head-1),NULL,",",NULL,str_quote(str_unquote(name)), End),0,0,xvec(NULL, End));
-					vec_splice(toks,head+1,i+3-head,xvec("map_val",NULL,"(",NULL,mid,NULL,")", End));
-					i=head; }; }; };
-		return toks; };					
-	return toks;
-};
 char* is_typecast(map* toks,int idx){
 	if(str_eq(map_id(toks,idx+1),"(") && is_var_decl(map_id(toks,idx+3))){ return str_trim(toks_c(map_id(toks,idx+3))," \t\n\r"); };
 	return NULL;
@@ -2407,10 +2140,6 @@ char* is_name(char* in){
 	if(!is_code(in)){ return 0; };
 	if(is_word(in,"return")){ return 0; };
 	return in;
-};
-char* head_type(map* toks, int idx, int upto, map* env,map* fs){
-	int head=expr_head(toks,idx,".");
-	return expr_type(toks,head, upto, env, fs);
 };
 int expr_tail(map* toks,int idx,char* expr){
 	idx++;
@@ -2455,61 +2184,6 @@ map* add_return(map* toks){
 };
 map* wrap_call(map* tok,char* func){
 	return xvec(NULL,func,NULL,"(",NULL,tok,NULL,")", End);
-};
-map* type_convert(map* tok,char* outtype,map* env,map* fs,map* fn){
-	if(!outtype){ return tok; };
-	char* intype=expr_type(tok,0,0,env,fs);	
-	if(!intype){ return tok; };
-	if(str_eq(intype,outtype)){ return tok; };
-	if(is_word(intype,"int double long long") && str_start(outtype,intype) && outtype[str_len(intype)]=='*' && !outtype[str_len(intype)+1]){
-		return vec_splice(tok,1,0,xvec("&",NULL, End)); };
-	if(is_word(intype,"int long long size_t")){
-		if(str_eq(outtype,"void*")){ return wrap_call(tok,"int_var"); }
-		else if(str_eq(outtype,"char*")){ return wrap_call(tok,"int_str"); };
-	}else if(str_eq(intype,"void*")){
-		if(str_eq(outtype,"double")){ return wrap_call(tok,"to_double"); };
-	}else if(str_eq(intype,"double")){
-		if(str_eq(outtype,"void*")){ return wrap_call(tok,"double_var"); }
-		else if(str_eq(outtype,"char*")){ return wrap_call(tok,"double_str"); };
-	}else if(str_eq(intype,"map*")){
-		if(str_eq(outtype,"char*")){ return wrap_call(tok,"to_str"); };
-	}else if(str_eq(intype,"char*")){
-		if(str_eq(outtype,"int")){ return wrap_call(tok,"stoi"); }
-		else if(str_eq(outtype,"char**")){
-			return vec_splice(tok,1,0,xvec("&",NULL, End)); };
-	}else if(str_eq(intype,"char**")){
-		if(str_eq(outtype,"char*")){ return vec_splice(tok,1,0,xvec("*",NULL, End)); }; };
-	return tok;
-};
-map* param_c(map* params,map* env,map* fs,map* fn){
-	assert(fn);
-	if(!params){ return NULL; };
-	map* xparam=toks_split(params,",",0);
-	map* cparam=new_vec();
-	void* sig=map_val(fn,"params");
-	for(int i=next(sig,-1,NULL,NULL); has_id(sig,i); i++){ void* p=map_id(sig,i); char* name=map_key(sig, i);
-		if(str_eq(name,"...")){
-			for(int idx=i; idx<xparam->len; idx++){
-				if(str_eq(map_id(map_id(xparam,idx),1),"End")){ break; };
-				vec_add(cparam,type_convert(map_id(xparam,idx),map_val(p,"type"),env,fs,fn)); };
-			if(neq(map_id(map_id(cparam,map_len(cparam)-1),1),"End")){
-				if(!map_id(map_id(cparam,map_len(cparam)-1),1)){ set(add_id(cparam,map_len(cparam)-1),1,"End"); }
-				else{
-					char* endmark=map_len(cparam) ? " End" : "End";
-					vec_add(cparam,x_map(endmark)); }; };
-			break;
-		}else if(map_len(map_id(xparam,i))<2){
-			if(!map_val(p,"default")){ break; };
-			vec_add(cparam,vec_compact(vec_del(map_id(x_toks(map_val(p,"default"),0),1),-2,0))); //x_map().colon_str().dot_key().str_dollars()
-		}else{ 
-//			xparam[i].dx(:IN)
-//			xparam[i].expr_type(0,0,env,fs).dx(:INTYPE)
-//			p.type.dx(:OUT)
-//			xparam[i].type_convert(p.type,env,fs,fn).toks_c().dx(:CONVERTED)
-//			"^^^^^^^^^^^^".px()
-			vec_add(cparam,type_convert(map_id(xparam,i),map_val(p,"type"),env,fs,fn)); }; };
-	map* ret=toks_join(cparam,",");
-	return ret;
 };
 map* syn_expand_macro(map* syn,int idx){
 	map* macro=map_val(macros(),map_id(syn,idx+1));
@@ -2559,53 +2233,6 @@ map* syn_remove_default(map* syn){
 	return syn;
 };
 
-char* expr_type(map* toks,int idx,int upto,map* env,map* fs){
-	void* v=map_id(toks,idx+1);
-	if(is_map(v)){ return expr_type(v,0,upto,env,fs); };
-	char* w=is_str(v);
-	if(!w){ return NULL; };
-	assert(is_str(w) && str_len(w));
-	if(next_tok(toks,idx,"?",upto)){
-		return expr_type(toks,next_tok(toks,idx,"?",0)+1,upto,env,fs);
-	}
-	else if(str_eq(map_id(toks,idx+3),"(")){
-		char* name=is_str(map_id(toks,idx+1));
-		if(map_val(fs,name)){ return map_val(map_val(fs,name),"type"); };
-		return map_val(map_val(funcs(),name),"type");
-	}else if(is_word(w,"++ --")){ return expr_type(toks,idx+2,upto,env,fs); }
-	else if(*w=='"'){ return "char*"; }
-	else if(*w=='\'' && w[1]=='\''){ return "char*"; }
-	else if(*w=='\''){ return "char"; }
-	else if(*w>='0' && *w<='9' || *w=='-' || *w=='+'){ return strchr(w,'.') ? "double" : "int"; }
-	else if(is_typecast(toks,idx)){ return is_typecast(toks,idx); }
-	else if(str_eq(w,"(")){ return expr_type(map_id(toks,idx+3),0,upto,env,fs); }
-	else if(str_eq(w,"*")){ return sub_str(expr_type(toks,idx+2,upto,env,fs),0,-1); }
-	else if(str_eq(w,"&")){ return xstr(str_dup(expr_type(toks,idx+2,upto,env,fs)),"*", End); }
-	else if(str_eq(w,"NULL")){ return "void*"; }
-	else if(map_val(env,w)){
-		if(next_tok(toks,idx,"-",upto) && is_word(expr_type(toks,next_tok(toks,idx,"-",upto)+1,upto,env,fs),"char* void* map*")){
-			return "int"; };
-		char* ret=map_val(env,w);	
-		if(!upto){ upto=toks->len; };
-		map* structtype=NULL;
-		for(int i=idx+3; i<upto; i+=2){
-			v=map_id(toks,i);
-			if(is_word(v,". ->")){
-				structtype=map_val(structs(),str_trim(ret,"*"));
-			}else if(structtype && is_code(v) && !syn_is_call(toks,i) && map_val(structtype,v)){
-				ret=map_val(structtype,v);
-			}else if(str_eq(v,"[") && fox_at(ret,-1)=='*'){
-				ret=sub_str(ret,0,-1);
-				i+=4;
-			}else if(str_eq(v,"-")){
-				if(str_eq(ret,"int")){ return ret; };
-				char* rest=expr_type(toks,i+1,upto,env,fs);
-				if(fox_at(rest,-1)=='*'){ return "int"; };
-				return ret;
-			}else {return ret;}; };
-		return ret; };
-	return NULL;
-};
 char* assign_to_func(map* tok){
 	return syn_is_call(tok,0);
 };
@@ -2673,55 +2300,9 @@ int is_func_decl(map* syn){
 };
 char* c_h(char* infile,char* outfile){ return write_file(funcs_cdecl(file_funcs(infile,0),0),outfile,0,1); };
 char* fox_h(char* infile,char* outfile){ return write_file((xstr("#include <fox.h>\n",funcs_cdecl(file_funcs(infile,0),0), End)),outfile,0,1); };
-char* fox_c(char* infile, char* outfile){ return write_file(x_c(file_read(infile,1,1)),outfile,0,1); };
 map* x_map(char* in){ return c_tokenizer(&in,'\0'); };
 char* c_x(char* in){ return toks_c(map_tox(x_map(in))); };
 
-char* x_c(char* in){ return toks_c(x_toks(in,0)); };
-char* func_ccall(map* fn){
-	char* ret=NULL;
-	char* preproc=NULL;
-	int isvariadic=0;
-	map* map_1=map_val(fn,"params"); for(int i=next(map_1,-1,NULL,NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i); char* k=map_key(map_1, i);
-		char* def=map_val(v,"default");
-		v=map_val(v,"type");
-		v=drop_left(v,"const ");
-		v=drop_left(v,"unsigned ");
-		char* pre=NULL;
-		char* post=NULL;
-		char* mid=xstr("v.map_id(",int_str( i), ")", End);
-		if(str_eq(v,"char*")){ post=".is_str()"; }
-		else if(str_eq(v,"char**")){ preproc=xcat(preproc,xstr("char* p", k, "_", map_val(fn,"name"), "=v.map_id(",int_str( i), ").is_str(); ", End), End); mid=xstr("&p", k, "_", map_val(fn,"name"), End); }
-		else if(str_eq(v,"map*")){ post=".is_map()"; }
-		else if(is_word(v,"int long size_t time_t") || str_eq(v,"long long")){ post=".to_int()"; }
-		else if(str_eq(v,"char")){
-			post=xstr(".is_str() ? ", mid, ".is_str()[0] : ", mid, ".to_int())", End);
-			pre="(";
-		}else if(is_word(v,"double float")){ post=".to_double()"; }
-		else if(str_eq(k,"...")){
-			char* mtype=NULL;
-			if(str_end(map_val(fn,"type"),"*")){ mtype="ptr"; }
-			else if(str_eq(map_val(fn,"type"),"int")){ mtype="int"; }
-			else if(str_eq(map_val(fn,"type"),"double")){ mtype="double"; }
-			else {return NULL;};
-			isvariadic=1;
-			ret=xstr("call_variadic_", mtype, "(v,", map_val(fn,"name"), ",\"", map_val(fn,"name"), "\")", End);
-			break;
-		}else if(!str_end(v,"*")){
-			return NULL; };
-		if(def){ ret=xcat(ret,xstr("v->len>=",int_str( i), " ? ", pre, mid, post, " : ", sub_str(x_c(def),0,-1), ",", End), End); }
-		else{ ret=xcat(ret,xstr(pre, mid, post, ",", End), End); }; };
-	char* postproc=NULL;
-	if(is_word(map_val(fn,"type"),"int long long size_t time_t char")){ postproc=".int_var()"; preproc=xcat(preproc,"return ", End); }
-	else if(is_word(map_val(fn,"type"),"double float")){ postproc=".double_var()"; preproc=xcat(preproc,"return ", End); }
-	else if(str_eq(map_val(fn,"type"),"void")){
-		postproc=xcat(postproc,"; return NULL", End);
-	}else if(!is_word(map_val(fn,"type"),"void* map* char*")) {return NULL;}
-	else {preproc=xcat(preproc,"return ", End);};
-	if(isvariadic){ return x_c(xstr(preproc, ret, postproc, End)); };
-	return x_c(xstr(preproc, map_val(fn,"name"), "(", null_str(sub_str(ret,0,-1)), ")", postproc, End));
-	//pp1
-};
 char* map_ccode(void* mp){
 	if(!mp){ return "NULL"; };
 	if(is_str(mp)){ return str_quote(mp); };
@@ -2739,21 +2320,6 @@ char* map_ccode(void* mp){
 			ret=xcat(ret,xstr(map_ccode(v1), ",", End), End); };
 		return xstr(ret,"End)", End); };
 	return fox_error(xstr("Unknown type of variable ", to_str(mp,"",0), " [", ptr_name(mp), "]", End),0);	
-};
-char* callfunc_c(map* funcs){
-	char* ret="function calls\n";
-	map* fdups=new_map();
-	for(int i2=next(funcs,-1,NULL,NULL); has_id(funcs,i2); i2++){ void* v=map_id(funcs,i2); char* k=map_key(funcs, i2);
-		if(map_val(fdups,map_val(v,"name"))){ continue; };
-		add(fdups,map_val(v,"name"),int_var(1));
-		if(str_eq(k,"args_map")){ continue; };
-		if(is_word(map_val(v,"name"),"main run")){ continue; };
-		char* str_params=func_ccall(v);
-		if(!str_params){
-			continue; };
-		//pp1
-		ret=xcat(ret,mstr("\t\tcase %p: { %s break; }\n",str_hash(map_val(v,"name")),str_params, End), End); };
-	return ret;
 };
 char* file_foxh(char* infile,char* outfile){
 	return write_file(funcs_cdecl(file_funcs(infile,0),1),outfile,0,1);
@@ -2891,597 +2457,6 @@ char* foxh(){
 	""
 	"";
 };
-char* write_foxh(char* outfile){
-	return write_file((xstr(foxh(),funcs_cdecl(source_funcs(),0), End)),outfile,0,1);
-};
-char* fox_phpc(char* infile,char* outfile){
-	map* fns=infile ? file_funcs(infile,0) : source_funcs();
-	map* temp=str_split(infile,"/",0);
-	temp=str_split(map_id(temp,map_len(temp)-1),".",0);
-	void* name=map_id(temp,0);
-	char* ret=xstr("", 
-	"#ifdef HAVE_CONFIG_H\n", 
-	"#include \"config.h\"\n", 
-	"#endif\n", 
-	"#include <php.h>\n", 
-	"#include <fox.h>\n", 
-	"#include \"", name, ".h\"\n", 
-	"\n", 
-	"void* zval_var(zval* z);\n", 
-	"zval var_zval(void* v);\n", 
-	"zval map_zval(map* mp);\n", 
-	"map* zval_map(zval* z);\n", 
-	"void* call_php(map* params,char* func);\n", 
-	"", 
-	"", End);
-	char* reg=NULL;
-	for(int i=next(fns,-1,NULL,NULL); has_id(fns,i); i++){ void* v=map_id(fns,i);
-		if(!is_word(map_val(v,"type"),"void* map* int char*")){ continue; };
-		if(is_word(map_val(v,"name"),"main")){ continue; };
-		char* decls="";
-		char* format="";
-		char* post="";
-		char* pointers="";
-		char* call="";
-		int hasdefault=0;
-		int skip=0;
-		void* foxname=map_val(v,"name");
-		if(!infile && !str_start(foxname,"fox_")){ foxname=xstr("fox_", map_val(v,"name"), End); };
-		map* map_1=map_val(v,"params"); for(int i2=next(map_1,-1,NULL,NULL); has_id(map_1,i2); i2++){ char* name=map_key(map_1, i2);
-			if(str_eq(name,"...")){ skip=1; break; };
-			map* v2=map_val(map_val(v,"params"),name);
-			if(!hasdefault && map_val(v2,"default")){
-				hasdefault=1;
-				format=xcat(format,"|", End); };
-			if(str_eq(map_val(v2,"type"),"char*")){
-				decls=xcat(decls,"\tchar* ","in_",name,"=NULL;\n", End);
-				decls=xcat(decls,"\tsize_t ","in_",name,"_len=-1;\n", End);
-				pointers=xcat(pointers,", &in_",name,", &in_",name,"_len", End);
-				format=xcat(format,"s", End);
-				if(map_val(v2,"default")){
-					post=xcat(post,xstr("\tif(in_", name, "_len==-1) in_", name, "=", x_c(map_val(v2,"default")), "\n", End), End);
-					post=xcat(post,xstr("\telse in_", name, "=str_dup(in_", name, ");\n", End), End); };
-			}
-			else if(str_eq(map_val(v2,"type"),"int")){
-				decls=xcat(decls,"\tlong ","in_",name,"=(1ll<<62);\n", End);
-				pointers=xcat(pointers,", &in_",name, End);
-				format=xcat(format,"l", End);
-				if(map_val(v2,"default")){ post=xcat(post,xstr("\tif(in_", name, "==(1ll<<62)) in_", name, "=", x_c(map_val(v2,"default")), "\n", End), End); };
-			}else if(str_eq(map_val(v2,"type"),"void*")){
-				decls=xcat(decls,"\tzval* ","in_",name,"_zval=NULL;\n", End);
-				pointers=xcat(pointers,", &in_",name,"_zval", End);
-				format=xcat(format,"z", End);
-				if(map_val(v2,"default")){
-					post=xcat(post,"\tvoid* ","in_",name,"=NULL;\n", End);
-					post=xcat(post,xstr("\tif(!in_", name, "_zval) in_", name, "=", x_c(map_val(v2,"default")), "\n", End), End);
-					post=xcat(post,"\telse in_",name,xstr("=zval_var(in_", name, "_zval);\n", End), End);
-				}else{ post=xcat(post,"\tvoid* ","in_",name,xstr("=zval_var(in_", name, "_zval);\n", End), End); };
-			}else if(str_eq(map_val(v2,"type"),"map*")){
-				decls=xcat(decls,"\tzval* ","in_",name,"_zval=NULL;\n", End);
-				pointers=xcat(pointers,", &in_",name,"_zval", End);
-				format=xcat(format,"z", End);
-				if(map_val(v2,"default")){
-					post=xcat(post,"\tvoid* ","in_",name,"=NULL;\n", End);
-					post=xcat(post,xstr("\tif(!in_", name, "_zval) in_", name, "=", x_c(map_val(v2,"default")), "\n", End), End);
-					post=xcat(post,"\telse in_",name,xstr("=zval_var(in_", name, "_zval);\n", End), End);
-				}else{ post=xcat(post,"\tmap* ","in_",name,xstr("=zval_var(in_", name, "_zval);\n", End), End); };
-			}else{ skip=1; break; };
-			call=xcat(call,xstr("in_", name, ",", End), End);
-		};
-		if(skip){ continue; };
-		reg=xcat(reg,xstr("\tPHP_FE(", foxname, ", NULL)\n", End), End);
-		call=sub_str(call,0,-1);
-		ret=xcat(ret,xstr("\nPHP_FUNCTION(", foxname, "){\n", End), End);
-		if(map_len(map_val(v,"params"))){
-			ret=xstr(ret,xstr("", 
-			decls, "\tif(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,\"", format, "\"", pointers, ")==FAILURE){ RETURN_NULL(); }\n", 
-			post, "\n", 
-			"", 
-			"", End), End); };
-		if(str_eq(map_val(v,"type"),"void")){
-			ret=xcat(ret,xstr("\t", map_val(v,"name"), "(", call, ");\n", End), End);
-			ret=xcat(ret,"\tRETURN_NULL();\n", End);
-		}else{
-			ret=xcat(ret,xstr("\t", map_val(v,"type"), " ret=", map_val(v,"name"), "(", call, ");\n", End), End);
-			if(str_eq(map_val(v,"type"),"int")){ ret=xcat(ret,"\tRETURN_LONG(ret);\n", End); }
-			else if(str_eq(map_val(v,"type"),"char*")){
-				ret=xcat(ret,"\tif(!ret) RETURN_NULL();\n", End);
-				ret=xcat(ret,"\tRETVAL_STRING(ret);\n", End);
-			}else if(str_eq(map_val(v,"type"),"map*")){
-				ret=xcat(ret,""
-				"	zval zret;\n"
-				"	if(!ret){\n"
-				"		array_init(&zret);\n"
-				"	}\n"
-				"	else zret=var_zval(ret);\n"
-				"	RETURN_ZVAL(&zret,0,0);\n"
-				""
-				"", End);
-			}else if(str_eq(map_val(v,"type"),"void*")){
-				ret=xcat(ret,"\tzval zret=var_zval(ret);\n", End);
-				ret=xcat(ret,"\tRETURN_ZVAL(&zret,0,0);\n", End); }; };
-		ret=xcat(ret,"}\n", End);
-	};
-	ret=xcat(ret,xstr("", 
-	"\n", 
-	"static zend_function_entry ", name, "_functions[] = {\n", 
-	reg, "\t{NULL, NULL, NULL}\n", 
-	"};\n", 
-	"", 
-	"", End), End);
-	ret=xcat(ret,xstr("", 
-	"PHP_RINIT_FUNCTION(", name, "){\n", 
-	"	gc_start();\n", 
-	"	return SUCCESS;\n", 
-	"}\n", 
-	"PHP_RSHUTDOWN_FUNCTION(", name, "){\n", 
-	"	gc_end();	\n", 
-	"	return SUCCESS;\n", 
-	"}\n", 
-	"\n", 
-	"zend_module_entry ", name, "_module_entry = {\n", 
-	"#if ZEND_MODULE_API_NO >= 20010901\n", 
-	"	STANDARD_MODULE_HEADER,\n", 
-	"#endif\n", 
-	"\t\"", name, "\",\n", 
-	"\t", name, "_functions,\n", 
-	"	NULL,\n", 
-	"	NULL,\n", 
-	"\tPHP_RINIT(", name, "),\n", 
-	"\tPHP_RSHUTDOWN(", name, "),\n", 
-	"	NULL,\n", 
-	"#if ZEND_MODULE_API_NO >= 20010901\n", 
-	"	\"0.70\", //Version Number\n", 
-	"#endif\n", 
-	"	STANDARD_MODULE_PROPERTIES\n", 
-	"};\n", 
-	"\n", 
-	"#ifdef COMPILE_DL_", str_upper(str_dup(name)), "\n", 
-	"ZEND_GET_MODULE(", name, ")\n", 
-	"#endif\n", 
-	"\n", 
-	"void xexit(int val){\n", 
-	"	zend_error(E_ERROR,\"%s\",\"Exiting Abnormally\");\n", 
-	"}\n", 
-	"void* fox_error(char* msg,int dump){\n", 
-	"	if(dump) php_printf(\"<pre>%s</pre>\",stack_str());\n", 
-	"	zend_error(E_ERROR,\"%s\",msg);\n", 
-	"	return msg;\n", 
-	"}\n", 
-	"void* px(void* str,int newline){\n", 
-	"	php_printf(\"%s\",str);\n", 
-	"	return str;\n", 
-	"}\n", 
-	"void* zval_var(zval* z){\n", 
-	"	if(!z) return NULL;\n", 
-	"	int type=Z_TYPE_P(z);\n", 
-	"	if(type==IS_NULL) return NULL;\n", 
-	"	else if(type==IS_ARRAY) return zval_map(z);\n", 
-	"	else if(type==IS_STRING) return str_dup(Z_STRVAL_P(z));\n", 
-	"	else if(type==IS_TRUE||type==IS_FALSE||type==IS_LONG) return int_var(Z_LVAL_P(z));\n", 
-	"	else if(type==IS_DOUBLE) return int_var((int)Z_DVAL_P(z));\n", 
-	"	else if(type==IS_RESOURCE) return \"<RES>\";\n", 
-	"	else if(type==IS_OBJECT) return \"<OBJ>\";\n", 
-	"	else if(type==IS_REFERENCE) return \"<REF>\";\n", 
-	"	else if(type==IS_UNDEF) return NULL;\n", 
-	"	else if(type==IS_CONSTANT) return \"<CONST>\";\n", 
-	"	else if(type==IS_CONSTANT_AST) return \"<AST>\";\n", 
-	"	else if(type==IS_INDIRECT) return \"<INDIRECT>\";\n", 
-	"	else if(type==IS_PTR) return \"<PTR>\";\n", 
-	"	printf(\"utype=%d\\n\",type);\n", 
-	"	return \"<UNKNOWN>\";\n", 
-	"}\n", 
-	"zval var_zval(void* v){\n", 
-	"	zval ret={0};\n", 
-	"	if(!v) { ZVAL_NULL(&ret); }\n", 
-	"	else if(is_map(v)) return map_zval(v);\n", 
-	"	else if(is_str(v) && v){ ZVAL_STRING(&ret,v); }\n", 
-	"	else if(is_i(v)){ ZVAL_LONG(&ret,is_int(v)); }\n", 
-	"	else if(is_f(v)){ ZVAL_DOUBLE(&ret,is_double(v)); }\n", 
-	"	return ret;\n", 
-	"}\n", 
-	"zval map_zval(map* mp){\n", 
-	"	zval ret={0};\n", 
-	"	array_init(&ret);\n", 
-	"	for(int i=next(mp,-1,NULL,NULL);has_id(mp,i);i++){\n", 
-	"		char* k=map_key(mp,i);\n", 
-	"		zval z=var_zval(map_id(mp,i));\n", 
-	"		if(is_i(k)) add_index_zval(&ret,is_int(k)-1,&z);\n", 
-	"		else add_assoc_zval(&ret,k,&z);\n", 
-	"	}\n", 
-	"	return ret;\n", 
-	"}\n", 
-	"map* zval_map(zval* z){\n", 
-	"	if(!z) return NULL;\n", 
-	"	map* mp=new_map();\n", 
-	"	zval *arr, *data;\n", 
-	"	HashTable *arr_hash=Z_ARRVAL_P(z);\n", 
-	"	HashPosition pointer;\n", 
-	"	for(zend_hash_internal_pointer_reset_ex(arr_hash, &pointer); (data=zend_hash_get_current_data_ex(arr_hash, &pointer)); zend_hash_move_forward_ex(arr_hash, &pointer)){\n", 
-	"		zend_string *zkey;\n", 
-	"		zend_ulong index;\n", 
-	"		char* key;\n", 
-	"		if(zend_hash_get_current_key_ex(arr_hash,&zkey,&index,&pointer)==HASH_KEY_IS_LONG) key=int_var(index+1);\n", 
-	"		else key=ZSTR_VAL(zkey);\n", 
-	"		map_add(mp,key,zval_var(data));\n", 
-	"	}\n", 
-	"	return mp;\n", 
-	"}\n", 
-	"void* php_global(char* name){\n", 
-	"	zend_string* key=zend_string_init(name,strlen(name),0);\n", 
-	"	zval* zret=zend_hash_find(&EG(symbol_table), key);\n", 
-	"	zend_string_release(key);\n", 
-	"	if(!zret) return NULL;\n", 
-	"	if(Z_TYPE_P(zret)==IS_INDIRECT) zret = Z_INDIRECT_P(zret);\n", 
-	"	if(Z_TYPE_P(zret)==IS_REFERENCE) ZVAL_DEREF(zret);\n", 
-	"	return zval_var(zret);\n", 
-	"}\n", 
-	"void* call_php(map* params,char* func){\n", 
-	"	zval z={0};\n", 
-	"	zval php_func={0};\n", 
-	"	ZVAL_STRING(&php_func,func);\n", 
-	"	int no=params && params->len ? params->len : 0;\n", 
-	"	zval* php_args=NULL;\n", 
-	"	void* ret={0};\n", 
-	"	if(no){\n", 
-	"		php_args=emalloc(sizeof(zval)*no);\n", 
-	"		for(int i=0;i<no;i++) php_args[i]=var_zval(map_id(params,i));\n", 
-	"	}\n", 
-	"	if(call_user_function(CG(function_table),NULL,&php_func,&z,no,php_args)!=SUCCESS){\n", 
-	"		zend_error(E_ERROR,\"Call to %s failed\\n\",func);\n", 
-	"	}\n", 
-	"	else ret=zval_var(&z);\n", 
-	"	if(no){\n", 
-	"		for(int i=0;i<no;i++) zval_dtor(&php_args[i]);\n", 
-	"		efree(php_args);\n", 
-	"	}\n", 
-	"	zval_dtor(&z);\n", 
-	"	return ret;\n", 
-	"}\n", 
-	"", 
-	"", End), End);
-	return write_file(ret,outfile,0,1);
-};
-char* write_phpconfig(){
-	return write_file(""
-	"PHP_ARG_ENABLE(foxphp, whether to enable FoxPHP library support,\n"
-	"[ --enable-foxphp   Enable FoxPHP library support])\n"
-	"if test \"$PHP_FOXPHP\" = \"yes\"; then\n"
-	"  PHP_SUBST(CFLAGS)\n"
-	"  AC_DEFINE(HAVE_FOXPHP, 1, [Whether you have FoxPHP Library])\n"
-	"  PHP_NEW_EXTENSION(foxphp, foxphp.c fox.c sql.c extern.c callfunc.c, $ext_shared,,-Wno-logical-op-parentheses -DPHP_MOD)\n"
-	"fi\n"
-	""
-	"","config.m4",0,1);
-};
-char* funcs_meta(map* funcs, char* prefix){
-	if(prefix){prefix=xstr(prefix,"_", End);};
-	return x_c(xstr("", 
-	"/* This is a generated file. To change it, edit function funcs_meta() in fox.c */\n", 
-	"#include \"sqlite3.h\"\n", 
-	"#include \"fox.h\"\n", 
-	"\n", 
-	"char* ", prefix, "version(){\n", 
-	"\treturn \"Fox: build: ", increase_version(), ", date: ", time_str(0), " [%s old]\".mstr(\"", time_str(0), "\".time_ago());\n", 
-	"}\n", 
-	"void* ", prefix, "invoke(map* v,char* name){\n", 
-	"	unsigned long long idn=str_hash((unsigned char*)name)\n", 
-	"	switch(idn){\n", 
-	"//", callfunc_c(funcs), "\n", 
-	"	}\n", 
-	"\treturn \"invoke(): Function $name not defined\".fox_error()\n", 
-	"}\n", 
-	"map* ", prefix, "reflect(){\n", 
-	"	return {\n", 
-	"\t\tfuncs: ", map_ccode(funcs), ",\n", 
-	"\t\tmacros: ", map_ccode(source_macros()), ",\n", 
-	"\t\tstructs: ", map_ccode(source_structs()), "\n", 
-	"	}\n", 
-	"}\n", 
-	"", 
-	"", End));
-};
-map* funcs(){
-	if(!map_val(map_val(_globals,"cache"),"reflect")){add(add_key(_globals,"cache",Map),"reflect",reflect()); };
-	return map_val(map_val(_globals,"cache"),"funcs") ? map_val(map_val(_globals,"cache"),"funcs") : map_val(map_val(map_val(_globals,"cache"),"reflect"),"funcs");
-};
-void* fox_run(char* in){
-	int halt=0;
-	return fox_eval(x_toks(in,1),xmap("args", map_val(_globals,"args"), End),&halt);
-};
-void* fox_eval(map* mp,map* env,int* halt){
-	if(!mp){ return NULL; };
-	assert(ptr_type(mp)==Vector);
-	enum {HBreak=1, HReturn, HContinue};
-	void* v=map_id(mp,1);
-	void* ret=NULL;
-	if(is_map(v)){
-		for(int i3=next(mp,-1,NULL,NULL); has_id(mp,i3); i3++){ void* v3=map_id(mp,i3); char* k3=map_key(mp, i3);
-			ret=fox_eval(v3,env,halt);
-			if(*halt){ return ret; }; };
-		return ret; };
-	if(str_eq(v,"if")){
-		int idx=5;
-		while(1){
-			if(is_true(eval_toks(map_id(mp,idx),env))){
-				return fox_eval(map_id(mp,idx+6),env,halt);
-			}else if(str_eq(map_id(mp,idx+10),"else")){
-				if(str_eq(map_id(mp,idx+12),"if")){ idx+=16; }
-				else {return fox_eval(map_id(mp,idx+14),env,halt);};
-			}else{
-				return NULL; }; };
-	}else if(str_eq(v,"while")){
-		while(is_true(eval_toks(map_id(mp,5),env))){
-			ret=fox_eval(map_id(mp,11),env,halt);
-			if(*halt==HContinue){ *halt=0; }
-			else if(*halt==HBreak){ *halt=0; break; }
-			else if(*halt){ break; }; };
-		return ret;
-	}else if(str_eq(v,"for")){
-		map* conds=map_id(mp,5);
-		for(eval_toks(map_id(conds,1),env); is_true(eval_toks(map_id(conds,3),env)); eval_toks(map_id(conds,5),env)){
-			ret=fox_eval(map_id(mp,11),env,halt);
-			if(*halt==HContinue){ *halt=0; }
-			else if(*halt==HBreak){ *halt=0; break; }
-			else if(*halt){ break; }; };
-		return ret;
-	}else if(str_eq(v,"return")){
-		*halt=HReturn;
-		return eval_toks(mp,env);
-	}else if(str_eq(v,"break")){
-		*halt=HBreak;
-	}else if(str_eq(v,"continue")){
-		*halt=HContinue;
-	}else if(is_func_decl(mp)){
-		return ret;
-	}else{
-		return eval_toks(mp,env); };
-	return ret;
-};
-static void* eval_toks(map* mp,map* env){
-	int idx=1;
-	return eval_expr(mp,&idx,env,0);
-};
-static void* eval_expr(map* mp,int* idx,map* env,int level){
-	void* last=NULL;
-	*idx=eval_expr_cont(mp,*idx,env,&last,level);
-	return last;
-};
-void* binary_op(void* left, char oper, void* right){
-	if(is_f(left)||is_f(right)){
-		double a=is_double(left);
-		double b=is_double(right);
-		if(oper=='+'){ return double_var((a+b)); };
-		if(oper=='-'){ return double_var((a-b)); };
-		if(oper=='/'){ return double_var((a/b)); };
-		if(oper=='*'){ return double_var((a*b)); };
-		return double_var(0);
-		fox_error(xstr("Unknown operator ", oper, End),0); };
-	long long a=is_int(left);
-	long long b=is_int(right);
-	if(oper=='+'){ return int_var((a+b)); };
-	if(oper=='-'){ return int_var((a-b)); };
-	if(oper=='/'){ return int_var((a/b)); };
-	if(oper=='*'){ return int_var((a*b)); };
-	fox_error(xstr("Unknown operator ", oper, End),0);
-	return NULL;
-};
-int is_true(void * val){
-	if(!val){ return 0; };
-	if(is_i(val)){ return is_int(val); };
-	if(is_f(val)){ return is_double(val); };
-	if(is_map(val)){ return map_len(val); };
-	if(is_str(val)){ return str_len(val); };
-	return 1;
-};
-void* eval(char* in,map* env){
-	return eval_toks(x_toks(in,0),env);
-};
-int eval_expr_cont(map* mp,int idx,map* env,void** last,int level){
-	if(!mp){ return idx; };
-	void* ret=*last;
-	if(!level) {level=100;};
-	for(;idx<mp->len;idx+=2){
-		void* val=map_id(mp,idx);	
-		if(!val){ continue; }; //abnormal
-		if(is_map(val)){ ret=eval_toks(val,env); continue; }
-		else if(is_num(val)){ px("int",1); ret=val; continue; }
-		else if(is_numeric(val)){
-			if(strchr(val,'.')){
-				double v2=0.0;
-				sscanf(val,"%lf",&v2);
-				ret=double_var(v2);
-			}else{
-				long long v2=0;
-				sscanf(val,"%lld",&v2);
-				ret=int_var(v2); };
-//				ret=atoi(val).int_var()
-			continue;
-		}else if(fox_at(val,0)=='"'){
-			ret=str_unquote(val);
-			while(fox_at(is_str(map_id(mp,idx+2)),0)=='"'){
-				ret=xcat(ret,str_unquote(map_id(mp,idx+2)), End);
-				idx+=2; };
-			continue;
-		}else if(str_eq(val,"&")){
-			void* name=map_id(mp,idx+2);
-			if(!is_code(name)){ fox_error(xstr("operator& on a non variable ", name, End),1); };
-			int idx1=map_has_key(env,name);
-			if(!idx1){ fox_error(xstr("variable ", name, " doesn't exist", End),1); };
-			ret=&(env->pairs[idx1-1].val);
-			idx+=2;
-		}else if(str_eq(val,"(")){ ret=eval_toks(map_id(mp,idx+2),env); idx+=4; continue; }
-		else if(str_eq(val,"End")){
-			ret=End;
-			idx+=2;
-		}else if(is_code(val)){
-			if(str_eq(val,"NULL")){
-				ret=NULL;
-			}else if(str_eq(val,"_globals")){
-				ret=_globals;
-			}else if(str_eq(map_id(mp,idx+2),"(")){
-				map* params=map_split(map_id(mp,idx+4),",",0);
-				for(int i=next(params,-1,NULL,NULL); has_id(params,i); i++){ void* v=map_id(params,i); set(params,i,eval_toks(v,env)); };
-				ret=call_func(params,val,env);
-				idx+=6;
-			}else if(map_has_key(env,"_") && map_has_key(map_val(env,"_"),val)){
-				ret=map_val(map_val(env,"_"),val);
-			}else if(str_eq(map_id(mp,idx+2),"=")){
-				idx+=4;
-				ret=eval_expr(mp,&idx,env,6);
-				add(env,val,ret);
-			}else if(str_eq(map_id(mp,idx+2),"++")){
-				idx+=2;
-				add(env,val,binary_op(map_val(env,val),'+',int_var(1)));
-			}else if(str_eq(map_id(mp,idx+2),"--")){
-				idx+=2;
-				add(env,val,binary_op(map_val(env,val),'-',int_var(1)));
-			}else if(str_eq(map_id(mp,idx+2),"+=")){
-				idx+=4;
-				add(env,val,binary_op(map_val(env,val),'+',eval_expr(mp,&idx,env,6)));
-			}else if(str_eq(map_id(mp,idx+2),"-=")){
-				idx+=4;
-				add(env,val,binary_op(map_val(env,val),'-',eval_expr(mp,&idx,env,6)));
-			}else if(str_eq(map_id(mp,idx+2),"*=")){
-				idx+=4;
-				add(env,val,binary_op(map_val(env,val),'*',eval_expr(mp,&idx,env,6)));
-			}else if(str_eq(map_id(mp,idx+2),"/=")){
-				idx+=4;
-				add(env,val,binary_op(map_val(env,val),'/',eval_expr(mp,&idx,env,6)));
-			}else{
-				ret=map_val(env,val); };
-			continue;
-		}else if(str_eq(val,".")){ if(is_map(ret)) {ret=map_val(ret,map_id(mp,idx+=2-1));} continue; }
-		else if(str_eq(val,"!")){
-			idx+=2;
-			ret=eval_expr(mp,&idx,env,0);
-			ret = int_var((is_i(ret) ? !is_int(ret) : !ret));
-			continue;
-		};
-		int clevel=1;
-		if(level<=clevel){ idx-=2; break; };
-		if(str_eq(val,"/")){ idx+=2; ret=binary_op(ret,'/',eval_expr(mp,&idx,env,clevel)); continue; }
-		else if(str_eq(val,"*")){ idx+=2; ret=binary_op(ret,'*',eval_expr(mp,&idx,env,clevel)); continue; };
-
-		clevel++;
-		if(level<=clevel){ idx-=2; break; };
-		if(str_eq(val,"-")){ idx+=2; ret=binary_op(ret,'-',eval_expr(mp,&idx,env,clevel)); continue; }
-		else if(str_eq(val,"+")){ idx+=2; ret=binary_op(ret,'+',eval_expr(mp,&idx,env,clevel)); continue; };
-
-
-		clevel++;
-		if(level<=clevel){ idx-=2; break; };
-		if(is_word(val,"== !=")){
-			idx+=2;
-			void* rest=eval_expr(mp,&idx,env,clevel);
-			if(is_i(ret)){ ret=int_var((is_int(ret)==to_int(rest))); }
-			else if(is_str(ret)){ ret=int_var((str_eq(ret,rest))); }
-			else {ret=NULL;};
-			if(str_eq(val,"!=")){ ret=int_var((!is_int(ret))); };
-			continue;
-		}else if(is_word(val,"> < >= <=")){
-			idx+=2;
-			int val1=is_int(ret);
-			int val2=is_int(eval_expr(mp,&idx,env,clevel));
-			if(str_eq(val,">")){ val1=val1>val2; }
-			else if(str_eq(val,"<")){ val1=val1<val2; }
-			else if(str_eq(val,"<=")){ val1=val1<=val2; }
-			else if(str_eq(val,">=")){ val1=val1>=val2; };
-			ret=int_var(val1);
-			continue;
-		};
-		clevel++;
-		if(level<=clevel){ idx-=2; break; };
-		if(str_eq(val,"&&")){
-			idx+=2;
-			if(is_true(ret)){ ret=eval_expr(mp,&idx,env,clevel); }
-			else{
-				while(idx<mp->len-2){
-					if(is_word(map_id(mp,idx),"&& || ? :")){ idx-=2; break; };
-					idx+=2; }; };
-			continue;
-		};
-		clevel++;
-		if(level<=clevel){ idx-=2; break; };
-		if(str_eq(val,"||")){
-			idx+=2;
-			if(is_true(ret)){ break; }
-			else {ret=eval_expr(mp,&idx,env,clevel);};
-			continue;
-		};
-		clevel++;
-		if(level<=clevel){ idx-=2; break; };
-		if(str_eq(val,"?")){
-			idx+=2;
-			if(is_true(ret)){
-				ret=eval_expr(mp,&idx,env,clevel);
-				break;
-			}else{
-				while(idx<mp->len && !str_eq(map_id(mp,idx),":")){ idx+=2; };
-				continue; }; };
-		if(str_eq(val,":")){
-			break;
-		};
-		clevel++;
-		if(level<=clevel){ idx-=2; break; };
-		if(str_eq(val,"=")){
-			idx+=2;
-			if(!is_str(ret)){ fox_error("eval() in name=value name should be a valid name",0); };
-			void* val=eval_expr(mp,&idx,env,clevel);
-			add(env,ret,val);
-			ret=val;
-			continue; };
-	};
-	*last=ret;
-	return idx;
-};
-void* call_func(map* params,char* name,map* env){
-	params=eval_params(params,name,env);
-	if(str_start(name,"php_")){ return call_php(params,sub_str(name,5,-2147483648)); };
-	map* user=map_val(map_val(map_val(_globals,"cache"),"userfuncs"),name);
-	void* ret=NULL;
-	if(user){
-		int halt=0;
-		ret=fox_eval(user,params,&halt);
-	}else{
-		ret=invoke(params,name); };
-	return ret;
-};
-void* data_exec(void* data,map* env){
-	if(!data){ return NULL; };
-	if(is_str(data)){ return data; };	
-	if(!is_map(data)){ return to_str(data,"",0); };
-	char* func=map_id(data,0);
-	return call_func(vec_compact(map_del(data,0,1)),func,env);
-};
-map* eval_params(map* sent,char* name,map* env){
-	assert(name);
-	map* ret=new_map();
-	void* fn=map_val(funcs(),name);
-	if(!fn){ fox_error(xstr("Function ", name, "() not found", End),0); };
-	int named=0;
-	map* map_1=map_val(fn,"params"); for(int i=next(map_1,-1,NULL,NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i); char* k=map_key(map_1, i);
-		if(str_eq(k,"...")){
-			for(int i2=i; i2<=sent->len; i2++){
-				vec_add(ret,map_id(sent,i2)); };
-			break;
-		}else if(map_has_key(sent,k)){
-			named=1;
-			add(ret,k,map_val(sent,k));
-		}else if(!named && map_len(sent)>i && is_i(map_key(sent,i))){
-			add(ret,k,map_id(sent,i));
-		}else if(map_has_key(env,k)){
-			named=1;
-			add(ret,k,map_val(env,k));
-		}else if(str_eq(k,"env")){
-			add(ret,k,env);
-		}else if(map_val(v,"default")){
-			add(ret,k,eval(map_val(v,"default"),NULL));
-		}else{
-			fox_error(xstr("Parameter missing in ", map_val(fn,"name"), "(", k, "=?) in ", func_cdecl(fn,1), "\nargs=", json(sent,0), End),0);
-			assert(0); }; };
-	return ret;
-};
 char* to_c(void* val){
 	if(!val){ return "NULL"; };
 	if(is_i(val)){ return int_str(is_int(val)); };
@@ -3551,7 +2526,7 @@ char* str_title(char* str){
 	for(int i=next(words,-1,NULL,NULL); has_id(words,i); i++){ void* v=map_id(words,i);
 		char* s=v;
 		if(!str_len(s)) {map_del(words,i,1);}
-		else if(is_word(s,"map_id")){
+		else if(is_word(s,"lft rgt id slno")){
 			str_toupper(s);
 		}else {s[0]=toupper(s[0]);}; };
 	return map_join(words," ");
@@ -3575,10 +2550,6 @@ int str_char_count(char* str,char c){
 	while(*str) {if(*str++==c) {ret++;};};
 	return ret;
 };
-char* write_c(char* infile,char* outfile){
-	source_funcs();
-	return write_file(x_c(file_read(infile,1,1)),outfile,1,1);
-};
 map* command_line(char* in,int argc,char** argv){
 	if(argc==1 || (argc==2 && str_eq(argv[1],"-h"))){ px(in,1); return NULL; };
 	map* map_1=str_split(in,"\n",0); for(int i=next(map_1,-1,NULL,NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i);
@@ -3599,72 +2570,9 @@ map* command_line(char* in,int argc,char** argv){
 map* param_test(char* one,char* two){
 	return xmap("one",one,"two",two, End);
 };
-map* cmdline_params(map* args,char* func){
-	map* params=map_val(map_val(funcs(),func),"params");
-	if(!params){ fox_error(xstr("Function: ", func, "() not found", End),0); };
-	map* ret=new_map();
-	int curr=1;
-	int variadic=str_eq(map_key(params,map_len(params)-1),"...") ? map_len(params) : 0;
-	char* named_param=NULL;
-	for(int i=next(args,-1,NULL,NULL); has_id(args,i); i++){ void* v=map_id(args,i); char* k=map_key(args, i);
-		if(str_start(v,"-") && str_len(v)>1){
-			char* val=NULL;
-			if(named_param){
-				add(ret,named_param,int_var(1)); };
-			if(str_start(v,"--")){
-				named_param=sub_str(v,2,-2147483648);
-				if(str_has(v,"=")){
-					map* mp1=str_split(named_param,"=",2);
-					named_param=map_id(mp1,0);
-					val=map_id(mp1,1);
-				}else {named_param=sub_str(v,2,-2147483648);};
-			}else{
-				named_param=sub_str(v,1,-2147483648);
-				if(!map_val(params,named_param)){
-					for(int i2=next(params,-1,NULL,NULL); has_id(params,i2); i2++){ void* v2=map_id(params,i2); char* k2=map_key(params, i2);
-						if(map_has_key(ret,k2)){ continue; };
-						if(str_start(k2,named_param)){ named_param=k2; break; }; }; }; };
-//				if v.str_len()>2
-//					val=v.sub_str(2)
-			if(!map_val(params,named_param)){ fox_error(xstr("Invalid parameter ", named_param, " in call to...\n", func_cdecl(map_val(funcs(),func),1), End),0); };
-			if(val){
-				add(ret,named_param,val);
-				named_param=NULL; };
-		}else if(named_param){
-			add(ret,named_param,v);
-			named_param=NULL;
-		}else if(variadic && curr>=variadic){
-			vec_add(ret,v);
-			curr++;
-		}else{
-			if(curr>map_len(params)){ fox_error(xstr("Excess number of arguments. Function has only ",int_str( map_len(params)), "\narguments ", func_cdecl(map_val(funcs(),func),1), End),0); };
-			add(ret,map_key(params,curr-1),v);
-			curr++; }; };
-	if(named_param){
-		add(ret,named_param,int_var(1)); };
-	ret=eval_params(ret,func,NULL);
-	for(int i3=next(ret,-1,NULL,NULL); has_id(ret,i3); i3++){ void* v3=map_id(ret,i3); char* k3=map_key(ret, i3);
-		if(str_eq(map_val(map_val(params,k3),"type"),"map*")){
-			add(ret,k3,str_map(v3,Map)); }; };
-	return ret;
-};
 int test_add(int a,int b){ return a+b; };
 map* test_map(map* out){ return out; };
 
-int utests(char* test,char* file){
-	map* mp=file_vec(file);
-	int errs=0;
-	int runs=0;
-	for(int i=0; i<map_len(mp); i+=3){
-		if(test && !str_has(map_id(mp,i),test)){ continue; };
-		runs++;
-		printf("Running: %20s\r",map_id(mp,i));
-		fflush(stdout);
-		errs+=utest(eval(map_id(mp,i+1),NULL),map_id(mp,i+2),map_id(mp,i+1),map_id(mp,i)); };
-	int passed=runs-errs;
-	px(xstr("\n",int_str( passed), "/",int_str( runs), " tests passed.", End),1);
-	return errs;
-};
 char* file_path(char* file){
 	int i=0;
 	for(i=str_len(file); i>0; i--){ if(file[i-1]=='/'){ break; }; };
@@ -4169,7 +3077,7 @@ char* fork_exec(char* cmd,map* params){
 		else if(WIFSIGNALED(status)){ mstr("command %s killed",cmd, End); }; };
 	return NULL;
 };
-map* source_files(){ return xvec("astrostr.fox", "cgi.fox", "cmd.fox", "core.fox", "fox.fox", "generator.fox", "main.fox", "maincgi.fox", "run.fox", "sql.fox", "astro/astro.h", End); };
+map* source_files(){ return xvec("astrostr.fox", "cgi.fox", "cmd.fox", "core.fox", "fox.fox", "generator.fox", "main.fox", "maincgi.fox", "run.fox", "sql.fox", "astro/astro.h", "eval.fox", End); };
 map* source_funcs(){
 	if(!map_val(map_val(_globals,"cache"),"funcs")){
 		map* mp=new_map();	
@@ -4180,7 +3088,6 @@ map* source_funcs(){
 	return map_val(map_val(_globals,"cache"),"funcs");
 };
 map* file_funcs(char* filename,int withbody){ return x_funcs(file_read(filename,1,1),withbody,filename); };
-char* help(){ return funcs_cdecl(funcs(),1); };
 void src(map* mp,int from,int len,char* msg){
 	if(!len){ len=mp->len-from; };
 	px(json(vec_sub(mp,from,len),0),1);
@@ -4220,7 +3127,10 @@ map* toks_syn(map* toks,int recurse){
 	if(map_len(toks)%2){ xadd(ret,NULL,xvec(map_id(toks,map_len(toks)-1),NULL, End), End); };
 	return ret;
 };
-char* increase_version(){ return write_file(int_str((atoi(file_read(".version.txt",1,1))+1)),".version.txt",0,1); };
+char* increase_version(){
+	if(!is_file(".version.txt")){ write_file("0",".version.txt",0,1); };
+	return write_file(int_str((atoi(file_read(".version.txt",1,1))+1)),".version.txt",0,1);
+};
 int call_variadic_int(map* mp,void* fp,char* name){
 	int(*ptr)(void* param1,...)=fp;
 	if(!mp){ return ptr(End); };
@@ -4554,7 +3464,6 @@ void benchmark_gc(){
 	dx(mem_usage(),NULL,0);
 };
 char* ping(char* str){ return str; };
-map* ping_map(map* in){ return in; };
 char* str_join(char* str1,char* joiner,char* str2){
 	if(!str_len(str1)){ return str2; };
 	if(!str_len(str2)){ return str1; };
@@ -4721,6 +3630,7 @@ char* str_hex(char* in){
 };
 char* c_md5(char* in, size_t initial_len, char* out);
 char* md5(char* in){ char ret[33]; return str_dup(c_md5(in,str_len(in),ret)); };
+map* file_map(char* filename){ return data_map(file_read(filename,1,1)); };
 map* data_map(char* in){ return data_map2(&in,0); };
 map* data_map2(char** in,int level){
 	if(!in||!*in||!**in){ return NULL; };
@@ -4734,9 +3644,9 @@ map* data_map2(char** in,int level){
 		if(str_start(str,"//")){ str=skip_upto(str,"\n\r"); continue; };
 		char* keystart=skip_over(tabstart," \t");
 		char* keyend=skip_code(keystart," \r\n\t");
-		str=keyend;
-		if(keyend==keystart){ continue; };
+		if(keyend==keystart){ str=keyend; continue; };
 		if(keystart-tabstart<level){ break; };
+		str=keyend;
 		void* key=data_unquote(sub_str(keystart,0,keyend-keystart));
 		char* valstart=skip_over(keyend," \t");
 		char* valend=skip_upto(valstart,"\n\r");
@@ -4911,4 +3821,11 @@ char* time_str(time_t timer){
 	if(!timer){ timer=time(0); };
 	strftime(buffer,20, "%Y-%m-%d %H:%M:%S",localtime(&timer));
 	return str_dup(buffer);
+};
+int ret_print(void* ret){
+	if(_printed){ return is_i(ret) ? is_int(ret) : 0; };
+	if(is_map(ret)){ px(json(ret,1),1); return 0; };
+	if(is_blob(ret)){ print(ret,stdout); }
+	else if(is_str(ret) || is_num(ret)){ px(to_str(ret,"",0),1); };
+	return is_i(ret) ? is_int(ret) : 0;
 };

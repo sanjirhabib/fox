@@ -19,10 +19,7 @@ int run(map* args){
 		ret=name.fox_run()
 	else
 		if name.str_start("--") => name=name.sub_str(2)
-		ret=args.vec_sub(2).cmdline_params(name).invoke(name)
-	if _printed => return ret.is_i() ? ret.is_int() : 0
-	if ret.is_map() => ret.json(1).px(); return 0
-	if ret.is_blob() => ret.print()
-	else if ret.is_str() || ret.is_num() => ret.to_str().px()
-	return ret.is_i() ? ret.is_int() : 0
+		ret=args.cmdline_params(funcs()).invoke(name)
+	return ret.ret_print()
+
 }

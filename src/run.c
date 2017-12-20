@@ -19,10 +19,7 @@ int run(map* args){
 		ret=fox_run(name);
 	}else{
 		if(str_start(name,"--")){ name=sub_str(name,2,-2147483648); };
-		ret=invoke(cmdline_params(vec_sub(args,2,0),name),name); };
-	if(_printed){ return is_i(ret) ? is_int(ret) : 0; };
-	if(is_map(ret)){ px(json(ret,1),1); return 0; };
-	if(is_blob(ret)){ print(ret,stdout); }
-	else if(is_str(ret) || is_num(ret)){ px(to_str(ret,"",0),1); };
-	return is_i(ret) ? is_int(ret) : 0;
+		ret=invoke(cmdline_params(args,funcs()),name); };
+	return ret_print(ret);
+
 };

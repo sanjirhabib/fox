@@ -4,6 +4,8 @@
 #include <mkdio.h>
 #include <curl/curl.h>
 
+int _queries=0;
+
 map* sql_toks(char* line) => return sql_tokenizer(&line)
 map* split_keywords(map* mp,char* words){
 	if !mp => return mp
@@ -697,7 +699,7 @@ int type_size(char* type){
 		para 256
 		daymonth 5
 		month 7
-	}}.maptype(type).to_int()
+	}}.map_type(type).to_int()
 }
 char* lite_create_col(map* col){
 	size=col.size.to_int()
@@ -713,7 +715,7 @@ char* lite_create_col(map* col){
 		datetime datetime
 		daymonth varchar
 		month varchar
-	}}.maptype(col.type)
+	}}.map_type(col.type)
 	if !type => "col.type=$(col.type) not matched".fox_error()
 	name=col.name
 	if type===:varchar => return "$name varchar($size) collate nocase not null default ''"
@@ -734,7 +736,7 @@ int is_indexed(char* type){
 		code 1
 		password 0
 		email 0
-	}}.maptype(type).to_int()
+	}}.map_type(type).to_int()
 }
 map* trigger_sqls(char* tbl,char* db) => return db.db_meta()[tbl].tbl_trigger_sqls()
 map* tbl_trigger_sqls(map* tbl){
@@ -822,7 +824,6 @@ map* db_tables(char* db){
 map* db_cols(char* db,char* tbl){
 	rs="pragma table_info ($tbl)".lite_exec(db,NULL)
 	ret={}
-	//name|type|notnull|dflt_value|pk
 	rs.each v,,idx
 		col={}
 		map* mp=v
@@ -843,23 +844,7 @@ map* db_cols(char* db,char* tbl){
 		ret[name]=col
 	return ret
 }
-//map* row_ids(map* row,char* tbl,char* db){
-//	ret={}
-//	tbl.tbl_pkeys(db).each v,,i => ret[v]=row[v]
-//	return ret
-//}
-//map* tbl_row_ids(char* tbl,char* db,map* row){
-//	ret={}
-//	tbl.tbl_pkeys(db).each f
-//		ret[f]=row[f]
-//	return ret
-//}
-//char* tbl_row_id(char* tbl,char* db,map* row){
-//	return tbl.tbl_row_ids(db,row).map_join("\t")
-//}
-//char* ids_id(map* ids) => return ids.map_join("\t")
 map* url_gets() => return _globals.url.params
-//map* get_ids(char* tbl,char* db) => return tbl.sql_id_ids(db,url_gets().id)
 char* sql_table(char* sql){
 	if sql.is_code() => return sql
 	return sql.sql_cls(:from)[0].tbl.sql_table()
@@ -975,7 +960,7 @@ map* parse_connection(char* in) => return {type: :lite, file: in}
 map* conn_db(char* db){
 	if !db.is_code() => return db.parse_connection()
 	ret=_globals.dbs[db]
-	if !ret => "SQLite connection $db not found".fox_error()
+	if !ret => "SQLite connection $db not found. Only $(_globals.dbs.map_keys().map_join(\",\")) defined".fox_error()
 	if ret.is_str() => _globals.dbs[db]=ret.parse_connection()
 	return _globals.dbs[db]
 }
@@ -992,9 +977,10 @@ void* lite_conn(char* db){
 	return _globals.conn[db]
 }
 map* lite_exec(char* sql,char* db,map* params=NULL){
-	start_time()
+	_queries++
 	sqlite3* conn=db.lite_conn()
 	sqlite3_stmt* stm=NULL
+	start_time()
 	if conn.sqlite3_prepare_v2(sql,-1,&stm,NULL)!=SQLITE_OK
 		return sql.sql_error(db,conn)
 	int i=0
@@ -1046,12 +1032,6 @@ map* cols_pkeys(map* cols){
 		if v.pkey => ret[k]=k
 	if !ret.map_len() => ret[cols.map_key(0)]=cols.map_key(0)
 	return ret
-}
-map* crud_save(char* sql,char* db,map* cols,char* back,map* data){
-	if url_gets().id => url_gets().id.id_update(sql,db,data)
-	else data.row_insert(sql.sql_table(),db)
-	back.http_redirect()
-	return NULL
 }
 map* types(){
 	return {{
@@ -1123,7 +1103,7 @@ map* types(){
 		largefile file
 	}}
 }
-char* maptype(map* mp,char* type){
+char* map_type(map* mp,char* type){
 	while(type)
 		if mp[type] => return mp[type].to_str()
 		type=types()[type]
@@ -1234,7 +1214,7 @@ char* str_show(char* value,char* type,map* op=NULL,int width=0){
 		file file
 		jpeg image
 		duration duration
-	}}.maptype(type)
+	}}.map_type(type)
 	if width && type.is_word("source text para") && value.str_len()>width*256 => value=value.sub_str(0,width*256)
 	if type===:bool => return value.is_int() ? 'Yes' : 'No'
 	if type===:text => return value.str_html()
@@ -1290,7 +1270,10 @@ map* rows_show(map* rows,map* cols,int width=2){
 	return ret
 }
 
-void* sql_delete(void* ids,char* tbl,char* db) => ids=ids.ids_param(tbl,db); return ("delete from $tbl"..re_where(ids.where_param())).lite_exec(db,ids)
+void* ids_delete(void* ids,char* tbl,char* db){
+	ids=ids.ids_param(tbl,db)
+	return ("delete from $tbl"..re_where(ids.where_param())).lite_exec(db,ids)
+}
 char* sql_rename(char* from,char* into) => return "alter table $from rename to $into"
 map* subtypes(char* type){
 	ret=[]
@@ -1377,6 +1360,7 @@ map* tbls_sync_sqls(map* new_tbls,map* old_tbls){
 	if !new_tbls => "sync_sql() final table list is blank!".fox_error()
 	newtbls={}
 	oldtbls={}
+	old_tbls.map_del_key(:_syncing).map_compact()
 	old_tbls.each val,key => if !new_tbls[key] => oldtbls[key]=val
 	match={}
 	new_tbls.each val,key
@@ -1390,7 +1374,9 @@ map* tbls_sync_sqls(map* new_tbls,map* old_tbls){
 	match.each oldt,newt
 		sqls.vec_merge(old_tbls[oldt].sync_sqls(new_tbls[newt]))
 	newtbls.each newt
-		sqls[]=new_tbls[newt].create_sql()
+		sqls[]=newt.create_sql()
+		sqls.vec_merge(newt.create_index_sqls())
+		sqls.vec_merge(newt.tbl_trigger_sqls())
 	oldtbls.each oldt
 		sqls[]=oldt.name.drop_sql()
 	return sqls
@@ -1398,6 +1384,7 @@ map* tbls_sync_sqls(map* new_tbls,map* old_tbls){
 map* db_meta(char* db){
 	if !db => return NULL
 	if _globals.dbs[db].meta => return _globals.dbs[db].meta
+	if _globals.dbs[db].is_str() => _globals.dbs[db]=_globals.dbs[db].parse_connection()
 	ret=(db.file_rename(NULL,".db")..".meta").file_read(,0).data_map().db
 	if ret
 		ret.each val,key
@@ -1464,7 +1451,7 @@ map* sql_sums(char* sql,char* db,map* cols,map* params){
 		if !{{
 			text 0
 			amount 1
-		}}.maptype(col.type).to_int() => continue
+		}}.map_type(col.type).to_int() => continue
 		expr=col.expr.sql_str()
 		if !col.aggregate && !expr.str_start("sum(") && !expr.str_start("count(") => expr="sum($expr)"
 		sum[f]=expr.sql_toks()
@@ -1512,7 +1499,10 @@ char* read_textblock(map* lines, int* lineno,char* terminator,char** outline){
 	return ret
 }
 char* http_moved(char* url) => return NULL.http_out("301 Moved Permanently","text/html",["Location: $url"])
-char* http_redirect(char* url) => return NULL.http_out("302 Moved Temporarily","text/html",["Location: $url"])
+char* http_redirect(char* url,char* msg=''){
+	if msg => _globals.sess.msg=msg
+	return NULL.http_out("302 Moved Temporarily","text/html",["Location: $url"])
+}
 void* http_error(char* msg,char* status) => msg.http_out(status); xexit(0); return NULL
 char* file_mime(char* path){
 	_globals.mime.each v,k,i
@@ -1630,7 +1620,7 @@ map* amps_map(char* in){
 			nval=val[k]
 			if !nval.is_map() => nval={}; val[k]=nval
 			val=nval
-		val[lastkey]=pr[1].url_str()		
+		val[lastkey]=pr[1].url_str()
 	return ret
 }
 map* parse_url(char* path){
@@ -1919,37 +1909,37 @@ map* lite_trigger_slno(char* name, char* pkey, char* by=NULL){
 	oby=by and " and $by=old.$by"
 	by&&=" where $by=new.$by"
 	return [
-		"drop trigger if exists $(name)_slno_insert_null;",
+		"drop trigger if exists $(name)_slno_insert_null",
 		"create trigger $(name)_slno_insert_null after insert on $name when new.slno+0=0 or abs(new.slno+0)>(select count(*) from $name$by) begin
 			update $name set slno=1+(select count(*) from $name where $pkey!=new.$pkey$nby) where $pkey=new.$pkey;
-		end;",
-		"drop trigger if exists $(name)_slno_insert_negetive;",
+		end",
+		"drop trigger if exists $(name)_slno_insert_negetive",
 		"create trigger $(name)_slno_insert_negetive after insert on $name when new.slno<0 and abs(new.slno)<=(select count(*) from $name$by) begin
 			update $name set slno=slno+.5 where slno>=(select count(*) from $name$by)+new.slno$nby;
 			update $name set slno=slno+.5 where slno>=(select count(*) from $name$by)+new.slno$nby;
 			update $name set slno=(select count(*) from $name$by)+new.slno+1 where $pkey=new.$pkey;
-		end;",
-		"drop trigger if exists $(name)_slno_insert_positive;",
+		end",
+		"drop trigger if exists $(name)_slno_insert_positive",
 		"create trigger $(name)_slno_insert_positive after insert on $name when new.slno>0 and new.slno<=(select count(*) from $name$by) begin
 			update $name set slno=slno+.5 where slno>=new.slno and $pkey!=new.$pkey$nby;
 			update $name set slno=slno+.5 where slno>=new.slno and $pkey!=new.$pkey$nby;
-		end;",
+		end",
 		"create trigger $(name)_slno_delete after delete on $name begin
 			update $name set slno=slno-.5 where slno>old.slno$oby;
 			update $name set slno=slno-.5 where slno>old.slno$oby;
-		end;",
+		end",
 		"create trigger $(name)_slno_update_null after update on $name when new.slno is null or new.slno=0 or new.slno='' or abs(new.slno)>(select count(*) from $name$by) begin
 			update $name set slno=slno-.5 where slno>old.slno$oby;
 			update $name set slno=slno-.5 where slno>old.slno$oby;
 			update $name set slno=(select count(*) from $name$by) where $pkey=new.$pkey;
-		end;",
+		end",
 		"create trigger $(name)_slno_update_negetive after update on $name when new.slno<0 and new.slno>=-1*(select count(*) from $name$by) begin
 			update $name set slno=slno-.5 where slno>old.slno$oby;
 			update $name set slno=slno-.5 where slno>old.slno$oby;
 			update $name set slno=slno+.5 where slno>=(select count(*) from $name$by)+new.slno$nby;
 			update $name set slno=slno+.5 where slno>=(select count(*) from $name$by)+new.slno$nby;
 			update $name set slno=(select count(*) from $name$by)+new.slno where $pkey=new.$pkey;
-		end;",
+		end",
 		"create trigger $(name)_slno_update_positive after update on $name when new.slno>0 and old.slno>0 and abs(new.slno-old.slno)>=1 and new.slno<=(select count(*) from $name$by) begin
 			update $name set slno=slno-.5 where slno>old.slno and $pkey!=new.$pkey$oby;
 			update $name set slno=slno-.5 where slno>old.slno and $pkey!=new.$pkey$oby;
@@ -1960,49 +1950,49 @@ map* lite_trigger_slno(char* name, char* pkey, char* by=NULL){
 }
 map* lite_trigger_tree(char* name,char* pkey){
 	return [
-		"drop trigger if exists $(name)_tree_insert_null;",
+		"drop trigger if exists $(name)_tree_insert_null",
 		
 		"create trigger $(name)_tree_insert_null after insert on $name when new.parent is null or new.parent='' begin
 		update $name set lft=(select coalesce(max(rgt),0) from $name where $pkey!=new.$pkey)+1,rgt=(select coalesce(max(rgt),0) from $name where $pkey!=new.$pkey)+2 where $pkey=new.$pkey;
-		end;",
+		end",
 	
-		"drop trigger if exists $(name)_tree_insert;",
+		"drop trigger if exists $(name)_tree_insert",
 
 		"create trigger $(name)_tree_insert after insert on $name when new.parent is not null and length(new.parent)>0 begin
 		update $name set lft=(select rgt from $name where $pkey=new.parent),rgt=(select rgt from $name where $pkey=new.parent)+1 where $pkey=new.$pkey;
 		update $name set lft=lft+2 where lft>(select rgt from $name where $pkey=new.parent);
 		update $name set rgt=rgt+2 where rgt>=(select rgt from $name where $pkey=new.parent) and $pkey!=new.$pkey;
-		end;",
+		end",
 
-		"drop trigger if exists $(name)_tree_delete;",
+		"drop trigger if exists $(name)_tree_delete",
 
 		"create trigger $(name)_tree_delete before delete on $name begin
 		update $name set lft=lft-(old.rgt-old.lft)-1 where lft>old.rgt;
 		update $name set rgt=rgt-(old.rgt-old.lft)-1 where rgt>old.rgt;
 		delete from $name where lft>old.lft and lft<old.rgt;
-		end;",
+		end",
 
-		"drop trigger if exists $(name)_tree_update_null;",
+		"drop trigger if exists $(name)_tree_update_null",
 
 		"create trigger $(name)_tree_update_null after update of parent on $name when new.parent is null or length(new.parent)=0 begin
 		update $name set lft=lft+(select max(rgt) from $name)-old.lft+1,rgt=rgt+(select max(rgt) from $name)-old.lft+1 where lft>=old.lft and lft<=old.rgt;
 		update $name set lft=lft-(old.rgt-old.lft)-1 where lft>old.rgt;
 		update $name set rgt=rgt-(old.rgt-old.lft)-1 where rgt>old.rgt;
-		end;",
+		end",
 	
-		"drop trigger if exists $(name)_tree_update_right;",
+		"drop trigger if exists $(name)_tree_update_right",
 
 		"create trigger $(name)_tree_update_right after update of parent on $name when new.parent is not null and length(new.parent)>0 and old.lft<(select lft from $name where $pkey=new.parent) begin
 		update $name set lft=case when lft>old.rgt and lft<(select rgt from $name where $pkey=new.parent) then lft-old.rgt+old.lft-1 when lft>=old.lft and lft<=old.rgt then lft+(select rgt from $name where $pkey=new.parent)-old.rgt-1 else lft end;
 		update $name set rgt=case when rgt>old.rgt and rgt<(select rgt from $name where $pkey=new.parent) then rgt-old.rgt+old.lft-1 when rgt>=old.lft and rgt<=old.rgt then rgt+(select rgt from $name where $pkey=new.parent)-old.rgt-1 else rgt end;
-		end;",
+		end",
 		
-		"drop trigger if exists $(name)_tree_update_left;",
+		"drop trigger if exists $(name)_tree_update_left",
 
 		"create trigger $(name)_tree_update_left after update of parent on $name when new.parent is not null and length(new.parent)>0 and old.lft>(select lft from $name where $pkey=new.parent) begin
 		update $name set lft=case when lft<old.lft and lft>=(select rgt from $name where $pkey=new.parent) then lft+old.rgt-old.lft+1 when lft>=old.lft and lft<=old.rgt then lft-old.lft+(select rgt from $name where $pkey=new.parent) else lft end;
 		update $name set rgt=case when rgt<old.lft and rgt>=(select lft from $name where $pkey=old.$pkey) then rgt+old.rgt-old.lft+1 when rgt>=old.lft and rgt<=old.rgt then rgt-old.lft+(select lft from $name where $pkey=old.$pkey) else rgt end;
-		end;"
+		end"
 	]
 }
 char* page_html(map* data){
@@ -2040,7 +2030,7 @@ char* page_html(map* data){
 		---
 	return ---
 	$head
-	<div class='row-fluid alert-success'><span class='span8'>$(data.msg)</span>$(data.login)</div>
+	<div class='row-fluid alert-success'><span class='span8' style='padding-left:2em;'>$(data.msg)</span>$(data.login)</div>
 	<div class=row-fluid>
 	<div class='span3' style='text-align:center;'><a href='$(data.home)'><img style='width:auto;height:100px;padding:.3em;' src='$(data.logo)'></img></a></div>
 	<div class='span7'>
@@ -2066,6 +2056,8 @@ map* page_data(map* data){
 	data.logo||="logo.jpg".home_url()
 	data.home||=home_url()
 	data.css&&="<style>\n$(data.css)\n</style>"
+	data.msg||=_globals.sess.msg
+	_globals.sess.map_del_key(:msg).map_compact()
 	head=''
 	['/res/bootstrap.css','/res/bootstrap-responsive.css','/res/jquery.js','/res/bootstrap.js']
 	.each v
@@ -2085,8 +2077,8 @@ map* page_data(map* data){
 	if _globals.req.get._print => return data
 	data.footer=---
 	Run Time: $(run_time())ms=$(gc_time())GC+$(run_time()-total_time()-gc_time())Code+$(total_time())DB
-	Heap: $(total_kb())KB. Stack: $(_gcdata.max_roots) Ptrs Total: $(max_mem()/1024)KB.
-	GC: $(gc_runs())runs.
+	Heap: $(_gcdata.max_mem.int_kb()). Stack: $(_gcdata.max_roots.int_str()), Total: $(max_mem().int_kb()).
+	GC: $(gc_runs())runs. Queries: $(_queries.int_str()).
 	---
 	data.footer.=(_globals.js and "<script>\n".._globals.js.map_join("\n").."</script>")
 	tabs=''
@@ -2106,8 +2098,18 @@ map* page_data(map* data){
 		data.tabs="<div><ul class='nav nav-tabs'>$tabs</ul></div>"
 	data.ldmenu="<script type='application/ld+json'>$lddata</script>"
 	body=''
+	_globals.css[]=---
+	a.menu {overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+	ul.menu2 {margin-top:5em;}
+	---;
 	data.menu.each name, url
-		body.="<li><a style='overflow:hidden;text-overflow:ellipsis;white-space:nowrap;' href='$url'>$name</a></li>\n"
+		body.="<li><a class='menu' href='$url'>$name</a></li>\n"
+	if data.menus
+		data.menus.each menu, title
+			if !menu.map_len() => continue
+			body.="</ul><h5 style='text-align:center;'>$title</h5><ul class='nav nav-tabs nav-stacked menu2'>"
+			menu.each name, url
+				body.="<li><a class='menu' href='$url'>$name</a></li>\n"
 	if data.width.is_int()==4
 		body="<div class='span11 offset1'><ul class='nav nav-pills'>$body</ul></div>"
 	else
@@ -2251,4 +2253,12 @@ map* tz_data(char* name,char* date=NULL){
 		dst =name.tz_dst(date)
 		utc =name.tz_utc(date)
 	}}
+}
+char* fts5_create(char* db=NULL){
+	ret=[
+	"drop table if exists search",
+	"create virtual table search using fts5(table,key,title,body,thumb)"
+	]
+	if db => ret.sqls_exec(db)
+	return ret.map_join(";\n")
 }

@@ -1,13 +1,13 @@
 CC=gcc
 INSTALL_DIR?=/usr/local
-CFLAGS=-m64 -Iinclude -std=gnu99 -Wno-logical-op-parentheses -Os -Wno-int-conversion -Llib -L/usr/lib64/ -fPIC -Wno-unused-command-line-argument -I/usr/local/opt/openssl/include -L/usr/local/lib -L/usr/local/opt/openssl/lib -lm
-FOXS=fox.fox core.fox sql.fox cgi.fox cmd.fox main.fox astrostr.fox maincgi.fox generator.fox
+CFLAGS=-m64 -Iinclude -std=gnu99 -Wno-logical-op-parentheses -Os -Wno-int-conversion -Llib -L/usr/lib64/ -fPIC -Wno-unused-command-line-argument -I/usr/local/opt/openssl/include -L/usr/local/lib -L/usr/local/opt/openssl/lib -lm -g
+FOXS=fox.fox core.fox sql.fox cgi.fox cmd.fox main.fox astrostr.fox maincgi.fox generator.fox eval.fox
 LIBS=-lsqlite3 -lcrypto -lmarkdown -lcurl
 HEADERS=fox.h sql.h
 _XLIBS=libfoxstatic.a libfox.so libfoxcgi.so libfoxcgistatic.a libfoxcmdstatic.a libfoxastro.a libfoxmain.a libfoxmaincgi.a
 XLIBS=$(patsubst %,lib/%,$(_XLIBS))
 DEPS=$(patsubst %,include/%,$(HEADERS))
-_OBJ=core.o meta.o fox.o memsize.o sql.o astro.o astrostr.o md5.o generator.o
+_OBJ=core.o meta.o fox.o memsize.o sql.o astro.o astrostr.o md5.o generator.o eval.o
 OBJ = $(patsubst %,obj/%,$(_OBJ))
 CFILES = $(patsubst %.fox,src/%.c,$(FOXS))
 
@@ -35,6 +35,7 @@ fox: $(FOXS)
 	$(CC) -c -o obj/maincgi.o src/maincgi.c $(CFLAGS) $(LIBS)
 	$(CC) -c -o obj/run.o src/run.c $(CFLAGS) $(LIBS)
 	$(CC) -c -o obj/generator.o src/generator.c $(CFLAGS) $(LIBS)
+	$(CC) -c -o obj/eval.o src/eval.c $(CFLAGS) $(LIBS)
 	$(CC) -c astro/astro.c -o obj/astro.o $(CFLAGS)
 	rm -f lib/libfoxcmdstatic.a
 	ar rcs lib/libfoxcmdstatic.a obj/cmd.o
