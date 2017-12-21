@@ -856,7 +856,7 @@ map* sql_rows(char* sql,char* db,map* param=NULL){
 	return sql.lite_exec(db,param)
 }
 map* sql_query(char* sql,char* db,map* where=NULL) => return sql.sql_add_where(where).sql_rows(db,where)
-map* tbl_id_ids(char* tbl,char* db,void* id){
+map* id_ids(void* id,char* tbl,char* db){
 	pkeys=tbl.tbl_pkeys(db)
 	ret={}
 	if id.is_i() => id=id.to_str()
@@ -871,10 +871,6 @@ map* tbl_id_ids(char* tbl,char* db,void* id){
 		ret[f]=id[f]
 	return ret
 }
-//map* sql_id_ids(char* sql,char* db,void* id) => return sql.sql_table().tbl_id_ids(db,id)
-//map* sql_id(char* sql,char* db,void* ids){
-//	return sql.sql_map().map_del_key(:order).map_del_key(:where).map_del_key(:limit).add(:where,sql.sql_table().pkeys_where(db)).map_sql().sql_row(db,sql.sql_id_ids(db,ids))
-//}
 map* sql_row(char* sql,char* db,map* param=NULL) => return sql.lite_exec(db,param)[0]
 map* sql_vector(char* sql,char* db,map* param=NULL){
 	ret=[]
@@ -920,7 +916,7 @@ map* tbl_referred_by(char* tbl,char* db){
 	return ret
 }
 void* id_update(void* ids,char* tbl,char* db,map* row){
-	ids=tbl.tbl_id_ids(db,ids);
+	ids=ids.id_ids(tbl,db);
 	ids.each val,f
 		if row[f] && row[f]!==val
 			tbl.tbl_referred_by(db).each ft
@@ -944,7 +940,7 @@ int row_insert(map* row,char* tbl,char* db){
 	cols.each ,k,idx
 		if !row[k] => continue
 		fld[]=k
-	"insert into $tbl ($(fld.map_join(', '))) values (:$(fld.map_join(', :')))".lite_exec(db,row)
+	"insert into $tbl ('$(fld.map_join(\"', '\"))') values (:$(fld.map_join(', :')))".lite_exec(db,row)
 	return "select last_insert_rowid()".sql_value(db).to_int()
 }
 void* sql_error(char* sql,char* db,sqlite3* conn){
@@ -1023,7 +1019,8 @@ map* vec_map(map* in){
 map* db_table_names(char* db){
 	if _globals.schema._tbls
 		return _globals.schema._tbls
-	_globals.schema._tbls="select name from sqlite_master where type='table' and name not in ('sqlite_sequence','_fts') order by 1".sql_pairs(db)
+
+	_globals.schema._tbls="select name from sqlite_master where type='table' and name not in ('sqlite_sequence', '_syncing', 'search', 'search_data', 'search_idx', 'search_content', 'search_docsize', 'search_config') order by 1".sql_pairs(db)
 	return _globals.schema._tbls
 }
 map* cols_pkeys(map* cols){
@@ -1109,21 +1106,6 @@ char* map_type(map* mp,char* type){
 		type=types()[type]
 	return type
 }
-/*
-char* bg_no_en(char* no){
-	$len=mb_strlen($no,'UTF-8');
-	$ret='';
-	for($i=0;$i<$len;$i++){
-		$c=mb_substr($no,$i,1,'UTF-8');
-		if $c==','||$c==' ' => continue;
-		$n=mb_ord($c);
-		if $n>=1632 && $n<1632+10 => $ret.=chr($n-1632+ord('0'));
-		else if $n>=2534 && $n<2534+10 => $ret.=chr($n-2534+ord('0'));
-		else $ret.=$c;
-	}
-	return $ret;
-}
-*/
 map* where_param(map* where){
 	ret={}
 	where.each ,key => ret[key]=":"..key
@@ -1131,9 +1113,9 @@ map* where_param(map* where){
 }
 map* where_rows(map* where, char* tbl, char* db) => return tbl.sql_add_where(where.where_param()).sql_rows(db,where)
 map* where_row(map* where, char* tbl, char* db) => return tbl.sql_add_where(where.where_param()).sql_row(db,where)
-map* id_row(char* id, char* tbl,char* db) => return [id].ids_row(tbl,db)
-map* ids_row(map* ids,char* tbl,char* db) => return ids.ids_param(tbl,db).where_row(tbl, db)
-map* ids_param(map* ids, char* tbl, char* db){
+map* id_row(void* ids,char* tbl,char* db) => return ids.id_param(tbl,db).where_row(tbl, db)
+map* id_param(void* ids, char* tbl, char* db){
+	ids=ids.id_ids(tbl,db)
 	ret={}
 	tbl.tbl_pkeys(db).each val,key,idx
 		ret[key]=ids.is_vec() ? ids[idx] : ids[key]
@@ -1270,8 +1252,8 @@ map* rows_show(map* rows,map* cols,int width=2){
 	return ret
 }
 
-void* ids_delete(void* ids,char* tbl,char* db){
-	ids=ids.ids_param(tbl,db)
+void* id_delete(void* ids,char* tbl,char* db){
+	ids=ids.id_param(tbl,db)
 	return ("delete from $tbl"..re_where(ids.where_param())).lite_exec(db,ids)
 }
 char* sql_rename(char* from,char* into) => return "alter table $from rename to $into"
@@ -1361,6 +1343,7 @@ map* tbls_sync_sqls(map* new_tbls,map* old_tbls){
 	newtbls={}
 	oldtbls={}
 	old_tbls.map_del_key(:_syncing).map_compact()
+	new_tbls.map_del_key(:search).map_compact()
 	old_tbls.each val,key => if !new_tbls[key] => oldtbls[key]=val
 	match={}
 	new_tbls.each val,key
@@ -1372,7 +1355,7 @@ map* tbls_sync_sqls(map* new_tbls,map* old_tbls){
 		oldtbls.map_del_key(match[name]).map_compact()
 	sqls=[]
 	match.each oldt,newt
-		sqls.vec_merge(old_tbls[oldt].sync_sqls(new_tbls[newt]))
+		sqls.vec_merge(new_tbls[newt].sync_sqls(old_tbls[oldt]))
 	newtbls.each newt
 		sqls[]=newt.create_sql()
 		sqls.vec_merge(newt.create_index_sqls())
@@ -1385,7 +1368,7 @@ map* db_meta(char* db){
 	if !db => return NULL
 	if _globals.dbs[db].meta => return _globals.dbs[db].meta
 	if _globals.dbs[db].is_str() => _globals.dbs[db]=_globals.dbs[db].parse_connection()
-	ret=(db.file_rename(NULL,".db")..".meta").file_read(,0).data_map().db
+	ret=(db.conn_db().file.file_rename(NULL,".db")..".meta").file_read(,0).data_map().db
 	if ret
 		ret.each val,key
 			val.name=key
@@ -1405,12 +1388,12 @@ map* db_sync(char* db,int go=0){
 }
 map* sync_sqls(map* newt,map* oldt){
 	if oldt.create_sql()===newt.create_sql() => return NULL	
-	---
-	DIFF old-new
-	$(oldt.create_sql())
-	$(newt.create_sql())
-
-	---.px()
+//	---
+//	DIFF old-new
+//	$(oldt.create_sql())
+//	$(newt.create_sql())
+//
+//	---.px()
 	match=oldt.cols.cols_match(newt.cols)
 	ret=[]
 	ret[]=:_syncing.drop_sql()
@@ -1418,7 +1401,9 @@ map* sync_sqls(map* newt,map* oldt){
 	ret[]="insert into _syncing ("..match.map_keys().map_join(", ")..") select "..match.map_join(", ").." from "..oldt.name
 	ret[]=oldt.name.drop_sql()
 	ret[]=:_syncing.sql_rename(newt.name)
-	ret.vec_merge(newt.create_index_sqls())
+	ret
+		.vec_merge(newt.create_index_sqls())
+		.vec_merge(newt.tbl_trigger_sqls())
 	return ret	
 }
 char* test_out(char* in){
@@ -1974,7 +1959,7 @@ map* lite_trigger_tree(char* name,char* pkey){
 
 		"drop trigger if exists $(name)_tree_update_null",
 
-		"create trigger $(name)_tree_update_null after update of parent on $name when new.parent is null or length(new.parent)=0 begin
+		"create trigger $(name)_tree_update_null after update of parent on $name when new.parent!=old.parent and (new.parent is null or length(new.parent)=0) begin
 		update $name set lft=lft+(select max(rgt) from $name)-old.lft+1,rgt=rgt+(select max(rgt) from $name)-old.lft+1 where lft>=old.lft and lft<=old.rgt;
 		update $name set lft=lft-(old.rgt-old.lft)-1 where lft>old.rgt;
 		update $name set rgt=rgt-(old.rgt-old.lft)-1 where rgt>old.rgt;
@@ -2261,4 +2246,262 @@ char* fts5_create(char* db=NULL){
 	]
 	if db => ret.sqls_exec(db)
 	return ret.map_join(";\n")
+}
+void save_caller(){
+	refer=url_back()
+	req=_globals.req
+	if req.method!==:get || !refer || req.get._refer || refer.str_end(req.path) => return
+	req.get._refer=refer
+	"./?$(req.get.map_amps())".http_redirect()
+}
+char* url_back(){
+	return _globals.req.get._refer or env_vars().HTTP_REFERER.parse_url().path or home_url()
+}
+char* form_html(map* mp){
+	mp.vals.each val,key
+		if mp.cols[key] => mp.cols[key].value=val
+	ret=---
+	<fieldset><legend>$(mp.title)</legend>
+	<p class='text-$(mp.error ? :error : :info)'>$(mp.msg)</p>
+	<form method=$(mp.method or :post)>
+	---
+	mp.cols.each val, name
+		ret.=---
+		<div class="control-group">
+		<label>$(val.label or val.name.str_title())</label>$(val.ctrl_html())
+		<span class='help-block'>$(mp.error[name])</span>
+		</div>
+		---
+	ret.="<div class='form-actions'><div class='btn-group'>"
+	mp.buttons.each val, name, idx
+		ret.=---
+		<input class='btn$(!idx ? " btn-primary" : "")' type='submit' name='$(val.name)' value='$(val.name.str_title())'>
+		---
+	ret.="</div></div>"
+	ret.="</form>"
+	return ret
+}
+map* param_map(char* in){
+	ret={}
+	in.str_split("&").each val
+		two=val.str_split("=",2)
+		ret[two[0]]=two[1]
+	return ret
+}
+map* form_posted(map* form){
+	save_caller()
+	if _globals.req.method!==:post => return NULL
+	param=_globals.req.post.amps_map()
+	form.buttons.each ,key
+		if param[key]
+			form.cols.each val,key
+				val.value=param[key]
+			return param
+	return NULL
+}
+char* ctrl_html(map* ctrl){
+	id=ctrl.id or ctrl.name.name_id()
+	if ctrl.list
+		ret="<option value=''>--</option>"
+		ctrl.list.each val, key
+			ret.="<option value='$(key.h())'$(ctrl.value===key ? ' selected' :'')>$(val ? val.h() : key.str_title().h())</option>"
+		return "<select name='$(ctrl.name)' id='$id' class='input-medium'>$ret</select>"
+	type={{
+		text text
+		code code
+		para para
+		soruce source
+		password password
+	}}.map_type(ctrl.type)
+	if type===:code
+		return ---
+		<input type=text name=$(ctrl.name) value="$(ctrl.value)" id=$id size="input-$(ctrl.size or :medium)"></input>
+		---
+	if type===:text
+		return ---
+		<input type=text name=$(ctrl.name) value="$(ctrl.value)" id=$id size="input-$(ctrl.size or :large)"></input>
+		---
+	if type===:para
+		return ---
+		<textarea class="para" style="width:20em; height:10em;" id=$id name='$(ctrl.name)'>$(ctrl.value)</textarea>
+		---
+	if type===:source
+		static int codeincluded=0
+		if !codeincluded
+			_globals.jsfile[]='/res/jquery.textarea.js'
+			_globals.css[]=".source {font-family:courier;overflow:auto;width:100%;height:30em;text-wrap:wrap;}"
+			_globals.js[]="$$(\"#$id\").tabby()"
+			codeincluded=1
+		return ---
+		<textarea id=$id class='source' wrap='off' name='$(ctrl.name)'>$(ctrl.value)</textarea>
+		---
+	if type===:password
+		return ---
+		<input type=password name=$(ctrl.name) value="$(ctrl.value)" id=$id></input>
+		---
+	return "control type $(ctrl.type) unspported. please provide support in ctrl_html()"
+}
+char* name_id(char* name){
+	return name
+}
+map* form_gets(map* form){
+	_globals.req.get.vals.each val,key
+		if form.cols[key] => form.cols[key].value=val
+	return form
+}
+int show_form(map* data){
+	data.body=data.form_html()
+	return data.show_page()
+}
+int is_user(char* who) => return _globals.sess.user===who || _globals.sess.role===who
+void authorized(char* who) => if !who.is_user() => _globals.req.path.not_found()
+char* col_align(map* col){
+	if col.sql || col.list => return ''
+	if {{
+		text text
+		int
+	}}.map_type(col.type)===:text => return ''
+	return " style='text-align:right;'"
+}
+char* rows_data_html(map* in){
+	return ---
+	<table class='table table-condensed table-bordered table-striped'>
+	<thead>
+	<tr>$(in.head)</tr>
+	</thead>
+	<tbody>
+	<tr>$(in.body.map_join("</tr>\n<tr>"))</tr>
+	</tbody>
+	</table>
+
+	---;
+}
+map* rows_data(map* rows, map* cols){
+	head=''
+	cols.each val
+		head.="<th$(val.col_align())>$(val.label or val.name.str_title())</th>"
+	body={}
+	rows.each row
+		s=''
+		row.each val, key
+			s.="<td$(cols[key].col_align())>$(val)</td>"
+		body[row.row_id(cols)]=s
+	return {head: head, body: body}
+}
+char* row_id(map* row, map* cols) => return row.row_ids(cols).map_join("\t").str_url()
+map* row_ids(map* row, map* cols){
+	ret=cols.cols_pkeys()
+	ret.each name
+		ret[name]=row[name]
+	return ret
+}
+void crud(char* sql,char* db){
+	path=_globals.paths	
+	curr=path.matched
+	table=sql.sql_table()
+	if path.end
+		rows=sql.sql_rows(db)
+		cols=sql.sql_cols(db)		
+		data=rows.rows_data(cols)
+		data.head=---
+		<th style='text-align:center;'>
+		<div class="btn-group">
+		<button class="btn btn-mini">Action</button>
+		<button class="btn btn-mini dropdown-toggle" data-toggle="dropdown">
+		<span class="caret"></span>
+		</button>
+		<ul class="dropdown-menu">
+			<li><a href="add/">Add New</a></li>
+		</ul>
+		</div>		
+		</th>
+
+		---..data.head
+		data.body.each row,key
+			data.body[key]=---
+			<td style='text-align:center;'>
+			<div class="btn-group">
+			<button class="btn btn-mini dropdown-toggle" data-toggle="dropdown">
+			<span class="caret"></span>
+			</button>
+			<ul class="dropdown-menu">
+				<li><a href="id.$key/edit/">Edit</a></li>
+				<li><a href="id.$key/delete/">Delete</a></li>
+			</ul>
+			</div>		
+			</td>
+
+			---..row
+		data.rows_data_html().show_body({{
+			title =sql.sql_table().str_title().." List"
+			width =4
+		}})
+		return
+	if "$(curr)add/".get().end
+		:Add.name_tab()
+		cols=sql.sql_cols(db).del_keys([:lft,:rgt])
+		form={{
+			title ="Edit $(table.str_title())"
+			cols =cols
+			buttons
+				save -
+		}}
+		data=form.form_posted()
+		if data
+			data.row_insert(table, db)
+			url_back().http_redirect("Record Added")
+		form.show_form()
+	"$(curr)id.([^/]+)/".get([:id])
+	if "$(curr)id.[^/]+/edit/".get().end
+		:Edit.name_tab()
+		table=sql.sql_table()
+		row=path.id.id_row(table, db)
+		cols=sql.sql_cols(db).del_keys([:lft,:rgt])
+		form={{
+			title ="Edit $(table.str_title())"
+			cols =cols
+			vals =row
+			buttons
+				save -
+		}}
+		data=form.form_posted()
+		if data
+			row.row_ids(table.tbl_cols(db)).id_update(table, db, data)
+			url_back().http_redirect("Record Updated")
+		form.show_form()
+	if "$(curr)id.[^/]+/delete/".get().end
+		:Delete.name_tab()
+		form={{
+			title Delete This Record?
+			buttons
+				delete -
+				cancel -
+		}}
+		data=form.form_posted()
+		if data.cancel
+			url_back().http_redirect(:Cancelled)
+		else if data.delete
+			path.id.id_delete(table,db)
+			url_back().http_redirect("Record Deleted")
+		form.show_form()
+	not_found()
+}
+map* del_keys(map* mp,map* keys){
+	keys.each key => mp.map_del(mp.map_has_key(key)-1).map_compact()
+	return mp
+}
+char* str_bare(char* in,char* accept=NULL){
+	if !in => return in
+	ret=in
+	while *in
+		if *in>0 && !(*in).is_alphanum(accept) => *in=' '
+		in+=in.utf_len()
+	return ret
+}
+char* word_end(char* in,int len){
+	if in.str_len()<=len => return in
+	ptr=in+len
+	while *ptr && !" \t\n\r".str_chr(*ptr) => ptr++
+	if !*ptr => return in
+	return in.sub_str(0,ptr-in)
 }

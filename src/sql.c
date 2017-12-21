@@ -809,8 +809,8 @@ map* pre_tables(){
 				"id3=code",xmap(End),
 				"id4=code",xmap(End),
 				"tbl=code",xmap(End),
-				"body=text",xmap(End), End), End),
-	"name",NULL, End);
+				"body=text",xmap(End), End), End)
+	, End);
 };
 map* db_table(char* db,char* tbl){
 	return cols_table(db_cols(db,tbl),tbl,db);
@@ -856,7 +856,7 @@ map* sql_rows(char* sql,char* db,map* param){
 	return lite_exec(sql,db,param);
 };
 map* sql_query(char* sql,char* db,map* where){ return sql_rows(sql_add_where(sql,where),db,where); };
-map* tbl_id_ids(char* tbl,char* db,void* id){
+map* id_ids(void* id,char* tbl,char* db){
 	map* pkeys=tbl_pkeys(tbl,db);
 	map* ret=new_map();
 	if(is_i(id)){ id=to_str(id,"",0); };
@@ -871,10 +871,6 @@ map* tbl_id_ids(char* tbl,char* db,void* id){
 		add(ret,f,map_val(id,f)); };
 	return ret;
 };
-//map* sql_id_ids(char* sql,char* db,void* id) => return sql.sql_table().tbl_id_ids(db,id)
-//map* sql_id(char* sql,char* db,void* ids){
-//	return sql.sql_map().map_del_key(:order).map_del_key(:where).map_del_key(:limit).add(:where,sql.sql_table().pkeys_where(db)).map_sql().sql_row(db,sql.sql_id_ids(db,ids))
-//}
 map* sql_row(char* sql,char* db,map* param){ return map_id(lite_exec(sql,db,param),0); };
 map* sql_vector(char* sql,char* db,map* param){
 	map* ret=new_vec();
@@ -920,7 +916,7 @@ map* tbl_referred_by(char* tbl,char* db){
 	return ret;
 };
 void* id_update(void* ids,char* tbl,char* db,map* row){
-	ids=tbl_id_ids(tbl,db,ids);
+	ids=id_ids(ids,tbl,db);
 	for(int next1=next(ids,-1,NULL,NULL); has_id(ids,next1); next1++){ void* val=map_id(ids,next1); char* f=map_key(ids, next1);
 		if(map_val(row,f) && !str_eq(map_val(row,f),val)){
 			map* map_1=tbl_referred_by(tbl,db); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* ft=map_id(map_1,next1);
@@ -944,7 +940,7 @@ int row_insert(map* row,char* tbl,char* db){
 	for(int idx=next(cols,-1,NULL,NULL); has_id(cols,idx); idx++){ char* k=map_key(cols, idx);
 		if(!map_val(row,k)){ continue; };
 		vec_add(fld,k); };
-	lite_exec(xstr("insert into ", tbl, " (", map_join(fld,", "), ") values (:", map_join(fld,", :"), ")", End),db,row);
+	lite_exec(xstr("insert into ", tbl, " ('", map_join(fld,"', '"), "') values (:", map_join(fld,", :"), ")", End),db,row);
 	return to_int(sql_value("select last_insert_rowid()",db,NULL));
 };
 void* sql_error(char* sql,char* db,sqlite3* conn){
@@ -1022,8 +1018,9 @@ map* vec_map(map* in){
 };
 map* db_table_names(char* db){
 	if(map_val(map_val(_globals,"schema"),"_tbls")){
-		return map_val(map_val(_globals,"schema"),"_tbls"); };
-	add(add_key(_globals,"schema",Map),"_tbls",sql_pairs("select name from sqlite_master where type='table' and name not in ('sqlite_sequence','_fts') order by 1",db,NULL));
+		return map_val(map_val(_globals,"schema"),"_tbls");
+	};
+	add(add_key(_globals,"schema",Map),"_tbls",sql_pairs("select name from sqlite_master where type='table' and name not in ('sqlite_sequence', '_syncing', 'search', 'search_data', 'search_idx', 'search_content', 'search_docsize', 'search_config') order by 1",db,NULL));
 	return map_val(map_val(_globals,"schema"),"_tbls");
 };
 map* cols_pkeys(map* cols){
@@ -1109,21 +1106,6 @@ char* map_type(map* mp,char* type){
 		type=map_val(types(),type); };
 	return type;
 };
-/*
-char* bg_no_en(char* no){
-	$len=mb_strlen($no,'UTF-8');
-	$ret='';
-	for($i=0;$i<$len;$i++){
-		$c=mb_substr($no,$i,1,'UTF-8');
-		if $c==','||$c==' ' => continue;
-		$n=mb_ord($c);
-		if $n>=1632 && $n<1632+10 => $ret.=chr($n-1632+ord('0'));
-		else if $n>=2534 && $n<2534+10 => $ret.=chr($n-2534+ord('0'));
-		else $ret.=$c;
-	}
-	return $ret;
-}
-*/
 map* where_param(map* where){
 	map* ret=new_map();
 	for(int next1=next(where,-1,NULL,NULL); has_id(where,next1); next1++){ char* key=map_key(where, next1); add(ret,key,xstr(":",key, End)); };
@@ -1131,9 +1113,9 @@ map* where_param(map* where){
 };
 map* where_rows(map* where, char* tbl, char* db){ return sql_rows(sql_add_where(tbl,where_param(where)),db,where); };
 map* where_row(map* where, char* tbl, char* db){ return sql_row(sql_add_where(tbl,where_param(where)),db,where); };
-map* id_row(char* id, char* tbl,char* db){ return ids_row(xvec(id, End),tbl,db); };
-map* ids_row(map* ids,char* tbl,char* db){ return where_row(ids_param(ids,tbl,db),tbl, db); };
-map* ids_param(map* ids, char* tbl, char* db){
+map* id_row(void* ids,char* tbl,char* db){ return where_row(id_param(ids,tbl,db),tbl, db); };
+map* id_param(void* ids, char* tbl, char* db){
+	ids=id_ids(ids,tbl,db);
 	map* ret=new_map();
 	map* map_1=tbl_pkeys(tbl,db); for(int idx=next(map_1,-1,NULL,NULL); has_id(map_1,idx); idx++){ void* val=map_id(map_1,idx); char* key=map_key(map_1, idx);
 		add(ret,key,is_vec(ids) ? map_id(ids,idx) : map_val(ids,key)); };
@@ -1270,8 +1252,8 @@ map* rows_show(map* rows,map* cols,int width){
 	return ret;
 };
 
-void* ids_delete(void* ids,char* tbl,char* db){
-	ids=ids_param(ids,tbl,db);
+void* id_delete(void* ids,char* tbl,char* db){
+	ids=id_param(ids,tbl,db);
 	return lite_exec((xstr(xstr("delete from ", tbl, End),re_where(where_param(ids)), End)),db,ids);
 };
 char* sql_rename(char* from,char* into){ return xstr("alter table ", from, " rename to ", into, End); };
@@ -1361,6 +1343,7 @@ map* tbls_sync_sqls(map* new_tbls,map* old_tbls){
 	map* newtbls=new_map();
 	map* oldtbls=new_map();
 	map_compact(map_del_key(old_tbls,"_syncing"));
+	map_compact(map_del_key(new_tbls,"search"));
 	for(int next1=next(old_tbls,-1,NULL,NULL); has_id(old_tbls,next1); next1++){ void* val=map_id(old_tbls,next1); char* key=map_key(old_tbls, next1); if(!map_val(new_tbls,key)){ add(oldtbls,key,val); }; };
 	map* match=new_map();
 	for(int next1=next(new_tbls,-1,NULL,NULL); has_id(new_tbls,next1); next1++){ void* val=map_id(new_tbls,next1); char* key=map_key(new_tbls, next1);
@@ -1372,7 +1355,7 @@ map* tbls_sync_sqls(map* new_tbls,map* old_tbls){
 		map_compact(map_del_key(oldtbls,map_val(match,name))); };
 	map* sqls=new_vec();
 	for(int next1=next(match,-1,NULL,NULL); has_id(match,next1); next1++){ void* oldt=map_id(match,next1); char* newt=map_key(match, next1);
-		vec_merge(sqls,sync_sqls(map_val(old_tbls,oldt),map_val(new_tbls,newt))); };
+		vec_merge(sqls,sync_sqls(map_val(new_tbls,newt),map_val(old_tbls,oldt))); };
 	for(int next1=next(newtbls,-1,NULL,NULL); has_id(newtbls,next1); next1++){ void* newt=map_id(newtbls,next1);
 		vec_add(sqls,create_sql(newt,NULL));
 		vec_merge(sqls,create_index_sqls(newt));
@@ -1385,7 +1368,7 @@ map* db_meta(char* db){
 	if(!db){ return NULL; };
 	if(map_val(map_val(map_val(_globals,"dbs"),db),"meta")){ return map_val(map_val(map_val(_globals,"dbs"),db),"meta"); };
 	if(is_str(map_val(map_val(_globals,"dbs"),db))){ add(add_key(_globals,"dbs",Map),db,parse_connection(map_val(map_val(_globals,"dbs"),db))); };
-	void* ret=map_val(data_map(file_read((xstr(file_rename(db,NULL,".db",NULL,NULL,NULL),".meta", End)),1,0)),"db");
+	void* ret=map_val(data_map(file_read((xstr(file_rename(map_val(conn_db(db),"file"),NULL,".db",NULL,NULL,NULL),".meta", End)),1,0)),"db");
 	if(ret){
 		for(int next1=next(ret,-1,NULL,NULL); has_id(ret,next1); next1++){ void* val=map_id(ret,next1); char* key=map_key(ret, next1);
 			add(val,"name",key); };
@@ -1405,12 +1388,12 @@ map* db_sync(char* db,int go){
 };
 map* sync_sqls(map* newt,map* oldt){
 	if(str_eq(create_sql(oldt,NULL),create_sql(newt,NULL))){ return NULL; };	
-	px(xstr("", 
-	"DIFF old-new\n", 
-	create_sql(oldt,NULL), "\n", 
-	create_sql(newt,NULL), "\n", 
-	"", 
-	"", End),1);
+//	---
+//	DIFF old-new
+//	$(oldt.create_sql())
+//	$(newt.create_sql())
+//
+//	---.px()
 	map* match=cols_match(map_val(oldt,"cols"),map_val(newt,"cols"));
 	map* ret=new_vec();
 	vec_add(ret,drop_sql("_syncing"));
@@ -1418,7 +1401,9 @@ map* sync_sqls(map* newt,map* oldt){
 	vec_add(ret,xstr("insert into _syncing (",map_join(map_keys(match),", "),") select ",map_join(match,", ")," from ",map_val(oldt,"name"), End));
 	vec_add(ret,drop_sql(map_val(oldt,"name")));
 	vec_add(ret,sql_rename("_syncing",map_val(newt,"name")));
-	vec_merge(ret,create_index_sqls(newt));
+	vec_merge(
+		vec_merge(
+		ret,create_index_sqls(newt)),tbl_trigger_sqls(newt));
 	return ret;	
 };
 char* test_out(char* in){
@@ -1974,7 +1959,7 @@ map* lite_trigger_tree(char* name,char* pkey){
 
 		xstr("drop trigger if exists ", name, "_tree_update_null", End),
 
-		xstr("create trigger ", name, "_tree_update_null after update of parent on ", name, " when new.parent is null or length(new.parent)=0 begin\n", 
+		xstr("create trigger ", name, "_tree_update_null after update of parent on ", name, " when new.parent!=old.parent and (new.parent is null or length(new.parent)=0) begin\n", 
 		"update ", name, " set lft=lft+(select max(rgt) from ", name, ")-old.lft+1,rgt=rgt+(select max(rgt) from ", name, ")-old.lft+1 where lft>=old.lft and lft<=old.rgt;\n", 
 		"update ", name, " set lft=lft-(old.rgt-old.lft)-1 where lft>old.rgt;\n", 
 		"update ", name, " set rgt=rgt-(old.rgt-old.lft)-1 where rgt>old.rgt;\n", 
@@ -2261,4 +2246,262 @@ char* fts5_create(char* db){
 	, End);
 	if(db){ sqls_exec(ret,db); };
 	return map_join(ret,";\n");
+};
+void save_caller(){
+	char* refer=url_back();
+	void* req=map_val(_globals,"req");
+	if(!str_eq(map_val(req,"method"),"get") || !refer || map_val(map_val(req,"get"),"_refer") || str_end(refer,map_val(req,"path"))){ return; };
+	add(add_key(req,"get",Map),"_refer",refer);
+	http_redirect(xstr("./?", map_amps(map_val(req,"get"),NULL), End),NULL);
+};
+char* url_back(){
+	return (map_val(map_val(map_val(_globals,"req"),"get"),"_refer") ? map_val(map_val(map_val(_globals,"req"),"get"),"_refer") : (map_val(parse_url(map_val(env_vars(),"HTTP_REFERER")),"path") ? map_val(parse_url(map_val(env_vars(),"HTTP_REFERER")),"path") : home_url(NULL)));
+};
+char* form_html(map* mp){
+	map* map_1=map_val(mp,"vals"); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* val=map_id(map_1,next1); char* key=map_key(map_1, next1);
+		if(map_val(map_val(mp,"cols"),key)){ add(add_key(add_key(mp,"cols",Map),key,Map),"value",val); }; };
+	char* ret=xstr("", 
+	"<fieldset><legend>", map_val(mp,"title"), "</legend>\n", 
+	"<p class='text-", map_val(mp,"error") ? "error" : "info", "'>", map_val(mp,"msg"), "</p>\n", 
+	"<form method=", (map_val(mp,"method") ? map_val(mp,"method") : "post"), ">", 
+	"", End);
+	map* map_2=map_val(mp,"cols"); for(int next1=next(map_2,-1,NULL,NULL); has_id(map_2,next1); next1++){ void* val=map_id(map_2,next1); char*  name=map_key(map_2, next1);
+		ret=xcat(ret,xstr("", 
+		"<div class=\"control-group\">\n", 
+		"<label>", (map_val(val,"label") ? map_val(val,"label") : str_title(map_val(val,"name"))), "</label>", ctrl_html(val), "\n", 
+		"<span class='help-block'>", map_val(map_val(mp,"error"),name), "</span>\n", 
+		"</div>", 
+		"", End), End); };
+	ret=xcat(ret,"<div class='form-actions'><div class='btn-group'>", End);
+	map* map_3=map_val(mp,"buttons"); for(int  idx=next(map_3,-1,NULL,NULL); has_id(map_3, idx);  idx++){ void* val=map_id(map_3, idx); char*  name=map_key(map_3,  idx);
+		ret=xcat(ret,xstr("", 
+		"<input class='btn", !idx ? " btn-primary" : "", "' type='submit' name='", map_val(val,"name"), "' value='", str_title(map_val(val,"name")), "'>", 
+		"", End), End); };
+	ret=xcat(ret,"</div></div>", End);
+	ret=xcat(ret,"</form>", End);
+	return ret;
+};
+map* param_map(char* in){
+	map* ret=new_map();
+	map* map_1=str_split(in,"&",0); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* val=map_id(map_1,next1);
+		map* two=str_split(val,"=",2);
+		add(ret,map_id(two,0),map_id(two,1)); };
+	return ret;
+};
+map* form_posted(map* form){
+	save_caller();
+	if(!str_eq(map_val(map_val(_globals,"req"),"method"),"post")){ return NULL; };
+	map* param=amps_map(map_val(map_val(_globals,"req"),"post"));
+	map* map_1=map_val(form,"buttons"); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ char* key=map_key(map_1, next1);
+		if(map_val(param,key)){
+			map* map_1=map_val(form,"cols"); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* val=map_id(map_1,next1); char* key=map_key(map_1, next1);
+				add(val,"value",map_val(param,key)); };
+			return param; }; };
+	return NULL;
+};
+char* ctrl_html(map* ctrl){
+	void* id=(map_val(ctrl,"id") ? map_val(ctrl,"id") : name_id(map_val(ctrl,"name")));
+	if(map_val(ctrl,"list")){
+		char* ret="<option value=''>--</option>";
+		map* map_1=map_val(ctrl,"list"); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* val=map_id(map_1,next1); char*  key=map_key(map_1, next1);
+			ret=xcat(ret,xstr("<option value='", h(key), "'", str_eq(map_val(ctrl,"value"),key) ? " selected" :NULL, ">", val ? h(val) : h(str_title(key)), "</option>", End), End); };
+		return xstr("<select name='", map_val(ctrl,"name"), "' id='", id, "' class='input-medium'>", ret, "</select>", End); };
+	char* type=map_type(xmap(
+		"text", "text",
+		"code", "code",
+		"para", "para",
+		"soruce", "source",
+		"password", "password"
+	, End),map_val(ctrl,"type"));
+	if(str_eq(type,"code")){
+		return xstr("", 
+		"<input type=text name=", map_val(ctrl,"name"), " value=\"", map_val(ctrl,"value"), "\" id=", id, " size=\"input-", (map_val(ctrl,"size") ? map_val(ctrl,"size") : "medium"), "\"></input>", 
+		"", End); };
+	if(str_eq(type,"text")){
+		return xstr("", 
+		"<input type=text name=", map_val(ctrl,"name"), " value=\"", map_val(ctrl,"value"), "\" id=", id, " size=\"input-", (map_val(ctrl,"size") ? map_val(ctrl,"size") : "large"), "\"></input>", 
+		"", End); };
+	if(str_eq(type,"para")){
+		return xstr("", 
+		"<textarea class=\"para\" style=\"width:20em; height:10em;\" id=", id, " name='", map_val(ctrl,"name"), "'>", map_val(ctrl,"value"), "</textarea>", 
+		"", End); };
+	if(str_eq(type,"source")){
+		static int codeincluded=0;
+		if(!codeincluded){
+			vec_add(add_key(_globals,"jsfile",Vector),"/res/jquery.textarea.js");
+			vec_add(add_key(_globals,"css",Vector),".source {font-family:courier;overflow:auto;width:100%;height:30em;text-wrap:wrap;}");
+			vec_add(add_key(_globals,"js",Vector),xstr("$(\"#", id, "\").tabby()", End));
+			codeincluded=1; };
+		return xstr("", 
+		"<textarea id=", id, " class='source' wrap='off' name='", map_val(ctrl,"name"), "'>", map_val(ctrl,"value"), "</textarea>", 
+		"", End); };
+	if(str_eq(type,"password")){
+		return xstr("", 
+		"<input type=password name=", map_val(ctrl,"name"), " value=\"", map_val(ctrl,"value"), "\" id=", id, "></input>", 
+		"", End); };
+	return xstr("control type ", map_val(ctrl,"type"), " unspported. please provide support in ctrl_html()", End);
+};
+char* name_id(char* name){
+	return name;
+};
+map* form_gets(map* form){
+	map* map_1=map_val(map_val(map_val(_globals,"req"),"get"),"vals"); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* val=map_id(map_1,next1); char* key=map_key(map_1, next1);
+		if(map_val(map_val(form,"cols"),key)){ add(add_key(add_key(form,"cols",Map),key,Map),"value",val); }; };
+	return form;
+};
+int show_form(map* data){
+	add(data,"body",form_html(data));
+	return show_page(data);
+};
+int is_user(char* who){ return str_eq(map_val(map_val(_globals,"sess"),"user"),who) || str_eq(map_val(map_val(_globals,"sess"),"role"),who); };
+void authorized(char* who){ if(!is_user(who)){ not_found(map_val(map_val(_globals,"req"),"path")); }; };
+char* col_align(map* col){
+	if(map_val(col,"sql") || map_val(col,"list")){ return NULL; };
+	if(str_eq(map_type(xmap(
+		"text", "text",
+		"int",xmap(End)
+	, End),map_val(col,"type")),"text")){ return NULL; };
+	return " style='text-align:right;'";
+};
+char* rows_data_html(map* in){
+	return xstr("", 
+	"<table class='table table-condensed table-bordered table-striped'>\n", 
+	"<thead>\n", 
+	"<tr>", map_val(in,"head"), "</tr>\n", 
+	"</thead>\n", 
+	"<tbody>\n", 
+	"<tr>", map_join(map_val(in,"body"),"</tr>\n<tr>"), "</tr>\n", 
+	"</tbody>\n", 
+	"</table>\n", 
+	"", 
+	"", End);
+};
+map* rows_data(map* rows, map* cols){
+	char* head=NULL;
+	for(int next1=next(cols,-1,NULL,NULL); has_id(cols,next1); next1++){ void* val=map_id(cols,next1);
+		head=xcat(head,xstr("<th", col_align(val), ">", (map_val(val,"label") ? map_val(val,"label") : str_title(map_val(val,"name"))), "</th>", End), End); };
+	map* body=new_map();
+	for(int next1=next(rows,-1,NULL,NULL); has_id(rows,next1); next1++){ void* row=map_id(rows,next1);
+		char* s=NULL;
+		for(int next1=next(row,-1,NULL,NULL); has_id(row,next1); next1++){ void* val=map_id(row,next1); char*  key=map_key(row, next1);
+			s=xcat(s,xstr("<td", col_align(map_val(cols,key)), ">", val, "</td>", End), End); };
+		add(body,row_id(row,cols),s); };
+	return xmap("head", head, "body", body, End);
+};
+char* row_id(map* row, map* cols){ return str_url(map_join(row_ids(row,cols),"\t")); };
+map* row_ids(map* row, map* cols){
+	map* ret=cols_pkeys(cols);
+	for(int next1=next(ret,-1,NULL,NULL); has_id(ret,next1); next1++){ void* name=map_id(ret,next1);
+		add(ret,name,map_val(row,name)); };
+	return ret;
+};
+void crud(char* sql,char* db){
+	void* path=map_val(_globals,"paths");	
+	void* curr=map_val(path,"matched");
+	char* table=sql_table(sql);
+	if(map_val(path,"end")){
+		map* rows=sql_rows(sql,db,NULL);
+		map* cols=sql_cols(sql,db,NULL);		
+		map* data=rows_data(rows,cols);
+		add(data,"head",xstr(""
+		"<th style='text-align:center;'>\n"
+		"<div class=\"btn-group\">\n"
+		"<button class=\"btn btn-mini\">Action</button>\n"
+		"<button class=\"btn btn-mini dropdown-toggle\" data-toggle=\"dropdown\">\n"
+		"<span class=\"caret\"></span>\n"
+		"</button>\n"
+		"<ul class=\"dropdown-menu\">\n"
+		"	<li><a href=\"add/\">Add New</a></li>\n"
+		"</ul>\n"
+		"</div>		\n"
+		"</th>\n"
+		""
+		"",map_val(data,"head"), End));
+		map* map_1=map_val(data,"body"); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* row=map_id(map_1,next1); char* key=map_key(map_1, next1);
+			add(add_key(data,"body",Map),key,xstr(xstr("", 
+			"<td style='text-align:center;'>\n", 
+			"<div class=\"btn-group\">\n", 
+			"<button class=\"btn btn-mini dropdown-toggle\" data-toggle=\"dropdown\">\n", 
+			"<span class=\"caret\"></span>\n", 
+			"</button>\n", 
+			"<ul class=\"dropdown-menu\">\n", 
+			"\t<li><a href=\"id.", key, "/edit/\">Edit</a></li>\n", 
+			"\t<li><a href=\"id.", key, "/delete/\">Delete</a></li>\n", 
+			"</ul>\n", 
+			"</div>		\n", 
+			"</td>\n", 
+			"", 
+			"", End),row, End)); };
+		show_body(rows_data_html(data),xmap(
+			"title", xstr(str_title(sql_table(sql))," List", End),
+			"width",int_var( 4
+		), End));
+		return; };
+	if(map_val(get(xstr(curr, "add/", End),NULL),"end")){
+		name_tab("Add");
+		map* cols=del_keys(sql_cols(sql,db,NULL),xvec("lft","rgt", End));
+		map* form=xmap(
+			"title", xstr("Edit ", str_title(table), End),
+			"cols", cols,
+			"buttons",xmap(
+				"save", xmap("name", "save", "type", NULL, End), End)
+		, End);
+		map* data=form_posted(form);
+		if(data){
+			row_insert(data,table, db);
+			http_redirect(url_back(),"Record Added"); };
+		show_form(form); };
+	get(xstr(curr, "id.([^/]+)/", End),xvec("id", End));
+	if(map_val(get(xstr(curr, "id.[^/]+/edit/", End),NULL),"end")){
+		name_tab("Edit");
+		table=sql_table(sql);
+		map* row=id_row(map_val(path,"id"),table, db);
+		map* cols=del_keys(sql_cols(sql,db,NULL),xvec("lft","rgt", End));
+		map* form=xmap(
+			"title", xstr("Edit ", str_title(table), End),
+			"cols", cols,
+			"vals", row,
+			"buttons",xmap(
+				"save", xmap("name", "save", "type", NULL, End), End)
+		, End);
+		map* data=form_posted(form);
+		if(data){
+			id_update(row_ids(row,tbl_cols(table,db)),table, db, data);
+			http_redirect(url_back(),"Record Updated"); };
+		show_form(form); };
+	if(map_val(get(xstr(curr, "id.[^/]+/delete/", End),NULL),"end")){
+		name_tab("Delete");
+		map* form=xmap(
+			"title", "Delete This Record?",
+			"buttons",xmap(
+				"delete", xmap("name", "delete", "type", NULL, End),
+				"cancel", xmap("name", "cancel", "type", NULL, End), End)
+		, End);
+		map* data=form_posted(form);
+		if(map_val(data,"cancel")){
+			http_redirect(url_back(),"Cancelled");
+		}else if(map_val(data,"delete")){
+			id_delete(map_val(path,"id"),table,db);
+			http_redirect(url_back(),"Record Deleted"); };
+		show_form(form); };
+	not_found(NULL);
+};
+map* del_keys(map* mp,map* keys){
+	for(int next1=next(keys,-1,NULL,NULL); has_id(keys,next1); next1++){ void* key=map_id(keys,next1); map_compact(map_del(mp,map_has_key(mp,key)-1,1)); };
+	return mp;
+};
+char* str_bare(char* in,char* accept){
+	if(!in){ return in; };
+	char* ret=in;
+	while(*in){
+		if(*in>0 && !is_alphanum((*in),accept)){ *in=' '; };
+		in+=utf_len(in); };
+	return ret;
+};
+char* word_end(char* in,int len){
+	if(str_len(in)<=len){ return in; };
+	char* ptr=in+len;
+	while(*ptr && !str_chr(" \t\n\r",*ptr)){ ptr++; };
+	if(!*ptr){ return in; };
+	return sub_str(in,0,ptr-in);
 };

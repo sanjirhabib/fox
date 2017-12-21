@@ -37,7 +37,7 @@ int cc(char* infile, char* profile="debug", char* outfile=NULL, char* opts=NULL,
 		scgi: "-Os -lfoxstatic -lfoxcgistatic $cflags $xlibs -lfoxmaincgi -fdata-sections -ffunction-sections -Wl,-dead_strip "
 	}
 	profile = switches[profile] or switches[:debug]
-	ret="gcc $infile.c $metafile -o $outfile $profile $opts -std=gnu99 -Wno-logical-op-parentheses -lm 2>&1"
+	ret="gcc $infile.c $metafile -o $outfile -L/usr/local/lib $profile $opts -std=gnu99 -Wno-logical-op-parentheses -lm 2>&1"
 		.px()
 		.exec()
 	if !keepfiles
