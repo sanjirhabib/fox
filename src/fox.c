@@ -2,6 +2,11 @@
 /*
 NOTE:
 	Haven't used LLVM. That would force the whole application to be JITed.
+BUGS:
+	Dec-2017
+	"'$k'=" doesn't compile correctly.
+	Dec-2017
+	---; <-- requires ending semicolon.
 TODO:
 	eval case:
 	eval << >>
@@ -1705,7 +1710,6 @@ map* force_curly(map* mp){
 map* expand_main(map* mp){
 	for(int idx=1;idx<=mp->len;idx+=2){
 		if(str_eq(map_id(mp,idx),"run") && str_eq(map_id(mp,idx+2),"(") && str_eq(map_id(mp,idx+8),"{") && !map_len(map_id(mp,idx+4)) && !str_eq(map_id(mp,idx-2),"int")){
-//			mp[idx+10].vec_splice(0,0," gc_start(); map* args=argv_map(argv, argc);".x_map())
 			vec_compact(vec_splice(mp,idx,7,vec_del(x_map("int run(map* args)"),0,1))); }; };
 	return mp;
 };
@@ -2344,6 +2348,7 @@ char* funcs_cdecl(map* fns,int show_default){
 char* foxh(){
 	return ""
 	"/* This is a generated file. To change it, edit function foxh() in fox.c */\n"
+	"#pragma once\n"
 	"#define _XOPEN_SOURCE\n"
 	"#ifndef _GNU_SOURCE\n"
 	"#define _GNU_SOURCE\n"

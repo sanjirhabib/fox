@@ -1,30 +1,67 @@
 #line 2 "/web/fox/generator.fox"
 #include <fox.h>
 
-int cgi(char* infile="index.fox", char* profile=:cgi, char* outfile="index.cgi",char* opts=NULL,int keepfiles=1){
+int cgi(char* infile="index.fox", char* xfiles, char* profile=:cgi, char* outfile="index.cgi",char* opts=NULL,int keepfiles=1){
 	return infile.cc(profile, outfile, opts, keepfiles)
 }
+int _iscmd=0;
 char* fox_meta(char* infile, char* name,char* outfile=''){
 	return ---
 	#include "$name.h"
 	$(infile.file_funcs().funcs_meta(infile.c_macros(), infile.c_structs(), name))
-	int exec_cmdline(map* args){
-		if !args[1].is_code() => return 0
-		args.cmdline_params($(name)_reflect().funcs).$(name)_invoke(args[1]).ret_print()
-		return 1
-	}
 
 	---.x_c().write_file(outfile)
 }
-int cc(char* infile, char* profile="debug", char* outfile=NULL, char* opts=NULL, int keepfiles=0){
-	infile=infile.file_rename(,".fox")
-	if !outfile => outfile=infile
-	in=infile..".fox"
-	metafile=infile.."_meta.c"
-	in.fox_c(infile..".c")
-	(in.fox_h()..infile.meta_h()).write_file(infile..".h")
-	in.fox_meta(infile,metafile)
-	//-I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib 
+char* fox_cs(char* name,map* depends=NULL){
+	fox=name..".fox"
+	func=fox.file_funcs()
+	func.map_merge(name.meta_h().x_funcs(name.."_meta.c"))
+	_globals.cache.reflect.funcs.map_merge(func)
+	fox.fox_c(name..".c")
+	(---
+	#include <fox.h>
+	#pragma once
+
+	---..func.funcs_cdecl(0)).write_file(name..".h")
+	meta=''
+	if depends
+		depends.each file
+			meta.=file.meta_h()
+		meta.=---
+		extern int _iscmd;
+		int exec_cmdline(map* args){
+			if !args[1].is_code() => return 0
+			_iscmd=1
+			fns=$(name)_reflect().funcs
+			if fns[args[1]]
+				args.cmdline_params(fns).$(name)_invoke(args[1]).ret_print()
+				return 1
+
+		---;
+		depends.each file
+			meta.=---
+				fns=$(file)_reflect().funcs
+				if fns[args[1]]
+					args.cmdline_params(fns).$(file)_invoke(args[1]).ret_print()
+					return 1
+
+			---;
+		meta.=---
+			args.cmdline_params(funcs()).invoke(args[1]).ret_print()
+			return 1
+		}
+
+		---;
+		meta=meta.x_c()
+	(fox.fox_meta(name)..meta).write_file(name.."_meta.c")
+	return name
+}
+int cc(char* infile, char* xfiles, char* profile="debug", char* outfile=NULL, char* opts=NULL, int keepfiles=0){
+	names=[]
+	xfiles.str_split(",").each file
+		names[]=file.file_rename(,".fox").fox_cs()
+	name=infile.file_rename(,".fox").fox_cs(names)
+	if !outfile => outfile=name
 	cflags="-m64 -std=gnu99 -Wno-unused-command-line-argument -g"
 	xlibs="-lmarkdown -lcurl -lsqlite3"
 	// -fdata-sections -ffunction-sections -Wl,-dead_strip -Wl,-emain
@@ -37,7 +74,9 @@ int cc(char* infile, char* profile="debug", char* outfile=NULL, char* opts=NULL,
 		scgi: "-Os -lfoxstatic -lfoxcgistatic $cflags $xlibs -lfoxmaincgi -fdata-sections -ffunction-sections -Wl,-dead_strip "
 	}
 	profile = switches[profile] or switches[:debug]
-	ret="gcc $infile.c $metafile -o $outfile -L/usr/local/lib $profile $opts -std=gnu99 -Wno-logical-op-parentheses -lm 2>&1"
+	extras=''
+	if names => extras=names.map_join(".c ")..".c "..names.map_join("_meta.c ").."_meta.c"
+	ret="gcc $name.c $(name)_meta.c $extras -o $outfile -L/usr/local/lib $profile $opts -std=gnu99 -Wno-logical-op-parentheses -lm 2>&1"
 		.px()
 		.exec()
 	if !keepfiles

@@ -580,7 +580,11 @@ char* re_where(map* cls){
 	ret=" where "
 	cls.each v,k,idx
 		if i++ => ret.=" and "
-		if k.is_str() => ret.=k.."="
+		if k.is_str()
+			if k.is_code()
+				ret.="'"..k.."'="
+			else
+				ret.=k.."="
 		ret.=v.sql_str()
 	return ret
 }

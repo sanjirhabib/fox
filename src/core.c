@@ -982,11 +982,15 @@ map* env_vars(){
 	add(_globals,"env",ret);
 	return ret;
 };
-map* argv_map(char** argv,int argc,void** globals){
-	_gcdata.stack_head=(void**)argv;
+map* init_gc(void** sptr){
+	_gcdata.stack_head=sptr;
 	_clockstart=clock_cycles();
 	_gcdata.run_time=microtime();
-	*globals=_globals=new_map();
+	_globals=new_map();
+	return _globals;
+};
+map* argv_map(char** argv,int argc,void** globals){
+	*globals=init_gc((void**)argv);
 	signal(SIGSEGV,fox_signal_handler);
 	signal(SIGABRT,fox_signal_handler);
 	init_rand();

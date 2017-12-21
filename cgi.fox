@@ -1,18 +1,25 @@
 #include <fox.h>
+extern int _iscmd;
 __attribute__((destructor)) static void maindtor(void){
 	close_conns()
-	http_out()
+	if !_iscmd
+		http_out()
 	gc_end()
 }
 void* px(void* str,int newline=1){
 	void* ret=str
 	str=str.to_str()
 	if !str.str_len() && !newline => return ret
-	_globals.out.=str
+	if _iscmd
+		str.print()
+		if newline => "\n".print()
+	else
+		_globals.out.=str
 	return ret
 }
 void xexit(int val=0){
-	http_out()
+	if !_iscmd
+		http_out()
 	gc_end()
 	exit(val)
 }

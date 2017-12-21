@@ -580,7 +580,11 @@ char* re_where(map* cls){
 	char* ret=" where ";
 	for(int idx=next(cls,-1,NULL,NULL); has_id(cls,idx); idx++){ void* v=map_id(cls,idx); char* k=map_key(cls, idx);
 		if(i++){ ret=xcat(ret," and ", End); };
-		if(is_str(k)){ ret=xcat(ret,k,"=", End); };
+		if(is_str(k)){
+			if(is_code(k)){
+				ret=xcat(ret,"'",k,"'=", End);
+			}else{
+				ret=xcat(ret,k,"=", End); }; };
 		ret=xcat(ret,sql_str(v), End); };
 	return ret;
 };
@@ -810,7 +814,7 @@ map* pre_tables(){
 				"id4=code",xmap(End),
 				"tbl=code",xmap(End),
 				"body=text",xmap(End), End), End)
-	, End);
+	 , End);
 };
 map* db_table(char* db,char* tbl){
 	return cols_table(db_cols(db,tbl),tbl,db);

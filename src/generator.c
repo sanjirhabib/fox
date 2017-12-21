@@ -1,30 +1,67 @@
 #line 2 "/web/fox/generator.fox"
 #include <fox.h>
 
-int cgi(char* infile, char* profile, char* outfile,char* opts,int keepfiles){
-	return cc(infile,profile, outfile, opts, keepfiles);
+int cgi(char* infile, char* xfiles, char* profile, char* outfile,char* opts,int keepfiles){
+	return cc(infile,profile, outfile, opts,int_str( keepfiles),0);
 };
+int _iscmd=0;
 char* fox_meta(char* infile, char* name,char* outfile){
 	return write_file(x_c(xstr("", 
 	"#include \"", name, ".h\"\n", 
 	funcs_meta(file_funcs(infile,0),c_macros(infile), c_structs(infile), name), "\n", 
-	"int exec_cmdline(map* args){\n", 
-	"	if !args[1].is_code() => return 0\n", 
-	"\targs.cmdline_params(", name, "_reflect().funcs).", name, "_invoke(args[1]).ret_print()\n", 
-	"	return 1\n", 
-	"}\n", 
 	"", 
 	"", End)),outfile,0,1);
 };
-int cc(char* infile, char* profile, char* outfile, char* opts, int keepfiles){
-	infile=file_rename(infile,NULL,".fox",NULL,NULL,NULL);
-	if(!outfile){ outfile=infile; };
-	char* in=xstr(infile,".fox", End);
-	char* metafile=xstr(infile,"_meta.c", End);
-	fox_c(in,xstr(infile,".c", End));
-	write_file((xstr(fox_h(in,NULL),meta_h(infile), End)),xstr(infile,".h", End),0,1);
-	fox_meta(in,infile,metafile);
-	//-I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib 
+char* fox_cs(char* name,map* depends){
+	char* fox=xstr(name,".fox", End);
+	map* func=file_funcs(fox,0);
+	map_merge(func,x_funcs(meta_h(name),stoi(xstr(name,"_meta.c", End)),NULL));
+	map_merge(map_val(map_val(map_val(_globals,"cache"),"reflect"),"funcs"),func);
+	fox_c(fox,xstr(name,".c", End));
+	write_file((xstr(""
+	"#include <fox.h>\n"
+	"#pragma once\n"
+	""
+	"",funcs_cdecl(func,0), End)),xstr(name,".h", End),0,1);
+	char* meta=NULL;
+	if(depends){
+		for(int next1=next(depends,-1,NULL,NULL); has_id(depends,next1); next1++){ void* file=map_id(depends,next1);
+			meta=xcat(meta,meta_h(file), End); };
+		meta=xcat(meta,xstr("", 
+		"extern int _iscmd;\n", 
+		"int exec_cmdline(map* args){\n", 
+		"	if !args[1].is_code() => return 0\n", 
+		"	_iscmd=1\n", 
+		"\tfns=", name, "_reflect().funcs\n", 
+		"	if fns[args[1]]\n", 
+		"\t\targs.cmdline_params(fns).", name, "_invoke(args[1]).ret_print()\n", 
+		"		return 1\n", 
+		"", 
+		"", End), End);
+		for(int next1=next(depends,-1,NULL,NULL); has_id(depends,next1); next1++){ void* file=map_id(depends,next1);
+			meta=xcat(meta,xstr("", 
+			"\tfns=", file, "_reflect().funcs\n", 
+			"	if fns[args[1]]\n", 
+			"\t\targs.cmdline_params(fns).", file, "_invoke(args[1]).ret_print()\n", 
+			"		return 1\n", 
+			"", 
+			"", End), End); };
+		meta=xcat(meta,""
+		"	args.cmdline_params(funcs()).invoke(args[1]).ret_print()\n"
+		"	return 1\n"
+		"}\n"
+		""
+		"", End);
+		meta=x_c(meta); };
+	write_file((xstr(fox_meta(fox,name,NULL),meta, End)),xstr(name,"_meta.c", End),0,1);
+	return name;
+};
+int cc(char* infile, char* xfiles, char* profile, char* outfile, char* opts, int keepfiles){
+	map* names=new_vec();
+	map* map_1=str_split(xfiles,",",0); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* file=map_id(map_1,next1);
+		vec_add(names,fox_cs(file_rename(file,NULL,".fox",NULL,NULL,NULL),NULL)); };
+	char* name=fox_cs(file_rename(infile,NULL,".fox",NULL,NULL,NULL),names);
+	if(!outfile){ outfile=name; };
 	char* cflags="-m64 -std=gnu99 -Wno-unused-command-line-argument -g";
 	char* xlibs="-lmarkdown -lcurl -lsqlite3";
 	// -fdata-sections -ffunction-sections -Wl,-dead_strip -Wl,-emain
@@ -37,9 +74,11 @@ int cc(char* infile, char* profile, char* outfile, char* opts, int keepfiles){
 		"scgi", xstr("-Os -lfoxstatic -lfoxcgistatic ", cflags, " ", xlibs, " -lfoxmaincgi -fdata-sections -ffunction-sections -Wl,-dead_strip ", End)
 	, End);
 	profile = (map_val(switches,profile) ? map_val(switches,profile) : map_val(switches,"debug"));
+	char* extras=NULL;
+	if(names){ extras=xstr(map_join(names,".c "),".c ",map_join(names,"_meta.c "),"_meta.c", End); };
 	int ret=exec(
 		px(
-		xstr("gcc ", infile, ".c ", metafile, " -o ", outfile, " -L/usr/local/lib ", profile, " ", opts, " -std=gnu99 -Wno-logical-op-parentheses -lm 2>&1", End),1),NULL);
+		xstr("gcc ", name, ".c ", name, "_meta.c ", extras, " -o ", outfile, " -L/usr/local/lib ", profile, " ", opts, " -std=gnu99 -Wno-logical-op-parentheses -lm 2>&1", End),1),NULL);
 	if(!keepfiles){
 		remove((xstr(infile,".c", End)));	
 		remove((xstr(infile,".h", End))); };	

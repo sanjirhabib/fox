@@ -1,4 +1,5 @@
 /* This is a generated file. To change it, edit function foxh() in fox.c */
+#pragma once
 #define _XOPEN_SOURCE
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
@@ -300,6 +301,7 @@ int block_head(int no, mempage* pg);
 void init_rand();
 void* map_val(map* mp, char* key);
 map* env_vars();
+map* init_gc(void** sptr);
 map* argv_map(char** argv, int argc, void** globals);
 map* str_split(char* str, char* by, int limit);
 char* str_has(char* str, char* sub);
@@ -605,9 +607,10 @@ char* str_tr(char* in, map* replace);
 time_t str_time(char* in);
 char* time_str(time_t timer);
 int ret_print(void* ret);
-int cgi(char* infile, char* profile, char* outfile, char* opts, int keepfiles);
+int cgi(char* infile, char* xfiles, char* profile, char* outfile, char* opts, int keepfiles);
 char* fox_meta(char* infile, char* name, char* outfile);
-int cc(char* infile, char* profile, char* outfile, char* opts, int keepfiles);
+char* fox_cs(char* name, map* depends);
+int cc(char* infile, char* xfiles, char* profile, char* outfile, char* opts, int keepfiles);
 char* write_configm4(char* name, char* outfile);
 void write_source();
 char* write_foxh(char* outfile);
