@@ -1,14 +1,33 @@
 #line 2 "/web/fox/generator.fox"
 #include <fox.h>
 
-int cgi(char* infile="index.fox", char* xfiles, char* profile=:cgi, char* outfile="index.cgi",char* opts=NULL,int keepfiles=1){
-	return infile.cc(profile, outfile, opts, keepfiles)
+int cgi(char* infile="index.fox", char* xfiles='', char* profile=:cgi, char* outfile="index.cgi",char* opts=NULL,int keepfiles=1){
+	return infile.cc(xfiles, profile, outfile, opts, keepfiles)
 }
 int _iscmd=0;
 char* fox_meta(char* infile, char* name,char* outfile=''){
+	funcs=infile.file_funcs()
+	macros=infile.c_macros()
+	structs=infile.c_structs()
+
+	prefix=name.."_"
 	return ---
+	/* This is a generated file. To change it, edit function fox_meta() in generator.fox */
 	#include "$name.h"
-	$(infile.file_funcs().funcs_meta(infile.c_macros(), infile.c_structs(), name))
+	void* $(prefix)invoke(map* v,char* name){
+		unsigned long long idn=str_hash((unsigned char*)name)
+		switch(idn){
+	//$(funcs.callfunc_c())
+		}
+		return End
+	}
+	map* $(prefix)reflect(){
+		return {
+			funcs: $(funcs.map_ccode()),
+			macros: $(macros.map_ccode()),
+			structs: $(structs.map_ccode())
+		}
+	}
 
 	---.x_c().write_file(outfile)
 }
@@ -32,23 +51,36 @@ char* fox_cs(char* name,map* depends=NULL){
 		int exec_cmdline(map* args){
 			if !args[1].is_code() => return 0
 			_iscmd=1
-			fns=$(name)_reflect().funcs
-			if fns[args[1]]
-				args.cmdline_params(fns).$(name)_invoke(args[1]).ret_print()
-				return 1
+			args.cmdline_params(user_funcs()).user_invoke(args[1]).ret_print()
+			return 1
+		}
+		void* user_invoke(map* params, char* name){
+			void* ret=''
+			if (ret=params.$(name)_invoke(name))!=End => return ret
 
 		---;
 		depends.each file
 			meta.=---
-				fns=$(file)_reflect().funcs
-				if fns[args[1]]
-					args.cmdline_params(fns).$(file)_invoke(args[1]).ret_print()
-					return 1
+				if (ret=params.$(file)_invoke(name))!=End => return ret
 
 			---;
 		meta.=---
-			args.cmdline_params(funcs()).invoke(args[1]).ret_print()
-			return 1
+			return params.invoke(name)
+		}
+		map* user_funcs(){
+			//if _globals.cache.reflect => return _globals.cache.reflect
+			ret=funcs()
+			ret.map_merge($(name)_reflect().funcs)
+
+		---;
+		depends.each file
+			meta.=---
+				ret.map_merge($(file)_reflect().funcs)
+
+			---;
+		meta.=---
+			//_globals.cache.reflect=ret
+			return ret
 		}
 
 		---;
@@ -56,7 +88,7 @@ char* fox_cs(char* name,map* depends=NULL){
 	(fox.fox_meta(name)..meta).write_file(name.."_meta.c")
 	return name
 }
-int cc(char* infile, char* xfiles, char* profile="debug", char* outfile=NULL, char* opts=NULL, int keepfiles=0){
+int cc(char* infile, char* xfiles='', char* profile="debug", char* outfile=NULL, char* opts=NULL, int keepfiles=0){
 	names=[]
 	xfiles.str_split(",").each file
 		names[]=file.file_rename(,".fox").fox_cs()
@@ -75,7 +107,7 @@ int cc(char* infile, char* xfiles, char* profile="debug", char* outfile=NULL, ch
 	}
 	profile = switches[profile] or switches[:debug]
 	extras=''
-	if names => extras=names.map_join(".c ")..".c "..names.map_join("_meta.c ").."_meta.c"
+	if names.map_len() => extras=names.map_join(".c ")..".c "..names.map_join("_meta.c ").."_meta.c"
 	ret="gcc $name.c $(name)_meta.c $extras -o $outfile -L/usr/local/lib $profile $opts -std=gnu99 -Wno-logical-op-parentheses -lm 2>&1"
 		.px()
 		.exec()
@@ -123,6 +155,7 @@ char* write_configm4(char* name=:fox, char* outfile=NULL){
 
 	---.write_file(outfile)
 }
+map* source_files() => return ["astrostr.fox", "cgi.fox", "cmd.fox", "core.fox", "fox.fox", "generator.fox", "main.fox", "maincgi.fox", "run.fox", "sql.fox", "astro/astro.h", "eval.fox"]
 void write_source(){
 	source_funcs()
 	"fox.h".file_rename(:include).write_foxh()
@@ -403,13 +436,15 @@ char* meta_h(char* prefix=''){
 	void* $(prefix)invoke(map* v,char* name);
 	map* $(prefix)reflect();
 	int exec_cmdline(map* args);
+	void* user_invoke(map* params, char* name);
+	map* user_funcs();
 
 	---;
 }
 char* funcs_meta(map* funcs, map* macros, map* structs, char* prefix=''){
 	prefix&&=prefix.."_"
 	return ---
-	/* This is a generated file. To change it, edit function funcs_meta() in fox.c */
+	/* This is a generated file. To change it, edit function funcs_meta() in generator.fox */
 	char* $(prefix)version(){
 		return "Fox: build: $(increase_version()), date: $(time_str()) [%s old]".mstr("$(time_str())".time_ago());
 	}
@@ -438,6 +473,7 @@ char* gen_htaccess(char* outfile=NULL){
 	RewriteCond %{REQUEST_FILENAME} !-f
 	RewriteCond %{REQUEST_FILENAME} !-d
 	RewriteRule ^(.+)$ index.cgi [L,QSA]
+	Options -Indexes
 	<FilesMatch "\.(db|txt|sql)$">
 	Order allow,deny
 	Deny from all

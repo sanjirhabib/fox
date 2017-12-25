@@ -1,3 +1,5 @@
-multiple files compiled as user file
-sql.fox compiled as user file, instead of system
-fix source textarea size
+
+done
+	multiple files compiled as user file
+	sql.fox compiled as user file, instead of system
+	fix source textarea size

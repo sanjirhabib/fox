@@ -1,0 +1,146 @@
+#include "text.h"
+run(){
+	if args.exec_cmdline() => return 0
+	in=args[1]
+	sizeof(unsigned short).int_var().px()
+	return 0
+}
+char* ucs_str(int* in,int len=0){
+	if !len
+		while in[len++]
+	slen=0
+	i=0
+	while i<len
+		slen+=in[i].unicode_len()
+		i++
+	ret=slen.new_str()
+	ptr=ret
+	i=0
+	while i<len
+		in[i].unicode_utf(ptr)
+		ptr+=ptr.str_len()
+		i++
+	return ret
+}
+int* str_ucs(char* in){
+	len=in.str_len()
+	int* ret=((in.utf_strlen()+1)*sizeof(int)).new_blob()
+	code=0
+	i=0
+	while (code=in.utf_unicode())
+		ret[i++]=code
+		in+=in.utf_len()
+	ret[i]=0
+	return ret
+}
+int is_letter(int code){
+	if code>='a' && code<='z' || code>='A' && code<='Z' || code>='0' && code<='9' || code>0x0980 && code<0x09F7
+		return 1
+	return 0
+}
+int* word_end(int* in){
+	while *in
+		if (*in).is_letter() => in++; continue
+		if *in=='\'' && in[1].is_letter() => in++; continue
+		break
+	return in
+}
+int* word_start(int* in){
+	while *in && !(*in).is_letter() => in++
+	return in
+}
+int* ucs_substr(int* in, int from, int upto){
+	return in.sub_str(from*sizeof(int),upto*sizeof(int))
+}
+int ucs_len(int* in){
+	return in.str_len()/sizeof(4)
+}
+map* ucs_words(int* uin){
+	ret=[]
+	while *uin
+		head=uin.word_start()
+		if !*head => break
+		tail=head.word_end()
+		ret[]=head.ucs_substr(0, tail-head)
+		uin=tail
+	return ret
+}
+map* str_words(char* in){
+	uin=in.str_ucs()
+	ret=[]
+	while *uin
+		head=uin.word_start()
+		if !*head => break
+		tail=head.word_end()
+		ret[]=head.ucs_str(tail-head)
+		uin=tail
+	return ret
+}
+void go(char* in){
+	codes=in.str_ucs()
+	i=0
+	while codes[i++]
+		codes[i-1].px()
+	codes.ucs_str().px()
+}
+char* stem_bangla(char* in){
+	{{
+		ই
+		ও
+		তো
+		কে
+		তে
+		রা
+		চ্ছি
+		চ্ছিল
+		চ্ছে
+		চ্ছিস
+		চ্ছিলেন
+		চ্ছ
+		য়েছে
+		ছ
+		ছে
+		ছেন
+		রছ র
+		রব র
+		ল
+		লো
+		ওয়া
+		য়ে  
+		য়
+		য়ে
+		য়েছিল
+		য়েছিল  
+		ছিল
+		য়েছিলেন 
+		.েছিলেন  া.
+		ছিলেন
+		লেন
+		দের
+		.ে .
+		র
+		র
+		ন
+		বেন
+		স
+		ছিস
+		ছিলি
+		ছি
+		ছে
+		লি
+		বি
+		টি
+		টির
+		রটা
+		রটার
+		টা
+		টার
+		গুলো
+		গুলোর
+		রগুলো
+		রগুলোর
+	}}.each val, key
+		if in.str_end(key)
+			return in.sub_str(0, -key.str_len())..val
+	return in
+}

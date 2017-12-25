@@ -14,7 +14,6 @@ void xexit(int val){
 	exit(val);
 };
 void* fox_error(char* msg,int dump){
-	fputs("ERROR: ",stderr);
 	fputs(msg,stderr);
 	fputs("\n",stderr);
 	if(dump){ fputs(stack_str(),stderr); };

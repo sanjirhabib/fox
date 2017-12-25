@@ -3,7 +3,7 @@ extern int _iscmd;
 __attribute__((destructor)) static void maindtor(void){
 	close_conns();
 	if(!_iscmd){
-		http_out(NULL,"200 OK","text/html; charset=utf-8",NULL); };
+		http_out(); };
 	gc_end();
 };
 void* px(void* str,int newline){
@@ -19,20 +19,15 @@ void* px(void* str,int newline){
 };
 void xexit(int val){
 	if(!_iscmd){
-		http_out(NULL,"200 OK","text/html; charset=utf-8",NULL); };
+		http_out(); };
 	gc_end();
 	exit(val);
 };
 void* fox_error(char* msg,int dump){
-	if(!_iscmd){
-		http_error(xstr("", 
-		msg, "\n", 
-		str_replace(stack_str(),"\n","<br/>"), 
-		"", End),"500 Internal Server Error");
-	}else{
-		fputs(msg,stderr);
-		fputs(stack_str(),stderr);
-		xexit(-1); };
+	http_error(xstr("", 
+	msg, "\n", 
+	str_replace(stack_str(),"\n","<br/>"), 
+	"", End),"500 Internal Server Error");
 	return NULL;
 };
 void* call_php(map* params,char* func){ return "DUMMY"; };

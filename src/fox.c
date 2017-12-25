@@ -1398,11 +1398,17 @@ char* xlog(char* str){
 	return str;
 };
 char closing_paren(char c){ switch(c){ case '{': return '}'; case '[': return ']'; case '(': return ')'; default: return '\0'; }; };
-char char_at(char* str,int i){
-	if(!str || !is_str(str)){ return '\0'; };
-	if(!i){ return *str; };
-	if(i>0 && i<str_len(str)){ return str[i]; };
-	return '\0';
+int char_at(char* str,char* terms){
+	if(!str || !is_str(str)){ return 0; };
+	char* head=str;
+	while(*str && !strchr(terms,*str)){ str++; };
+	return str-head;
+};
+int rchar_at(char* str,char* terms){
+	if(!str || !is_str(str)){ return 0; };
+	char* tail=str+str_len(str)-1;
+	while(tail>=str && !strchr(terms,*tail)){ tail--; };
+	return tail-str;
 };
 char* char_str(char c){
 	char ret[2]={0};
@@ -2450,6 +2456,7 @@ char* foxh(){
 	"\n"
 	"extern char* skip;\n"
 	"\n"
+	"#define None 0x0F9AD3BA\n"
 	"#define End (char*)(0x0FF1B14E059AD3BA)\n"
 	"\n"
 	"void* invoke(map* v,char* name);\n"
@@ -3082,7 +3089,6 @@ char* fork_exec(char* cmd,map* params){
 		else if(WIFSIGNALED(status)){ mstr("command %s killed",cmd, End); }; };
 	return NULL;
 };
-map* source_files(){ return xvec("astrostr.fox", "cgi.fox", "cmd.fox", "core.fox", "fox.fox", "generator.fox", "main.fox", "maincgi.fox", "run.fox", "sql.fox", "astro/astro.h", "eval.fox", End); };
 map* source_funcs(){
 	if(!map_val(map_val(_globals,"cache"),"funcs")){
 		map* mp=new_map();	
@@ -3558,7 +3564,7 @@ map* data_tokenizer(char** in,int level){
 		}else{
 			space1=xcat(space1,space2, End);
 			space2=NULL; }; };
-	vec_add(mp,space1);
+	if(map_len(mp) || space1){ vec_add(mp,space1); };
 	*in=str;
 	return mp;
 };
@@ -3715,6 +3721,17 @@ int utf_strlen(char* in){
 		if((in[i] & 0xc0) != 0x80){ j++; };
 		i++; };
 	return j;
+};
+int unicode_len(int ucs2){
+	if(ucs2 < 0x80){
+		return 1; };
+	if(ucs2 >= 0x80  && ucs2 < 0x800){
+		return 2; };
+	if(ucs2 >= 0x800 && ucs2 < 0xFFFF){
+		return 3; };
+	if(ucs2 >= 0x10000 && ucs2 < 0x10FFFF){
+		return 4; };
+	return 1;
 };
 char* unicode_utf(int ucs2,char* ret){
 //	if !ucs2

@@ -2,13 +2,32 @@
 #include <fox.h>
 
 int cgi(char* infile, char* xfiles, char* profile, char* outfile,char* opts,int keepfiles){
-	return cc(infile,profile, outfile, opts,int_str( keepfiles),0);
+	return cc(infile,xfiles, profile, outfile, opts, keepfiles);
 };
 int _iscmd=0;
 char* fox_meta(char* infile, char* name,char* outfile){
+	map* funcs=file_funcs(infile,0);
+	map* macros=c_macros(infile);
+	map* structs=c_structs(infile);
+
+	char* prefix=xstr(name,"_", End);
 	return write_file(x_c(xstr("", 
+	"/* This is a generated file. To change it, edit function fox_meta() in generator.fox */\n", 
 	"#include \"", name, ".h\"\n", 
-	funcs_meta(file_funcs(infile,0),c_macros(infile), c_structs(infile), name), "\n", 
+	"void* ", prefix, "invoke(map* v,char* name){\n", 
+	"	unsigned long long idn=str_hash((unsigned char*)name)\n", 
+	"	switch(idn){\n", 
+	"//", callfunc_c(funcs), "\n", 
+	"	}\n", 
+	"	return End\n", 
+	"}\n", 
+	"map* ", prefix, "reflect(){\n", 
+	"	return {\n", 
+	"\t\tfuncs: ", map_ccode(funcs), ",\n", 
+	"\t\tmacros: ", map_ccode(macros), ",\n", 
+	"\t\tstructs: ", map_ccode(structs), "\n", 
+	"	}\n", 
+	"}\n", 
 	"", 
 	"", End)),outfile,0,1);
 };
@@ -32,23 +51,36 @@ char* fox_cs(char* name,map* depends){
 		"int exec_cmdline(map* args){\n", 
 		"	if !args[1].is_code() => return 0\n", 
 		"	_iscmd=1\n", 
-		"\tfns=", name, "_reflect().funcs\n", 
-		"	if fns[args[1]]\n", 
-		"\t\targs.cmdline_params(fns).", name, "_invoke(args[1]).ret_print()\n", 
-		"		return 1\n", 
+		"	args.cmdline_params(user_funcs()).user_invoke(args[1]).ret_print()\n", 
+		"	return 1\n", 
+		"}\n", 
+		"void* user_invoke(map* params, char* name){\n", 
+		"	void* ret=''\n", 
+		"\tif (ret=params.", name, "_invoke(name))!=End => return ret\n", 
 		"", 
 		"", End), End);
 		for(int next1=next(depends,-1,NULL,NULL); has_id(depends,next1); next1++){ void* file=map_id(depends,next1);
 			meta=xcat(meta,xstr("", 
-			"\tfns=", file, "_reflect().funcs\n", 
-			"	if fns[args[1]]\n", 
-			"\t\targs.cmdline_params(fns).", file, "_invoke(args[1]).ret_print()\n", 
-			"		return 1\n", 
+			"\tif (ret=params.", file, "_invoke(name))!=End => return ret\n", 
+			"", 
+			"", End), End); };
+		meta=xcat(meta,xstr("", 
+		"	return params.invoke(name)\n", 
+		"}\n", 
+		"map* user_funcs(){\n", 
+		"	//if _globals.cache.reflect => return _globals.cache.reflect\n", 
+		"	ret=funcs()\n", 
+		"\tret.map_merge(", name, "_reflect().funcs)\n", 
+		"", 
+		"", End), End);
+		for(int next1=next(depends,-1,NULL,NULL); has_id(depends,next1); next1++){ void* file=map_id(depends,next1);
+			meta=xcat(meta,xstr("", 
+			"\tret.map_merge(", file, "_reflect().funcs)\n", 
 			"", 
 			"", End), End); };
 		meta=xcat(meta,""
-		"	args.cmdline_params(funcs()).invoke(args[1]).ret_print()\n"
-		"	return 1\n"
+		"	//_globals.cache.reflect=ret\n"
+		"	return ret\n"
 		"}\n"
 		""
 		"", End);
@@ -75,7 +107,7 @@ int cc(char* infile, char* xfiles, char* profile, char* outfile, char* opts, int
 	, End);
 	profile = (map_val(switches,profile) ? map_val(switches,profile) : map_val(switches,"debug"));
 	char* extras=NULL;
-	if(names){ extras=xstr(map_join(names,".c "),".c ",map_join(names,"_meta.c "),"_meta.c", End); };
+	if(map_len(names)){ extras=xstr(map_join(names,".c "),".c ",map_join(names,"_meta.c "),"_meta.c", End); };
 	int ret=exec(
 		px(
 		xstr("gcc ", name, ".c ", name, "_meta.c ", extras, " -o ", outfile, " -L/usr/local/lib ", profile, " ", opts, " -std=gnu99 -Wno-logical-op-parentheses -lm 2>&1", End),1),NULL);
@@ -123,6 +155,7 @@ char* write_configm4(char* name, char* outfile){
 	"", 
 	"", End),outfile,0,1);
 };
+map* source_files(){ return xvec("astrostr.fox", "cgi.fox", "cmd.fox", "core.fox", "fox.fox", "generator.fox", "main.fox", "maincgi.fox", "run.fox", "sql.fox", "astro/astro.h", "eval.fox", End); };
 void write_source(){
 	source_funcs();
 	write_foxh(file_rename("fox.h","include",NULL,NULL,NULL,NULL));
@@ -403,13 +436,15 @@ char* meta_h(char* prefix){
 	"void* ", prefix, "invoke(map* v,char* name);\n", 
 	"map* ", prefix, "reflect();\n", 
 	"int exec_cmdline(map* args);\n", 
+	"void* user_invoke(map* params, char* name);\n", 
+	"map* user_funcs();\n", 
 	"", 
 	"", End);
 };
 char* funcs_meta(map* funcs, map* macros, map* structs, char* prefix){
 	if(prefix){prefix=xstr(prefix,"_", End);};
 	return x_c(xstr("", 
-	"/* This is a generated file. To change it, edit function funcs_meta() in fox.c */\n", 
+	"/* This is a generated file. To change it, edit function funcs_meta() in generator.fox */\n", 
 	"char* ", prefix, "version(){\n", 
 	"\treturn \"Fox: build: ", increase_version(), ", date: ", time_str(0), " [%s old]\".mstr(\"", time_str(0), "\".time_ago());\n", 
 	"}\n", 
@@ -438,6 +473,7 @@ char* gen_htaccess(char* outfile){
 	"RewriteCond %{REQUEST_FILENAME} !-f\n"
 	"RewriteCond %{REQUEST_FILENAME} !-d\n"
 	"RewriteRule ^(.+)$ index.cgi [L,QSA]\n"
+	"Options -Indexes\n"
 	"<FilesMatch \"\\.(db|txt|sql)$\">\n"
 	"Order allow,deny\n"
 	"Deny from all\n"

@@ -24,10 +24,15 @@ void xexit(int val=0){
 	exit(val)
 }
 void* fox_error(char* msg,int dump=0){
-	---
-	$msg
-	$(stack_str().str_replace("\n","<br/>"))
-	---.http_error("500 Internal Server Error")
+	if !_iscmd
+		---
+		$msg
+		$(stack_str().str_replace("\n","<br/>"))
+		---.http_error("500 Internal Server Error")
+	else
+		msg.fputs(stderr)
+		stack_str().fputs(stderr)
+		xexit(-1)
 	return NULL
 }
 void* call_php(map* params,char* func) => return "DUMMY"
