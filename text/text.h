@@ -11,6 +11,7 @@ map* ucs_words(int* uin);
 map* str_words(char* in);
 void go(char* in);
 char* stem_bangla(char* in);
+int stem_test();
 char* text_version();
 void* text_invoke(map* v, char* name);
 map* text_reflect();
