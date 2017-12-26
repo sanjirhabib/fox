@@ -1,2 +1,2 @@
 all:
-	fox cc text.fox
+	fox cc text.fox --opts=-lstemmer

@@ -290,7 +290,7 @@ char* str_replace(char* str,void* find,void* replace){
 	for(int i2=next(find,-1,NULL,NULL); has_id(find,i2); i2++){ void* v=map_id(find,i2); char* k=map_key(find, i2);
 		assert(is_str(k));
 		if(is_i(v)){ set(find,i2,(v=int_str(is_int(v)))); };
-		assert(is_str(v));
+		assert(!v || is_str(v));
 		int i=has_str(str,k);
 		if(!i){ continue; };
 		dels+=i*str_len(k);

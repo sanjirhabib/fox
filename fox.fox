@@ -290,7 +290,7 @@ char* str_replace(char* str,void* find,void* replace=NULL){
 	find.each v,k,i2
 		assert(k.is_str())
 		if v.is_i() => find[i2]=(v=v.is_int().int_str())
-		assert(v.is_str())
+		assert(!v || v.is_str())
 		i=str.has_str(k)
 		if !i => continue
 		dels+=i*k.str_len()

@@ -95,7 +95,7 @@ int cc(char* infile, char* xfiles, char* profile, char* outfile, char* opts, int
 	char* name=fox_cs(file_rename(infile,NULL,".fox",NULL,NULL,NULL),names);
 	if(!outfile){ outfile=name; };
 	char* cflags="-m64 -std=gnu99 -Wno-unused-command-line-argument -g";
-	char* xlibs="-lmarkdown -lcurl -lsqlite3";
+	char* xlibs="-lmarkdown -lcurl -lsqlite3 -lstemmer";
 	// -fdata-sections -ffunction-sections -Wl,-dead_strip -Wl,-emain
 	map* switches=xmap(
 		"debug", xstr("-g -O0 -lfox ", cflags, " ", xlibs, " -lfoxmain", End),
@@ -155,7 +155,7 @@ char* write_configm4(char* name, char* outfile){
 	"", 
 	"", End),outfile,0,1);
 };
-map* source_files(){ return xvec("astrostr.fox", "cgi.fox", "cmd.fox", "core.fox", "fox.fox", "generator.fox", "main.fox", "maincgi.fox", "run.fox", "sql.fox", "astro/astro.h", "eval.fox", End); };
+map* source_files(){ return xvec("astrostr.fox", "cgi.fox", "cmd.fox", "core.fox", "fox.fox", "generator.fox", "main.fox", "maincgi.fox", "run.fox", "sql.fox", "text.fox", "astro/astro.h", "eval.fox", End); };
 void write_source(){
 	source_funcs();
 	write_foxh(file_rename("fox.h","include",NULL,NULL,NULL,NULL));

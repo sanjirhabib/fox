@@ -808,12 +808,12 @@ map* pre_tables(){
 	return xmap(
 		"_fts",xmap(
 			"cols",xmap(
-				"id=code",xmap(End),
-				"id2=code",xmap(End),
-				"id3=code",xmap(End),
-				"id4=code",xmap(End),
-				"tbl=code",xmap(End),
-				"body=text",xmap(End), End), End)
+				"id=code",NULL,
+				"id2=code",NULL,
+				"id3=code",NULL,
+				"id4=code",NULL,
+				"tbl=code",NULL,
+				"body=text",NULL, End), End)
 	, End);
 };
 map* db_table(char* db,char* tbl){
@@ -1036,7 +1036,7 @@ map* cols_pkeys(map* cols){
 };
 map* types(){
 	return xmap(
-		"text",xmap(End),
+		"text",NULL,
 		"tinytext", "text",
 		"code", "text",
 		"name", "text",

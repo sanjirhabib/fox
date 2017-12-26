@@ -95,7 +95,7 @@ int cc(char* infile, char* xfiles='', char* profile="debug", char* outfile=NULL,
 	name=infile.file_rename(,".fox").fox_cs(names)
 	if !outfile => outfile=name
 	cflags="-m64 -std=gnu99 -Wno-unused-command-line-argument -g"
-	xlibs="-lmarkdown -lcurl -lsqlite3"
+	xlibs="-lmarkdown -lcurl -lsqlite3 -lstemmer"
 	// -fdata-sections -ffunction-sections -Wl,-dead_strip -Wl,-emain
 	switches={
 		debug: "-g -O0 -lfox $cflags $xlibs -lfoxmain"
@@ -155,7 +155,7 @@ char* write_configm4(char* name=:fox, char* outfile=NULL){
 
 	---.write_file(outfile)
 }
-map* source_files() => return ["astrostr.fox", "cgi.fox", "cmd.fox", "core.fox", "fox.fox", "generator.fox", "main.fox", "maincgi.fox", "run.fox", "sql.fox", "astro/astro.h", "eval.fox"]
+map* source_files() => return ["astrostr.fox", "cgi.fox", "cmd.fox", "core.fox", "fox.fox", "generator.fox", "main.fox", "maincgi.fox", "run.fox", "sql.fox", "text.fox", "astro/astro.h", "eval.fox"]
 void write_source(){
 	source_funcs()
 	"fox.h".file_rename(:include).write_foxh()

@@ -1,0 +1,24 @@
+#include <fox.h>
+char* ucs_str(int* in, int len);
+int utf_lang(char* in);
+int is_letter(int code);
+map* str_stem(char* in);
+map* words_stem(map* in);
+char* word_stem(char* in);
+char* word_end(char* in);
+char* word_start(char* in);
+int* ucs_substr(int* in, int from, int upto);
+int ucs_len(int* in);
+int* str_ucs(char* in);
+map* str_words(char* in);
+void go(char* in);
+char* stem_arabic(char* in);
+char* stem_english(char* in);
+char* stem_bangla(char* in);
+int stem_test();
+char* bangla_norm(char* in);
+map* bangla_joins();
+int xTokenize(Fts5Tokenizer* unused1, void * pCtx, int flags, const char * pText, int nText, void* callback);
+int xCreate(void* unused, const char ** azArg, int nArg, Fts5Tokenizer ** ppOut);
+static int xDelete(Fts5Tokenizer* unused);
+char* db_init_tokenizer(char* db);
