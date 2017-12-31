@@ -1,13 +1,14 @@
 CC=gcc
 INSTALL_DIR?=/usr/local
-CFLAGS=-m64 -Iinclude -std=gnu99 -Wno-logical-op-parentheses -Os -Wno-int-conversion -Llib -L/usr/local/lib -L/usr/lib64/ -fPIC -Wno-unused-command-line-argument -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lm -g
-FOXS=fox.fox core.fox cgi.fox cmd.fox main.fox astrostr.fox maincgi.fox generator.fox eval.fox sql.fox text.fox
+CFLAGS=-m64 -Iinclude -std=gnu99 -Wno-logical-op-parentheses -Os -Wno-int-conversion -Llib -L/usr/local/lib -L/usr/lib64/ -fPIC -Wno-unused-command-line-argument -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lm -g -I/usr/local/include
+_FOXS=fox.fox core.fox cgi.fox cmd.fox main.fox astrostr.fox maincgi.fox generator.fox eval.fox sql.fox text.fox dbmeta.fox
+CFILES = $(patsubst %.fox,src/%.c,$(_FOXS))
+FOXS=$(patsubst %,src/%,$(_FOXS))
 LIBS=-lsqlite3 -lcrypto -lmarkdown -lcurl -lstemmer
 _XLIBS=libfoxstatic.a libfox.so libfoxcgi.so libfoxcgistatic.a libfoxcmdstatic.a libfoxastro.a libfoxmain.a libfoxmaincgi.a
 XLIBS=$(patsubst %,lib/%,$(_XLIBS))
-_OBJ=core.o meta.o fox.o memsize.o astro.o astrostr.o md5.o generator.o eval.o sql.o text.o
+_OBJ=core.o meta.o fox.o memsize.o astro.o astrostr.o md5.o generator.o eval.o sql.o text.o dbmeta.o
 OBJ = $(patsubst %,obj/%,$(_OBJ))
-CFILES = $(patsubst %.fox,src/%.c,$(FOXS))
 
 .DEFAULT_GOAL := bin/fox
 
@@ -27,14 +28,15 @@ fox: $(FOXS)
 	$(CC) -c -o obj/main.o src/main.c $(CFLAGS) $(LIBS)
 	$(CC) -c -o obj/run.o src/run.c $(CFLAGS) $(LIBS)
 	$(CC) -c -o obj/meta.o src/meta.c $(CFLAGS) $(LIBS)
-	$(CC) -c -o obj/memsize.o memsize.c $(CFLAGS) $(LIBS)
-	$(CC) -c -o obj/md5.o md5.c $(CFLAGS) $(LIBS)
+	$(CC) -c -o obj/memsize.o src/memsize.c $(CFLAGS) $(LIBS)
+	$(CC) -c -o obj/md5.o src/md5.c $(CFLAGS) $(LIBS)
 	$(CC) -c -o obj/astrostr.o src/astrostr.c $(CFLAGS) $(LIBS)
 	$(CC) -c -o obj/main.o src/main.c $(CFLAGS) $(LIBS)
 	$(CC) -c -o obj/maincgi.o src/maincgi.c $(CFLAGS) $(LIBS)
 	$(CC) -c -o obj/run.o src/run.c $(CFLAGS) $(LIBS)
 	$(CC) -c -o obj/generator.o src/generator.c $(CFLAGS) $(LIBS)
 	$(CC) -c -o obj/eval.o src/eval.c $(CFLAGS) $(LIBS)
+	$(CC) -c -o obj/dbmeta.o src/dbmeta.c $(CFLAGS) $(LIBS)
 	$(CC) -c astro/astro.c -o obj/astro.o $(CFLAGS)
 	rm -f lib/libfoxcmdstatic.a
 	ar rcs lib/libfoxcmdstatic.a obj/cmd.o
@@ -42,26 +44,26 @@ fox: $(FOXS)
 	ar rcs lib/libfoxmain.a obj/main.o
 	rm -f lib/libfoxstatic.a
 	ar rcs lib/libfoxstatic.a $(OBJ)
-	$(CC) -o fox obj/run.o $(CFLAGS) $(LIBS) -lfoxstatic -lfoxcmdstatic -lfoxastro -lfoxmain
+	$(CC) -o fox obj/run.o $(CFLAGS) -lfoxstatic -lfoxcmdstatic -lfoxastro -lfoxmain $(LIBS)
 
 temp: obj/main.o $(OBJ) $(FOXS) $(XLIBS)
-	$(CC) -o $@ obj/main.o $(CFLAGS) $(LIBS) -lfoxstatic -lfoxcmdstatic
+	$(CC) -o $@ obj/main.o $(CFLAGS) -lfoxstatic -lfoxcmdstatic $(LIBS)
 
 bin/fox: obj/run.o $(OBJ) $(FOXS) $(XLIBS) Makefile
-	$(CC) -o $@ obj/run.o $(CFLAGS) $(LIBS) -lfoxstatic -lfoxcmdstatic -lfoxastro -lfoxmain
+	$(CC) -o $@ obj/run.o $(CFLAGS) -lfoxstatic -lfoxcmdstatic -lfoxastro -lfoxmain $(LIBS)
 	bin/fox utests
 
 $(CFILES) src/meta.c: $(FOXS)
 	echo $(CFILES)
-	fox write_source
+	fox write_source "src/astrostr.fox" "src/cgi.fox" "src/cmd.fox" "src/core.fox" "src/fox.fox" "src/generator.fox" "src/main.fox" "src/maincgi.fox" "src/run.fox" "src/sql.fox" "src/text.fox" "astro/astro.h" "src/eval.fox" "src/dbmeta.fox"
 
 lib/libfoxcgi.so: $(OBJ) obj/cgi.o
 	rm -f $@
-	$(CC) -shared -o $@ $^ $(LIBS) $(CFLAGS)
+	$(CC) -shared -o $@ $^ $(CFLAGS) $(LIBS)
 
 lib/libfox.so: $(OBJ) obj/cmd.o
 	rm -f $@
-	$(CC) -shared -o $@ $^ $(LIBS) $(CFLAGS)
+	$(CC) -shared -o $@ $^ $(CFLAGS) $(LIBS)
 
 lib/libfoxcgistatic.a: obj/cgi.o
 	rm -f $@
@@ -114,5 +116,5 @@ www:
 safe: bin/fox
 	cp fox /tmp/fox.`now`
 	cp bin/fox .
-	touch *.fox && make
+	touch src/*.fox && make
 

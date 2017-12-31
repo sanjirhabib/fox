@@ -1,0 +1,60 @@
+#include <fox.h>
+char* db_write_meta(char* db){
+	return db.db_meta_str().write_file(db.conn_db().file.file_rename(,".db")..".meta")
+}
+char* db_meta_str(char* db){
+	ret={}
+	db.db_meta().each val, table
+		ret[table]={}
+		val.each val2, attr
+			if attr.is_word("name db item") => continue
+			ret[table][attr]={}
+			if attr===:cols
+				val2.each prop, colname, idx
+					prop.each v, n
+						if n===:size && prop.type.type_size()==v.to_int() => continue
+						if !idx && n===:pkey && !val2.map_id(1).pkey => continue
+						if n.is_word("db table") => continue
+						ret[table].cols[colname][n]=(v.is_int()==1 ? '' : v)
+			else
+				ret[table][attr]=val2
+	return {db: ret}.data_str()						
+}
+char* data1_str(void* in){
+	ret=''
+	if in.is_vec()
+		ret.="["
+		in.each val, ,idx
+			ret.=val.data1_str()
+			if idx<in.map_len() => ret.=", "
+		ret.="]"
+		return ret
+	if in.is_map()
+		ret.="{"
+		in.each val, key, idx
+			ret.=key.data1_str()
+			if val => ret.=" "
+			ret.=val.data1_str()
+			if idx<in.map_len() => ret.=", "
+		ret.="}"
+		return ret
+	if in.is_str()
+		if in.str_chrs(" \t\n\r") => return in.str_quote()
+	return in
+}
+char* data_str(map* in, int level=0){
+	ret=''
+	in.each val, key
+		if val.is_map()
+			if val.name===key && val.type
+				ret.="\t".str_times(level)..key.." - "..val.type
+				val.each v, k
+					if k.is_word("name type") => continue
+					ret.=", "..k.." "..v.data1_str()
+				ret.="\n"
+			else
+				ret.="\t".str_times(level)..key.."\n"..val.data_str(level+1).."\n"
+			continue
+		ret.="\t".str_times(level)..key.." "..val.."\n"
+	return ret
+}

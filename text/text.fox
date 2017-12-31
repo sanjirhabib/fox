@@ -5,9 +5,19 @@ run(){
 	if args.exec_cmdline() => return 0
 	_globals.dbs.search='search.db'
 	:search.db_init_tokenizer()
+	"habib------".px()
 	"drop table if exists search".sql_exec(:search)
 	"create virtual table search using fts5(body, tokenize='habib')".sql_exec(:search)
+	"insert into search (body) values ('$(args[2])')".sql_exec(:search)
 	"insert into search (body) values ('$(args[1])')".sql_exec(:search)
-	"select * from search where search match '$(args[2])' order by rank".sql_rows(:search).px()
+	"insert into search (body) values ('$(args[2])')".sql_exec(:search)
+	"select * from search where search match '$(args[3])' order by rank".sql_rows(:search).px()
+	"unicode61------".px()
+	"drop table if exists search".sql_exec(:search)
+	"create virtual table search using fts5(body, tokenize='unicode61')".sql_exec(:search)
+	"insert into search (body) values ('$(args[2])')".sql_exec(:search)
+	"insert into search (body) values ('$(args[1])')".sql_exec(:search)
+	"insert into search (body) values ('$(args[2])')".sql_exec(:search)
+	"select * from search where search match '$(args[3])' order by rank".sql_rows(:search).px()
 	return 0
 }

@@ -1,0 +1,1959 @@
+#line 2 "sql.fox"
+#include <fox.h>
+#include <regex.h>
+#include <mkdio.h>
+#include <curl/curl.h>
+
+int _queries=0;
+
+map* sql_toks(char* line) => return sql_tokenizer(&line)
+map* split_keywords(map* mp,char* words){
+	if !mp => return mp
+	ret={}
+	curr=[]
+	lastword=''
+	mp.each ,,i
+		if mp[i].is_word(words)
+			if curr->len => ret[lastword]=curr
+			lastword=mp[i]
+			curr=[]
+			continue
+		curr[]=mp[i]
+	if curr->len => ret[lastword]=curr
+	return ret
+}
+void* key_var(char* key){
+	if !key => return NULL
+	if (long)key<0 => return int_var(-(long)key)
+	return key
+}
+map* map_key_val(map* mp,int idx){//0
+	assert(idx>=0 && idx<mp->len)
+	return [mp->pairs[idx].id.key_var(),mp[idx]]
+}
+char* join_clause(char* pre,map* mp,char* clause,char* by,char* sub1,char* sub2,char* use_cls){
+	mp1=mp
+	if clause => mp1=mp[clause]
+	ret=''
+	mp1.each ,,idx2
+		ret2=''
+		if !sub1 => ret2=mp1[idx2].to_str()
+		if !sub2 => ret2=mp1[idx2].sql_map_join(sub1)
+		else
+			mp2=mp1[idx2]
+			ret3=''
+			mp1[idx2].each v4,k4,idx4
+				if is_str(k4) => ret3=ret3.str_join(sub1,mp2.map_key_val(idx4).sql_map_join(sub2))
+			
+			ret2=ret3
+		ret=ret.str_join(by,ret2)
+	
+	if use_cls && ret => ret=use_cls.." "..ret
+	return pre.str_join(" ",ret)
+}
+map* de_select(map* cls){
+	ret={}
+	if cls.select[0]===:distinct || cls.select[0]===:unique
+		cls.unique=1
+		cls.select.vec_del(0).vec_compact()
+	if cls.select[0]===:crosstab
+		cls.crosstab=1
+		cls.select.vec_del(0).vec_compact()
+		if cls.select[0]===:prefix
+			cls.prefix=cls.select[1]
+			cls.select.vec_del(0,2).vec_compact()
+	cls.select.map_split(",",0).each val,,idx
+		mp1=val.map_split(:as,2)
+		name=mp1->len==2 ? mp1[1].sql_str() : mp1[0].sql_str()
+		ret[name]=mp1[0]
+	return cls.select=ret
+}
+map* de_from(map* cls){
+	ret={}
+	last_join_type=NULL
+	cls.from.map_split(:join,0).each v,,idx
+		join_type=NULL
+		map* words=v
+		words.each v1,,idx1
+			if v1.is_word("full inner left right cross outer")
+				join_type=words.vec_slice(idx1,words->len)
+				words.vec_compact()
+				break
+		parts=words.split_keywords("as on")
+		parts.change_key(0,:tbl)
+		if parts.tbl[0]==="(" => parts.tbl=parts.tbl.vec_del(0).vec_del(-1).vec_compact()[0].sql_toks_map().map_sql()
+		else parts.tbl=parts.tbl.map_join()
+		if parts.as => parts.as=parts.as.sql_str()
+		else parts.as=parts.tbl
+		if last_join_type => parts.join_type=last_join_type
+		ret[parts.as]=parts
+		last_join_type=join_type
+	cls.from=ret
+	return cls
+}
+map* parse_where(map* cls){
+	if cls.map_has_word(:or) => return {NULL: cls}
+	wheres={}
+	cls.map_split(:and,0).each val2,,idx2
+		eqs=val2.map_split("=",2);	
+		void* val=eqs[0]
+		key=''
+		assert(eqs->len<=2) //to fix support explode(...,limit=2)
+		if eqs->len==2
+			key=val.sql_str()
+			val=eqs[1]
+		wheres[key]=val
+	return wheres
+}
+map* de_where(map* cls){
+	mp=cls.where
+	if !mp => return cls
+	return cls.where=mp.parse_where()
+}
+map* de_having(map* cls){
+	mp=cls.having
+	if !mp => return cls
+	return cls.having=mp.parse_where()
+}
+map* de_order(map* cls){
+	mp=cls.order
+	if !mp => return cls
+	if mp[0]===:by => mp.vec_del(1-1,1).vec_compact()
+	ret={}
+	mp.map_split(",",0).each val,,idx
+		mp1=val
+		col=mp1[0].sql_str()
+		ord=mp1[1].sql_str()
+		int iord=1
+		if ord===:desc => iord=-1
+		ret[col]=iord
+	
+	cls.order=ret
+	return cls
+}
+map* de_group(map* cls){
+	mp=cls.group
+	if !mp => return cls
+	if mp[0]===:by => mp.vec_del(1-1,1).vec_compact()
+	cls.group=mp.map_split(",")
+	return cls
+}
+map* de_limit(map* cls){
+	mp=cls.limit
+	if !mp => return cls
+	mp=mp.map_split(",",2)
+	int offset=mp[0].sql_str().stoi()
+	int limit=mp[1].sql_str().stoi()
+	if offset && !limit => limit=offset; offset=0
+	cls.limit={offset: offset,limit: limit}
+	return cls
+}
+map* sql_toks_map(map* toks){
+	toks=toks.map_split(:union,2)
+	ret=toks[0].split_keywords("select from where group having order limit")
+		.de_from()
+		.de_select()
+		.de_where()
+		.de_group()
+		.de_having()
+		.de_order()
+		.de_limit()
+	if toks[1] => ret.union=toks[1]
+	return ret
+}
+map* sql_map(char* sql){
+	if !sql => return NULL
+	ret=sql.cache(:sql_map)
+	if ret => return ret
+	if !sql.str_has(" ") => sql="select * from $sql"
+	return sql.sql_toks().sql_toks_map()
+}
+char* sql_map_join(map* mp,char* joiner){
+	ret=''
+	mp.each ,,idx => ret=ret.str_join(joiner,mp[idx].sql_str())
+	return ret;	
+}
+char* var_join(void* v,char* joiner){
+	if v.ptr_type()==String => return v
+	if v.ptr_type()==Map||v.ptr_type()==Vector => return v.sql_map_join(joiner)
+	return int_str((long)v)
+}
+map* sql_convert_func(map* mp,char* db){
+	char* name=mp[0]
+	params=[]
+	mp.each ,,idx
+		if idx==0 => continue
+		params[]=mp[idx].sql_str()
+	
+	if db===:lite
+		if name===:time => return "substr($(params[0]),12,8)".sql_toks()
+		if name===:date => return "substr($(params[0]),1,10)".sql_toks()
+		if name===:month => return "substr($(params[0]),1,7)".sql_toks()
+		if name===:year => return "substr($(params[0]),1,4)".sql_toks()
+		if name===:quarter => return "substr($(params[0]),1,5)||((substr($(params[0]),6,2)-1)/3+1)".sql_toks()
+		if name===:empty => return "($(params[0]) is null or $(params[0])='')".sql_toks()
+		if name===:if => return "case when $(params[0]) then $(params[1]) else $(params[2]) end".sql_toks()
+	
+	return NULL
+}
+char* is_func(map* mp,int idx){
+	if !mp => return NULL
+	if !mp[idx-1].is_code() => return NULL
+	if mp[idx]!=="(" => return NULL
+	return mp[idx-1]
+}
+map* sql_func_params(map* mp,int idx){
+	return mp.is_func(idx) ? mp[idx+1].map_split(",",0) : NULL
+}
+map* get_func(map* mp,int idx){
+	return mp.is_func(idx) ? [mp[idx-1]].vec_merge(mp[idx+1].map_split(",",0)) : NULL
+}
+map* search_sql_func(map* mp,char* db){
+	if !mp => return NULL
+	mp.each v,,idx
+		if v.is_map() => mp[idx]=v.search_sql_func(db); continue
+		mp1=mp.get_func(idx)
+		if mp1 => mp1=mp1.sql_convert_func(db)
+		if mp1 => mp.vec_splice(idx-1,4,mp1)
+	return mp
+}
+map* to_vec(void* val){
+	mp=[]
+	mp[]=val
+	return mp
+}
+map* sql_order(char* sql){
+	mp=sql.sql_map()
+	ret={}
+	mp[mp->len-1].order.each val,,idx
+		mp1=val
+		col=mp1[0].sql_str()
+		ord=mp1[1].sql_str()
+		int iord=1
+		if ord===:desc => iord=-1
+		ret[col]=iord
+	
+	return ret
+}
+map* sql_tables(char* sql,char* db){
+	if sql.is_code() => return {(sql): sql}
+	ret={}
+	sql.sql_cls(:from).each v,k,idx
+		ret[k.is_code() ? k : NULL]=v.tbl
+	return ret
+}
+map* sql_col(char* sql,char* db,map* exp){
+	ret={}
+	if exp->len==1
+		char* name=exp[0]
+		sql.sql_tables(db).each ssql
+			cols=ssql.sql_select_cols(db)
+			if cols[name] => return cols[name]
+		ret=sql.sql_cls(:select)[name]
+		if ret && ret.sql_str()!==name => return sql.sql_col(db,ret)
+		"Field $name not found in query.".fox_error()
+	if exp->len==3 && exp[1].is_str()==="."
+		ret=sql.sql_tables(db)[exp[0]].sql_select_cols(db)[exp[2]]
+		if !ret => "Field $(exp.sql_str()) not found in $sql".fox_error()
+		return ret
+	if exp->len>1
+		if exp.map_has_word("|")
+			ret.type=:text
+			return ret
+	name=exp.is_func(1)
+	if name
+		if name.is_word("sum count avg")
+			ret.aggregate=name
+			ret.sum=exp.sql_func_params(1)[0].sql_str()
+			ret.type=:amount
+			return ret
+		if name.is_word("month quarter year date time")
+			ret.exp=exp.sql_str()
+			ret.type=name
+			return ret
+		if name===:sub_str
+			ret.type=:text
+			return ret
+		if name===:floor
+			ret.type=:number
+			return ret
+		if name===:empty
+			ret.type=:bool
+			return ret
+		if name===:if
+			return sql.sql_col(db,exp.sql_func_params(1)[1])
+	name=exp[0].is_str()
+	if *name=='"'||*name=='\''
+		ret.type=:text
+		return ret
+	"can't find $(exp.sql_str()) in $sql".fox_error()
+	return NULL
+}
+char* str_code(char* in){
+	in=in.to_str()
+	len=in.str_len()
+	if !len => return :_blank;
+	char ret[65]={0}
+	if len>64 => len=64
+	for i=0; i<len && i<64; i++
+		if in[i]>='A' &&  in[i]<='Z' => ret[i]=in[i]+'a'-'A'
+		else if !in[i].is_alphanum() => ret[i]='_'
+		else ret[i]=in[i]
+	ret[len]='\0'
+	if !ret[0].is_alpha() => return "_$ret"
+	return ret.str_dup()
+}
+map* crosstab_cols(map* cols,char* sql,char* db,map* params){
+	mp=sql.sql_map()
+	if !mp.crosstab => return NULL
+	col1=cols[0].alias
+	col2_name=cols[cols->len-2].alias
+	col2_expr=cols[cols->len-2].expr.map_join()
+	sum=cols[cols->len-1]
+	table=cols[sum].table
+	order={(col2_expr): mp.order[col2_expr]}
+	sql="select distinct "..col2_expr.." as val"..mp.from.re_from()..mp.where.re_where()..order.re_order()
+	rows=sql.sql_pairs(db)
+	ret={}
+	fsum=sum.sum
+	if fsum==="*" => fsum="1"
+	rows.each  val,,i
+		f=''
+		if mp.prefix
+			f=mp.prefix.."_"..val.str_code()
+		else
+			f=val.str_code()
+		if params => params[f]=val
+		ret[f]={type: :amount, label: val.to_str(), alias: f, expr: "sum(if($(col2_expr)=:$f,$fsum,0))".sql_toks(), db: db, table: table,aggregate: sum.aggregate}
+	return ret
+}
+map* sql_select_cols(char* sql,char* db=NULL,map* params=NULL){
+	ret={}
+	if sql.is_code()
+		ret=sql.tbl_cols(db).map_dup()
+		ret.each v6 ,k6,i6=> v6.expr=[k6]
+		return ret
+	cols=sql.sql_cls(:select)
+	if !db
+		tbl=sql.sql_table()
+		cols.each v,k,idx
+			ret[k]={alias: k, expr: v, table: tbl}
+		return ret
+	cols.each v,k,idx
+		if k==="*"
+			sql.sql_tables(db).each ssql, talias
+				ssql.sql_select_cols(db).each col, f
+					if ret[f] => continue
+					ret[f]=col.map_dup()
+					ret[f].expr=talias.is_code() ? [talias,".",f] : [f]
+					ret[f].alias=f
+					ret[f].talias=talias
+		else if k.str_end(".*")
+			talias=k.sub_str(0,-2)
+			tcols=sql.sql_select_cols(db)[talias]
+			if !tcols => "Invalid table alias $k in sql $sql".fox_error()
+			tcols.each v2,k2,idx2
+				if cols[k2]||ret[k2] => continue
+				ret[k2]=v2.map_dup()
+				ret[k2].expr=talias.is_code() ? [talias,".",k2] : [k2]
+				ret[k2].alias=k2
+				ret[k2].talias=talias
+		else
+			ret[k]=sql.sql_col(db,v)
+			ret[k].expr=v
+			ret[k].alias=k
+	ccols=ret.crosstab_cols(sql,db,params)	
+	if ccols
+		sum=ret[ret->len-1]
+		ret.map_del(ret->len-1).map_compact()
+		ret.map_merge(ccols)
+		ret[sum.alias]=sum
+	return ret
+}
+char* sql_add_where(char* sql,map* mp){
+	return sql.sql_map().add(:where,sql.sql_cls(:where).map_merge(mp)).map_sql()
+}
+map* cols_collect(map* cols,void* collect){
+	assert(cols.is_map())
+	if collect.is_str() => collect=collect.str_map()
+	ret={}
+	collect.each op,f
+		if f==="*" => ret.map_merge(cols)
+		else if f[0]=='-'
+			ret.map_del_key(f.sub_str(1)).map_compact()
+		else if f.str_has("-")
+			limit=f.str_split("-",2)
+			inlimit=0
+			cols.each ,f1
+				if limit[0]===f1
+					inlimit=1
+				if inlimit
+					ret[f1]=cols[f1]
+				if limit[1]===f1
+					inlimit=0
+		else
+			ret[f]=cols[f]
+			if ret[f].is_map()
+				ret[f]=ret[f].map_dup()
+				if op.is_map() => ret[f].map_merge(op)
+				if ret[f].type==="-" => ret[f].type=cols[f].type
+	return ret
+}
+map* sql_where_cols(char* sql,char* db){
+	ret={}
+	sql.sql_cls(:where).each val,k
+		if !k.is_str() => continue
+		ret[k]=sql.sql_col(db,k.sql_toks())
+	sql.sql_cls(:having).each val,k
+		if !k.is_str() => continue
+		ret[k]=sql.sql_col(db,k.sql_toks())
+	return ret
+}
+map* sql_where_vals(char* sql){
+	ret={}
+	sql.sql_cls(:where).each val,k
+		if !k.is_str() => continue
+		sval=val.sql_str(val[0])
+		if "\"'".strchr(sval[0]) => sval=sval.str_unquote()
+		ret[k]=sval
+	sql.sql_cls(:having).each val,k
+		if !k.is_str() => continue
+		sval=val.sql_str(val[0])
+		if "\"'".strchr(sval[0]) => sval=sval.str_unquote()
+		ret[k]=sval.sql_str()
+	return ret
+}
+//char* sql_col_alias(char* sql,char* db,char* name){
+//	toks=name.sql_toks()
+//	if toks.map_len()==3 && toks[1]==="." => return name
+//	tbls=sql.sql_tables(db)
+//	if tbls.map_len()>1 && name.is_code()
+//
+//}
+char* sql_add_limit(char* sql,int rpp=200,int page=0){
+	return sql.sql_add_cls(:limit,{limit: rpp, offset: rpp*page})
+}
+char* sql_add_order(char* sql,char* db,map* order=NULL){
+	order=sql.sql_cls(:order).map_merge(order)
+	if !order => order={}
+	sql.sql_pkeys(db).each f
+		if !order[f] => order[f]=1
+	return sql.sql_add_cls(:order,order)
+}
+char* sql_add_filter(char* sql,map* filter){
+	dsql=sql.sql_map()
+	filter.each val,k
+		dsql.where[k]=":"..k
+	return dsql.map_sql()
+}
+char* name_type(char* name){
+	types().each ,type
+		if name.str_has(type) => return type
+	"name=text,desc=para,title=text".str_map().each val,key
+		if name.str_has(key) => return val
+	return :text
+}
+map* to_cols(void* cols,char* sql=NULL,char* db=NULL){
+	if cols.is_str() => cols=cols.xkeys()
+	if !sql
+		cols.each col,f
+			if !col
+				cols[f]={type: f.name_type()}
+			else if col.is_str()
+				cols[f]={type: col}
+			else if !col.type
+				cols[f].type=f.name_type()
+		return cols
+	ret={}
+	cols.each col,f,idx
+		ret[f]=sql.sql_col(db,f.sql_toks())
+		if col.is_map() => ret[f].map_merge(col)
+		if ret[f].type==="-" => ret[f].type=cols[f].type
+	return ret
+}
+map* sql_cols(char* sql,char* db,void* cols=NULL){
+	if !cols => return sql.sql_select_cols(db)
+	return cols.to_cols(sql,db)
+}
+map* sql_add_cols(char* sql,char* db,map* cols=NULL){
+	scols=sql.sql_table().tbl_cols(db)
+	if cols.map_len() => return scols.cols_collect(cols)
+	ret={}
+	scols.each op,f
+		if op.noshow => continue
+		if op.noadd => continue
+		if op.auto => continue
+		if op.calc => continue
+		if op.type===:guid && !op.sql => continue
+		ret[f]=op
+	return ret
+}
+map* sql_view_cols(char* sql,char* db,map* cols=NULL){
+	scols=sql.sql_table().tbl_cols(db)
+	if cols.map_len() => return scols.cols_collect(cols)
+	ret={}
+	scols.each op,f
+		if op.noshow => continue
+		if op.type===:guid && !op.sql => continue
+		ret[f]=op
+	return ret
+}
+map* sql_edit_cols(char* sql,char* db,map* cols=NULL){
+	scols=sql.sql_table().tbl_cols(db)
+	if cols.map_len() => return scols.cols_collect(cols)
+	ret={}
+	scols.each op,f
+		if op.noshow => continue
+		if op.noedit => continue
+		if op.auto => continue
+		if op.calc => continue
+		if op.type===:guid && !op.sql => continue
+		ret[f]=op
+	return ret
+}
+map* sql_list_cols(char* sql,char* db,map* cols=NULL){
+	scols=sql.sql_select_cols(db)
+	if cols.map_len() => return scols.cols_collect(cols)
+	ret={}
+	scols.each op,f
+		if op.noshow => continue
+		if op.nolist => continue
+		if op.type===:guid && !op.sql => continue
+		if op.type===:password => continue
+		ret[f]=op
+	return ret
+}
+char* sql_add_cls(char* sql,char* cls,map* vals){
+	dsql=sql.sql_map()
+	dsql[cls]=vals
+	return dsql.map_sql()
+}
+map* sql_cls(char* sql,char* cls) => return sql.sql_map()[cls]
+char* sql_str(void* data){
+	if !data => return NULL
+	int type=data.ptr_type()
+	if type==String => return data
+	if type==Map||type==Vector
+		mp=(map*)data
+		ret=''
+		mp.each ,,idx
+			if ret && mp[idx].is_map() && mp[idx-1].is_map() => ret.=", "
+			else if ret && !mp[idx].str_is_oper() && !mp[idx-1].str_is_oper() => ret.=" "
+			ret.=mp[idx].sql_str()
+		return ret
+	return int_str((long)data)
+}
+char* re_select(map* mp){
+	int i=0
+	if !mp.select => return NULL
+	ret="select "
+	if mp.unique => ret.="distinct "
+	if mp.crosstab => ret.="crosstab "
+		if mp.prefix => ret.="prefix "..mp.prefix
+	mp.select.each v,k,idx
+		if i++ => ret.=", "
+		v2=v.sql_str()
+		if v2.str_end(".*") && mp.select.map_len()==1 => v2="*"
+		ret.=v2
+		if k!==v2 && k.is_code() => ret.=" as "..k.is_str()
+	
+	return ret
+}
+char* re_from(map* cls){
+	int i=0
+	if !cls => return NULL
+	ret=" from "
+	cls.each v,k,idx
+		map* mp1=v
+		if mp1.join_type => ret.=" "..mp1.join_type.sql_str()
+		if i++ => ret.=" join "
+		if mp1.tbl.is_code() => ret.=mp1.tbl
+		else ret.="("..mp1.tbl..")"
+		if mp1.tbl!==k => ret.=" as "..k.is_str()
+		if mp1.on
+			ret.=" on "..mp1.on.sql_str()
+	return ret
+}
+char* re_where(map* cls){
+	int i=0
+	if !cls => return NULL
+	ret=" where "
+	cls.each v,k,idx
+		if i++ => ret.=" and "
+		if k.is_str()
+			if k.is_code()
+				ret.="\""..k.."\"="
+			else
+				ret.=k.."="
+		ret.=v.sql_str()
+	return ret
+}
+char* re_group(map* cls){
+	int i=0
+	if !cls => return NULL
+	ret=" group by "
+	cls.each v,,idx
+		if i++ => ret.=", "
+		ret.=v.sql_str()
+	
+	return ret
+}
+char* re_having(map* cls){
+	int i=0
+	if !cls => return NULL
+	ret=" having "
+	cls.each v,k,idx
+		if i++ => ret.=", "
+		if k.is_str() => ret.=k.."="
+		ret.=v.sql_str()
+	
+	return ret
+}
+char* re_order(map* cls){
+	int i=0
+	if !cls => return NULL
+	ret=" order by "
+	cls.each v,k,idx
+		if i++ => ret.=", "
+		ret.=k
+		if v.is_int()<0 => ret.=" desc"
+	return ret
+}
+char* re_union(map* cls){
+	if !cls => return NULL
+	return " union "..cls.map_join(" ")
+}
+char* re_limit(map* cls){
+	if !cls => return NULL
+	return " limit "..str_join(cls.offset.is_int() ? cls.offset.to_str() : '',", ",cls.limit.to_str())
+}
+char* map_sql(map* mp){
+	if !mp => return NULL
+	return re_select(mp)..re_from(mp.from)..re_where(mp.where)..re_group(mp.group)..re_having(mp.having)..re_order(mp.order)..re_limit(mp.limit)..re_union(mp.union)
+}
+int has_aggregate(char* sql){
+	sql.sql_select_cols().cols.each col,,i => if col.aggregate => return 1
+	return 0
+}
+char* sql_auto_join(char* sql,char* db=NULL){
+	dsql=sql.sql_map()
+	cols={}
+	ok=1
+	dsql.from.each op2 ,tbl2,i2=> if i2 && !op2.on => ok=0; break;
+	if ok => return sql
+	dsql.from.each op,tbl,i
+		if i && !op.on
+			cols.each op2,t2,i2
+				op2.each op3,f3,i3
+					if !op3.sql => continue
+					sql2=op3.sql.fkey_sql(db)
+					if sql2.sql_table()!==op.tbl => continue
+					tblfld=sql2.sql_select_cols(db)[0].expr.toks_split(".",2)
+					ff=tblfld.map_len()==2 ? tblfld[1] : tblfld[0]	
+					op.on=[t2,".",f3].vec_merge(["=",tbl,".",ff])
+					break
+				if op.on => break
+			if !op.on => "auto join failed".fox_error()
+		cols[tbl]=op.tbl.sql_select_cols(db)
+	return dsql.map_sql()
+}
+char* sql_auto_group(char* sql,char* db=NULL){
+	dsql=sql.sql_map()
+	if dsql.group => return sql
+	cols=sql.sql_select_cols(db)
+	agg=0
+	noagg=0
+	cols.each col,,i
+		if col.aggregate => agg++
+		else noagg++
+	if !agg || !noagg => return sql
+	dsql.group=[]
+	cols.each col2 ,f2,i2=> if !col2.aggregate => dsql.group[]=f2
+	return dsql.map_sql()
+}
+char* sql_lite(char* sql,char* db=NULL,map* params=NULL){
+	sql=sql.sql_add_order(db).sql_auto_join(db).sql_auto_group(db)
+	ret=sql.sql_map()
+	if db
+		ret.select={}
+		sql.sql_select_cols(db,params).each prop,name,idx
+			ret.select[name]=prop.expr
+		ret.crosstab=NULL
+		ret.prefix=NULL
+	return ret.search_sql_func(:lite).map_sql()..";"
+}
+int sql_utest(char* in,char* out){
+	if !out => out=in
+	mp=in.sql_map()
+	ret=mp.search_sql_func(:lite).map_sql()
+	return ret.utest(out,in)
+}
+int type_size(char* type){
+	return {{
+		text 128
+		code 50
+		guid 36
+		int 18
+		bool 1
+		para 256
+		daymonth 5
+		month 7
+	}}.map_type(type).to_int()
+}
+char* lite_create_col(map* col){
+	size=col.size.to_int()
+	if !size => size=col.type.type_size()
+	type={{
+		text varchar
+		para clob
+		file blob
+		int number
+		float float
+		date date
+		time time
+		datetime datetime
+		daymonth varchar
+		month varchar
+	}}.map_type(col.type)
+	if !type => "col.type=$(col.type) not matched".fox_error()
+	name=col.name
+	if type===:varchar => return "$name varchar($size) collate nocase not null default ''"
+	if type===:number => return "$name integer not null default 0"
+	if type===:float => return "$name real not null default 0"
+	if type===:clob => return "$name clob not null default ''"
+	if type===:blob => return "$name blob not null default ''"
+	if type===:date => return "$name date not null default ''"
+	if type===:time => return "$name time not null default ''"
+	if type===:datetime => return "$name datetime not null default ''"
+	if type===:yearmonth => return "$name varchar(7) not null default ''"
+	"litecreate() type $type not supported".fox_error()
+	return NULL
+}
+int is_indexed(char* type){
+	return {{
+		text 0
+		code 1
+		password 0
+		email 0
+	}}.map_type(type).to_int()
+}
+map* trigger_sqls(char* tbl,char* db) => return db.db_meta()[tbl].tbl_trigger_sqls()
+map* tbl_trigger_sqls(map* tbl){
+	if tbl.cols.lft => return tbl.name.lite_trigger_tree(tbl.cols.cols_pkeys().map_key(0))
+	if tbl.cols.slno => return tbl.name.lite_trigger_slno(tbl.cols.cols_pkeys().map_key(0),tbl.cols.cols_pkeys().map_key(1))
+	return []
+}
+map* create_index_sqls(map* tbl){
+	ret=[]
+	tbl.cols.each f,k,i
+		if !f.type.is_indexed() => continue
+		ret[]="create index idx_$(tbl.name)_$(f.name) on $(tbl.name)($(f.name))"
+	return ret
+}
+char* drop_sql(char* name) => return "drop table if exists $name"
+char* create_sql(map* tbl,char* name=NULL){
+	if !name => name=tbl.name
+	cls={}
+	tbl.cols.each v ,k,i=> cls[k]=v.lite_create_col()
+	pkeys=tbl.cols.cols_pkeys()
+	if pkeys.map_len()==1 && tbl.cols[pkeys[0]].type.is_word("int integer")
+		cls[pkeys[0]]="$(pkeys[0]) integer primary key autoincrement"
+	else
+		cls[]="primary key ($(pkeys.map_join(\",\")))"
+	return "create table $name ($(cls.map_join(\",\")))"
+}
+char* meta_type(char* type,int size){
+	if size==36 => return :guid
+	if size==1 && type.is_word("int tinyint") => return :bool
+	if type===:clob => return :para
+	if type.is_word("mediumblob longblob") => return :blob
+	if type.is_word("string varchar2 varchar char")
+		if size>=200 => return :para
+		if size>=128 => return :text
+	
+	if type.is_word("varchar2 varchar char") => return :code
+	if type.is_word("number integer") => return :int
+	if type===:real => return :float
+	if type===:timestamp => return :datetime
+	if type===:integer => return :int
+//"%s=%s".dx(type,type.is_word("varchar2 varchar"))
+//type.dxx()
+	return type
+}
+int has_table(char* db,char* tbl){
+	return "select count(*) from sqlite_master where type='table' and name=:name".sql_value(db,{name: tbl}).to_int()
+}
+map* map_cols(void* cols,char* tbl,char* db){
+	cols.each f,name,i
+		f.name=name
+		f.table=tbl
+		f.db=db
+	return cols
+}
+map* cols_table(map* cols,char* tbl,char* db){
+	if !cols => return NULL
+	return {
+		name: tbl,
+		cols: cols.map_cols(tbl,db),
+		db: db,
+		item: tbl.str_title()
+	}
+}
+map* pre_tables(){
+	return {{
+		_fts
+			cols
+				id=code
+				id2=code
+				id3=code
+				id4=code
+				tbl=code
+				body=text
+	}}
+}
+map* db_table(char* db,char* tbl){
+	return db.db_cols(tbl).cols_table(tbl,db)
+}
+map* db_tables(char* db){
+	ret={}
+	db.db_table_names().each v,,i
+		ret[v]=db.db_table(v)
+	return ret
+}
+map* db_cols(char* db,char* tbl){
+	rs="pragma table_info ($tbl)".lite_exec(db,NULL)
+	ret={}
+	rs.each v,,idx
+		col={}
+		map* mp=v
+		name=mp.name.str_lower()
+		col.name=name
+		func=mp.type.sql_toks().get_func(1)
+		if !func
+			col.type=mp.type.meta_type(0)
+		else
+			int size=func[1][0].stoi()
+			col.size=size
+			col.type=func[0].meta_type(size)
+		
+		if mp.pk.stoi() => col.pkey=int_var(1)
+		if !mp.notnull.stoi() && !col.pkey => col.isnull=int_var(1)
+		col.db=db
+		col.table=tbl
+		ret[name]=col
+	return ret
+}
+map* url_gets() => return _globals.url.params
+char* sql_table(char* sql){
+	if sql.is_code() => return sql
+	return sql.sql_cls(:from)[0].tbl.sql_table()
+}
+map* sql_pkeys(char* sql,char* db) => return sql.sql_table().tbl_pkeys(db)
+void* sql_value(char* sql,char* db,map* param=NULL) => return sql.lite_exec(db,param)[0][0]
+map* sql_rows(char* sql,char* db,map* param=NULL){
+	if !sql.strchr(' ') => sql="select * from $sql"
+	return sql.lite_exec(db,param)
+}
+map* sql_query(char* sql,char* db,map* where=NULL) => return sql.sql_add_where(where).sql_rows(db,where)
+map* id_ids(void* id,char* tbl,char* db){
+	pkeys=tbl.tbl_pkeys(db)
+	ret={}
+	if id.is_i() => id=id.to_str()
+	if id.is_str() => id=id.str_split("\t")
+	assert(id.is_map())
+	if pkeys->len!=id.map_len() => "PKey=$pkeys and id=$id, number of field mismatched".fox_error()
+	if id.is_vec()
+		pkeys.each f,,idx
+			ret[f]=id[idx]
+		return ret
+	pkeys.each f
+		ret[f]=id[f]
+	return ret
+}
+map* sql_row(char* sql,char* db,map* param=NULL) => return sql.lite_exec(db,param)[0]
+map* sql_vector(char* sql,char* db,map* param=NULL){
+	ret=[]
+	sql.lite_exec(db,param).each v,,i
+		ret[]=v[0]
+	return ret
+}
+map* sql_pairs(char* sql,char* db,map* param=NULL){
+	ret={}
+	sql.lite_exec(db,param).each v,,i
+		ret[v[0]]=v.map_len()>1 ? v[1] : v[0]
+	return ret
+}
+map* sql_vec(char* sql,char* db,map* param=NULL){
+	ret=[]
+	sql.lite_exec(db,param).each v,,i
+		ret[]=v[0]
+	return ret
+}
+char* sql_drop(char* tbl){
+	return "drop table if exists $tbl"
+}
+char* to_sql(char* sql){
+	return sql.sql_map().map_sql()
+}
+map* meta_fkeys(char* db){
+	ret=_globals.meta.fkeys[db]
+	if !ret
+		ret=[]
+		_globals.meta.db.each tbl,name
+			tbl.cols.each col,f
+				if col.sql
+					sql=col.sql.fkey_sql(db)
+					ret[]={table: name, f: f, table2: sql.sql_table(), f2: sql.sql_cols(db)[0].name, db: col.db}
+		_globals.meta.fkeys[db]=ret
+	return ret
+}
+map* tbl_referred_by(char* tbl,char* db){
+	ret=[]
+	db.meta_fkeys().each rel
+		if rel.table2===tbl
+			ret[]={table: rel.table, f: rel.f, f2: rel.f2}
+	return ret
+}
+void* id_update(void* ids,char* tbl,char* db,map* row){
+	ids=ids.id_ids(tbl,db);
+	ids.each val,f
+		if row[f] && row[f]!==val
+			tbl.tbl_referred_by(db).each ft
+				"update $(ft.table) set $(ft.f)=:newval where $(ft.f)=:oldval".lite_exec(db,{newval: row[f], oldval: val})
+	cols=tbl.tbl_cols(db)
+	if !cols => return "Table $tbl not found".fox_error()
+	fld=[]
+	cols.each ,k,idx
+		if !row[k] => continue
+		fld[]="$k=:$k"
+	v1=[]
+	ids.each v2,k2,idx2
+		v1[]="$k2=:_old_$k2"
+		row["_old_$k2"]=v2
+	return "update $tbl set $(fld.map_join(', ')) where $(v1.map_join(' and '))".lite_exec(db,row)
+}
+int row_insert(map* row,char* tbl,char* db){
+	cols=tbl.tbl_cols(db)
+	if !cols => return "Table $tbl not found".fox_error()
+	fld=[]
+	cols.each ,k,idx
+		if !row[k] => continue
+		fld[]=k
+	"insert into $tbl ('$(fld.map_join(\"', '\"))') values (:$(fld.map_join(', :')))".lite_exec(db,row)
+	return "select last_insert_rowid()".sql_value(db).to_int()
+}
+void* sql_error(char* sql,char* db,sqlite3* conn){
+	msg="$((char*)conn.sqlite3_errmsg()) $db/$sql"
+	conn.sqlite3_close_v2()
+	return msg.fox_error()
+}
+map* sqls_exec(map* sqls,char* db){
+	sqls.each sql=> sql.lite_exec(db)
+	return sqls
+}
+map* parse_connection(char* in) => return {type: :lite, file: in}
+map* conn_db(char* db){
+	if !db.is_code() => return db.parse_connection()
+	ret=_globals.dbs[db]
+	if !ret => "SQLite connection $db not found. Only $(_globals.dbs.map_keys().map_join(\",\")) defined".fox_error()
+	if ret.is_str() => _globals.dbs[db]=ret.parse_connection()
+	return _globals.dbs[db]
+}
+map* sql_exec(char* sql,char* db,map* params=NULL) => return sql.lite_exec(db,params)
+void* lite_conn(char* db){
+	cname=db
+	db=db.conn_db().file
+	if !db => "query() connection $(cname.str_quote()) not found $(_globals.dbs)".fox_error()
+	if !_globals.conn[db]
+		sqlite3* conn=_globals.conn[db]
+		if db.sqlite3_open_v2(&conn,SQLITE_OPEN_READWRITE|SQLITE_OPEN_URI,NULL)!=SQLITE_OK
+			return NULL.sql_error(db,conn)
+		_globals.conn[db]=conn
+	return _globals.conn[db]
+}
+map* lite_exec(char* sql,char* db,map* params=NULL){
+	_queries++
+	sqlite3* conn=db.lite_conn()
+	sqlite3_stmt* stm=NULL
+	start_time()
+	if conn.sqlite3_prepare_v2(sql,-1,&stm,NULL)!=SQLITE_OK
+		return sql.sql_error(db,conn)
+	int i=0
+	params.each v,k,idx
+		assert(k.is_str())
+		if (i=stm.sqlite3_bind_parameter_index(":"..k))
+			stm.sqlite3_bind_text(i,v.to_str(),-1,NULL)
+	int ncols=stm.sqlite3_column_count()
+	map* cols=NULL
+	if ncols
+		cols=[]
+		for int i=0;i<ncols;i++ => cols[]=str_dup((char*) stm.sqlite3_column_name(i))
+	map* ret=NULL
+	while (i=stm.sqlite3_step())
+		if i==SQLITE_ROW
+			if !ret => ret=[]
+			row={}
+			for(int i=0;i<ncols;i++) row[cols[i]]=str_dup((char*)stm.sqlite3_column_text(i))
+			ret[]=row
+		else if i==SQLITE_BUSY => continue
+		else if i==SQLITE_DONE => break
+		else return sql.sql_error(db,conn)
+	if stm.sqlite3_finalize()!=SQLITE_OK => return sql.sql_error(db,conn)
+	end_time()
+	return ret
+}
+void close_conns(){
+	_globals.conn.each val,key
+		_globals.conn[key]=NULL
+		if !val => continue
+		val.sqlite3_close_v2()
+}
+map* vec_map(map* in){
+	if !in.is_vec() => return in
+	ret={}
+	in.each val
+		ret[val]=val
+	return ret
+}
+map* db_table_names(char* db){
+	if _globals.schema._tbls
+		return _globals.schema._tbls
+
+	_globals.schema._tbls="select name from sqlite_master where type='table' and name not in ('sqlite_sequence', '_syncing', 'search', 'search_data', 'search_idx', 'search_content', 'search_docsize', 'search_config') order by 1".sql_pairs(db)
+	return _globals.schema._tbls
+}
+map* cols_pkeys(map* cols){
+	ret={}
+	cols.each v,k,i
+		if v.pkey => ret[k]=k
+	if !ret.map_len() => ret[cols.map_key(0)]=cols.map_key(0)
+	return ret
+}
+map* types(){
+	return {{
+		text
+		tinytext text
+		code text
+		name text
+		fold text
+		html text
+		link html
+		para text
+		source para
+		password code
+		email text
+		phone text
+		imagelink text
+		guid code
+		hidden code
+		list code
+		radio list
+		multicheck list
+		grid multicheck
+		fkey list
+		combo fkey
+		user code
+		ip code
+		flist fkey
+		inline fkey
+		int code
+		smallint int
+		bigint int
+		integer int
+		number int
+		intrange int
+		amount number
+		currency amount
+		debit amount
+		credit amount
+		float int
+		duration amount
+		mins amount
+		date int
+		pastdate date
+		futuredate date
+		time date
+		hour time
+		datetime date
+		timestamp datetime
+		daterange date
+		datefrom date
+		dateupto date
+		daymonth date
+		yearmonth date
+		month yearmonth
+		quarter yearmonth
+		bool int
+		check bool
+		checkbox check
+		file para
+		jpeg file
+		imagefile jpeg
+		bmp jpeg
+		wsq jpeg
+		clob para
+		blob file
+		tinyblob blob
+		longtext blob
+		raw blob
+		largefile file
+	}}
+}
+char* map_type(map* mp,char* type){
+	while(type)
+		if mp[type] => return mp[type].to_str()
+		type=types()[type]
+	return type
+}
+map* where_param(map* where){
+	ret={}
+	where.each ,key => ret[key]=":"..key
+	return ret
+}
+map* where_rows(map* where, char* tbl, char* db) => return tbl.sql_add_where(where.where_param()).sql_rows(db,where)
+map* where_row(map* where, char* tbl, char* db) => return tbl.sql_add_where(where.where_param()).sql_row(db,where)
+map* id_row(void* ids,char* tbl,char* db) => return ids.id_param(tbl,db).where_row(tbl, db)
+map* id_param(void* ids, char* tbl, char* db){
+	ids=ids.id_ids(tbl,db)
+	ret={}
+	tbl.tbl_pkeys(db).each val,key,idx
+		ret[key]=ids.is_vec() ? ids[idx] : ids[key]
+	return ret
+}
+map* tbl_pkeys(char* tbl,char* db) => return tbl.tbl_cols(db).cols_pkeys()
+map* tbl_skeys(char* tbl,char* db) => return tbl.tbl_cols(db).cols_skeys()
+map* cols_skeys(map* cols){
+	if !cols.map_len() => return NULL
+	cols.each ,name => if name.str_has(:name) => return {name: name}	
+	return {(cols.map_key(0)): cols.map_key(0)}
+}
+map* toks_sql_params(map* toks, map* ret={}){
+	toks.each val
+		if val.is_map() => val.toks_sql_params(ret); continue
+		if val.fox_at(0)==':' => ret[val.sub_str(1)]=val.sub_str(1)
+	return ret
+}
+void* is_null(void* val){
+	if !val => return NULL
+	if val.is_map() => return val.map_len() ? val : NULL
+	if val.is_str() => return val.str_len() ? val : NULL
+	if val.is_i() => return val.is_int() ? val : NULL
+	return val
+}
+map* sql_missing_params(char* sql, map* params){
+	ret={}
+	sql.sql_params().each ,key
+		if !params[key] => ret[key]=key
+	return ret.is_null()
+}
+map* fkey_list(char* sql,char* db,map* params=NULL){
+	if sql.sql_missing_params(params) => return NULL
+	return sql.fkey_sql(db).sql_pairs(db,params)
+}
+map* sql_params(char* sql){
+	return sql.sql_toks().toks_sql_params()
+}
+char* fkey_sql(char* sql,char* db){
+	cols=sql.sql_select_cols(db)
+	pkey=cols.cols_pkeys(db)[0]
+	skey=cols.cols_skeys(db)[0]
+	ret=sql.sql_map(db)
+	ret.select={id: cols[pkey].expr, name: cols[skey].expr}
+	return ret.map_sql().sql_add_order(db)
+}
+char* callback_php(map* param,char* name) => return param.call_php(name)
+char* fkey_show(char* sql,char* db,char* id){
+	sign="$sql/$id"
+	ret=''
+	if (ret=sign.cache(:str_show)) => return ret
+	return sign.cache(:str_show,sql.fkey_sql(db).sql_add_where({id: ':id'}).sql_row(db,{id: id}).name)
+}
+int fkey_valid(char* sql,char* db,char* id){
+	return sql.fkey_show(db,id) ? 1 : 0
+}
+char* str_show(char* value,char* type,map* op=NULL,int width=0){
+	value=value.to_str()
+	if !value => return ""
+	if !type => return value
+	if op.list => return op.list[value] ? op.list[value].str_title() : value
+	if op.sql && op.db => return op.sql.fkey_show(op.db,value)
+	type={{
+		text text
+		para para
+		source source
+		password password
+		html html
+		guid guid
+		amount number
+		mins mins
+		debit debit
+		credit credit
+		bool bool
+		email email
+		date date
+		quarter quarter
+		file file
+		jpeg image
+		duration duration
+	}}.map_type(type)
+	if width && type.is_word("source text para") && value.str_len()>width*256 => value=value.sub_str(0,width*256)
+	if type===:bool => return value.is_int() ? 'Yes' : 'No'
+	if type===:text => return value.str_html()
+	if type===:file => return value.str_len().int_kb()
+	if type===:para => return value.str_html().str_replace("\n","<br>")
+	if type===:source => return "<pre>"..value.str_html().."</pre>"
+	if type===:html => return value
+	if type===:number => return value.int_human(op.unit)
+	if type===:debit => return value.int_human(op.unit)
+	if type===:credit => return (-value.to_int()).int_human(op.unit)
+	if type===:password => return "****"
+	if type===:email => return "<a href='mailto:"..value.str_html().."'>"..value.str_html().."</a>"
+	if type===:guid => return '<ID>'.str_html()
+	if type===:mins => n=value.to_int(); return mstr("%d:%02d",n/60,n%60)
+	if type===:duration => return 'Duration/Pending'
+	if type===:date => return value.datetime_human()
+	if type===:quarter => return 'Pending-Qurter'
+	if type===:image => return value ? "<img src=".._globals.base_url.."/"..value.thumb_name().."></img>" : "--"
+	return value
+}
+char* cols_show(map* cols,map* row,char* name,int width=2){
+	return row[name].str_show(cols[name].type,cols[name],width)
+}
+char* datetime_human(char* in){
+	if !in => return ''
+	char buffer[64]
+	time_t time=in.str_time()
+	strftime(buffer,buffer.sizeof(), "%a %e-%b-%Y %l:%M %p",localtime(&time))
+	return buffer.str_dup()
+}
+char* thumb_name(char* name){
+	parts=name.str_split("/")
+	ext=parts.vec_pop()
+	parts[]='thumbnail'
+	parts[]=ext
+	return parts.map_join("/")
+}
+map* row_show(map* row,map* cols,int width=2){
+	ret={}
+	row.each v,f
+		if cols[f] => ret[f]=cols.cols_show(row,f,width)
+		else ret[f]=v
+	return ret
+}
+map* rows_show(map* rows,map* cols,int width=2){
+	ret=[]
+	rows.each row,k,i
+		r={}
+		row.each v,f,i2
+			if cols[f] => r[f]=cols.cols_show(row,f,width)
+			else r[f]=v
+		ret[]=r
+	return ret
+}
+
+void* id_delete(void* ids,char* tbl,char* db){
+	ids=ids.id_param(tbl,db)
+	return ("delete from $tbl"..re_where(ids.where_param())).lite_exec(db,ids)
+}
+char* sql_rename(char* from,char* into) => return "alter table $from rename to $into"
+map* subtypes(char* type){
+	ret=[]
+	parent=types()[type]
+	while parent
+		ret[]=parent
+		parent=types()[parent]
+	return ret.vec_reverse()
+}
+int type_distance(char* type1,char* type2){
+	if type1===type2 => return 0
+	subs1=subtypes(type1)
+	subs2=subtypes(type2)
+	len1=subs1.map_len()
+	len2=subs2.map_len()
+	i=0
+	while i<len1 && i<len2
+		i++
+		if subs1[i-1]!==subs2[i-1] => i--; break
+	return len1 + len2 - 2 * i
+}
+map* cols_match(map* from, map* into){
+	ret={}
+	ret2={}
+	into.each op,f,i
+		if from[f]
+			ret[f]=f
+			ret2[f]=f
+	into.each op1,f1,i1
+		if ret[f1] => continue
+		minid=0
+		mindist=0
+		from.each op2,f2,i2
+			if ret2[f2] => continue
+			dist=op2.type.type_distance(op1.type)
+			if !minid => minid=i2; mindist=dist
+			else if dist<mindist => minid=i2
+		if !minid => break
+		ret[f1]=from.map_key(minid)
+			
+	return ret
+}
+char* month_name(int month) => return {:Jan,:Feb,:Mar,:Apr,:May,:Jun,:Jul,:Aug,:Sep,:Oct,:Nov,:Dec}[abs(month-1)%12]
+int cmp_ptr_reverse(const void* ptr1, const void* ptr2) => return ptr2.cmp_ptr(ptr1)
+int cmp_ptr(const void* ptr1,const void* ptr2){
+	void* p1=(void*)ptr1
+	void* p2=(void*)ptr2
+	if p1==p2 => return 0
+	if p1.is_i() && p2.is_i()
+		return p1.is_int() < p2.is_int() ? -1 : 1
+	if p1.is_str() && p2.is_str()
+		if !p1 => return -1
+		if !p2 => return 1
+		return p1.strcmp(p2)
+	return 0
+}
+int cmp_cons_reverse(const void* ptr1, const void* ptr2) => return ptr2.cmp_cons(ptr1)
+int cmp_cons(const void* ptr1, const void* ptr2){
+	return ((Mapcell*)ptr1)->val.cmp_ptr(((Mapcell*)ptr2)->val)
+}
+map* map_sort(map* mp,int reverse=0){
+	if !mp => return mp
+	if reverse
+		if mp.is_vec() => mp.qsort(mp->len,sizeof(void*),cmp_ptr_reverse); return mp
+		mp->pairs.qsort(mp->len,sizeof(Mapcell),cmp_cons_reverse)	
+	else
+		if mp.is_vec() => mp.qsort(mp->len,sizeof(void*),cmp_ptr); return mp
+		mp->pairs.qsort(mp->len,sizeof(Mapcell),cmp_cons)	
+	mp.map_reindex()
+	return mp
+}
+char* nearest_table(map* tbls,map* tbl){
+	match={}
+	tbls.each t,name
+		int score=abs(t.cols.map_len()-tbl.cols.map_len())
+		tbl.cols.each col,f
+			if t.cols[f].type!==col.type => score--
+		match[name]=score
+	if !match->len => return ''
+	match.map_sort(-1)
+	return match.map_key(0)
+}
+map* tbls_sync_sqls(map* new_tbls,map* old_tbls){
+	if !new_tbls => "sync_sql() final table list is blank!".fox_error()
+	newtbls={}
+	oldtbls={}
+	old_tbls.map_del_key(:_syncing).map_compact()
+	new_tbls.map_del_key(:search).map_compact()
+	old_tbls.each val,key => if !new_tbls[key] => oldtbls[key]=val
+	match={}
+	new_tbls.each val,key
+		if !old_tbls[key] => newtbls[key]=val
+		else match[key]=key
+	newtbls.each tbl,name
+		if !oldtbls->len => break
+		match[name]=oldtbls.nearest_table(tbl)
+		oldtbls.map_del_key(match[name]).map_compact()
+	sqls=[]
+	match.each oldt,newt
+		changes=new_tbls[newt].sync_sqls(old_tbls[oldt])
+		if oldt!==newt
+			"$oldt renamed $newt...".px()
+		else if changes
+			"$newt updated...".px()
+		sqls.vec_merge(changes)
+	newtbls.each newt,name
+		"$name created...".px()
+		sqls[]=newt.create_sql()
+		sqls.vec_merge(newt.create_index_sqls())
+		sqls.vec_merge(newt.tbl_trigger_sqls())
+	oldtbls.each oldt,name
+		"$name dropped...".px()
+		sqls[]=oldt.name.drop_sql()
+	return sqls
+}
+map* db_meta(char* db){
+	if !db => return NULL
+	if _globals.dbs[db].meta => return _globals.dbs[db].meta
+	if _globals.dbs[db].is_str() => _globals.dbs[db]=_globals.dbs[db].parse_connection()
+	ret=(db.conn_db().file.file_rename(NULL,".db")..".meta").file_read(,0).data_map().db
+	if ret
+		ret.each val,key
+			val.name=key
+	else
+		ret=db.db_tables()	
+	_globals.dbs[db].meta=ret
+	return ret
+}
+map* tbl_cols(char* table,char* db) => return db.db_meta()[table].cols
+map* db_sync(char* db,int go=0){
+	ret=db.db_meta().tbls_sync_sqls(db.db_tables())
+	if go==2 && ret->len => ret.sqls_exec(db)
+	else if go==1
+		ret.map_join(";\n").px(0)
+		if ret.map_len() => ";".px()
+	return ret
+}
+map* sync_sqls(map* newt,map* oldt){
+	if oldt.create_sql()===newt.create_sql() => return NULL	
+	match=oldt.cols.cols_match(newt.cols)
+	ret=[]
+	ret[]=:_syncing.drop_sql()
+	ret[]=newt.create_sql(:_syncing)
+	ret[]="insert into _syncing ("..match.map_keys().map_join(", ")..") select "..match.map_join(", ").." from "..oldt.name
+	ret[]=oldt.name.drop_sql()
+	ret[]=:_syncing.sql_rename(newt.name)
+	ret
+		.vec_merge(newt.create_index_sqls())
+		.vec_merge(newt.tbl_trigger_sqls())
+	return ret	
+}
+map* sql_sums(char* sql,char* db,map* cols,map* params){
+	sum={}
+	cols.each col,f
+		if !{{
+			text 0
+			amount 1
+		}}.map_type(col.type).to_int() => continue
+		expr=col.expr.sql_str()
+		if !col.aggregate && !expr.str_start("sum(") && !expr.str_start("count(") => expr="sum($expr)"
+		sum[f]=expr.sql_toks()
+	if !sum.map_len() => return NULL
+	dsql=sql.sql_map()
+	dsql.select=sum
+	dsql.order=NULL
+	dsql.limit=NULL
+	dsql.group=NULL
+	return dsql.map_sql().sql_row(db,params)
+}
+int sql_count(char* sql,char* db,map* params=NULL){
+	sqls=sql.sql_map(db)
+	expr="*";
+	if sqls.aggregate
+		if sqls.having => return "select count(*) from ($sql)".sql_value(db,params).to_int()
+		sql.sql_cols(db).each val,key
+			if !val.aggregate => expr="distinct $key"; break
+	return ("select count($expr) "..sqls.from.re_from()..sqls.where.re_where()).sql_value(db,params).to_int()
+}
+map* regexp(char* in, char* pattern){
+	status=0
+	regex_t	re={0}
+	regmatch_t match[10]={0}
+	if regcomp(&re, pattern, REG_EXTENDED) => return NULL
+	if regexec(&re, in, 10, match, 0) => regfree(&re); return NULL
+	ret=[]
+	for i=0; i<10; i++
+		if match[i].rm_so<0 => break
+		ret[]=in.sub_str(match[i].rm_so, match[i].rm_eo-match[i].rm_so)
+	regfree(&re);
+	return ret
+}
+char* read_textblock(map* lines, int* lineno,char* terminator,char** outline){
+	terminator=terminator.str_trim()
+	int indent=lines[*lineno+1].str_level()
+	ret=''
+	lines.each line,,no=*lineno+1
+		*lineno=no
+		if line.str_level()<indent || (line+indent).str_start(terminator)
+			*outline=line+terminator.str_len()+indent
+			return terminator..ret..terminator
+		else ret.=line.sub_str(indent).."\n"
+	*outline=''
+	return ret
+}
+char* http_moved(char* url) => return NULL.http_out("301 Moved Permanently","text/html",["Location: $url"])
+char* http_redirect(char* url,char* msg=''){
+	if msg => _globals.sess.msg=msg
+	return NULL.http_out("302 Moved Temporarily","text/html",["Location: $url"])
+}
+void* http_error(char* msg,char* status) => msg.http_out(status); xexit(0); return NULL
+char* file_mime(char* path){
+	_globals.mime.each v,k,i
+		if(path.str_end(k)) return v
+	return NULL
+}
+char* str_html(char* in){
+	if !in.str_len() => return ""
+	chars="<>\"'&"
+	into=["&lt;","&gt;","&quot;","&#039;","&amp;"]
+	ret=''
+	for ;*in;in++
+		char* match=chars.strchr(*in)
+		if !match => ret=ret.cat_char(*in)
+		else ret.=into[match-chars]
+	return ret
+}
+void header(char* str) => str.print(); "\r\n".print()
+char* http_out(char* str=NULL,char* status="200 OK",char* mime="text/html; charset=utf-8",map* headers=NULL){
+	static int callonce=0
+	if callonce => return str
+	callonce=1
+	sess=_globals.sess.json()
+	if sess==="{}" => sess=NULL
+	if _globals.sess_str!==sess
+		_globals.sess=NULL
+		_globals.sess_str=NULL
+		sid=_globals.sess_id
+		if !sid && sess
+			sid=sess_newid()
+			:sessid.cookie_set(sid)
+		if !sess && sid
+			if "/tmp/sess.$sid".is_file() => "/tmp/sess.$sid".unlink()
+		else if sess && sid
+			sess.write_file("/tmp/sess.$sid",0,0)
+	out=_globals.out..str
+	"Status: $status".header()
+	"Content-Type: $mime".header()
+	"Content-Length: $(out.str_len())".header()
+	headers.each v,,i => v.header()
+	_globals.cookie.each v2
+		"Set-Cookie: $v2".header()
+	"".header()
+	out.print()
+	xexit(0)
+	return str
+}
+char* static_file(char* path){
+	if path.has_word("? ../ /.. \\") => return NULL
+	if !path.str_start("/res/") => return NULL
+	ret="/web/".cat(path.str_trim("/")).file_read(,0)
+	if ret => return ret.http_out("200 OK",path.file_mime())
+	return NULL
+}
+
+char* str_url(char* in){
+	if !in||!*in => return in
+	bad=0
+	head=in
+	for ;*in;in++
+		if !is_alphanum(*in,"\"'-.[]*$%{}()@!~") => bad++
+	if !bad=> return head
+	ret=new_str(head.str_len()+bad*2)		
+	off=0
+	in=head
+	for ;*in;in++
+		if !is_alphanum(*in,"\"'-.[]*$%{}()@!~")
+			sprintf(ret+off,"%%%02X",(unsigned char)*in)
+			off+=3
+		else
+			ret[off]=*in
+			off++
+	return ret
+}
+char* url_str(char* in){
+	if !in => return NULL
+	int len=0
+	int fix=0
+	str=in
+	for(;*in;in++)
+		if *in=='+' => fix=1
+		else if *in=='%' => fix=1; len-=2
+	if !fix => return str
+	ret=new_str(str.str_len()+len)
+	int i=0
+	for(in=str;*in;in++,i++)
+		if *in=='+' => ret[i]=' '
+		else if *in=='%' => ret[i]=(++in).hex_char(); in++
+		else ret[i]=*in
+	return ret
+}
+char* map_amps(void* val,char* name=''){
+	if !val => return ''
+	if !val.is_map()
+		val=val.to_str()
+		return name ? name.str_url().."="..val.str_url() : ''
+	ret=''
+	if name => name.="."
+	val.each v,n
+		ret=ret.str_join("&",v.map_amps(name..n))
+	return ret
+}
+map* amps_map(char* in){
+	ret={}
+	in.str_split("&",0).each v,,i
+		pr=v.str_split("=",2)
+		key=pr[0].url_str()
+		if !key.strchr('.')
+			ret[key]=pr[1].url_str()
+			continue
+		keys=key.str_split(".")
+		lastkey=keys[keys.map_len()-1]
+		keys.vec_del(-1)
+		val=ret
+		keys.each k
+			nval=val[k]
+			if !nval.is_map() => nval={}; val[k]=nval
+			val=nval
+		val[lastkey]=pr[1].url_str()
+	return ret
+}
+map* parse_url(char* path){
+	ret={url: path}
+	two=path.str_split("?",2)
+	ret.path=two[0]
+	ret.get=two[1].amps_map()
+	return ret
+}
+char* url_host(char* url) => return url.regexp("://([^:/]+)")[1]
+map* sess_init(){
+	sid=env_vars().HTTP_COOKIE.header_map().sessid
+	if !sid => return NULL
+	sess="/tmp/sess.$sid".file_read(,0)
+	_globals.sess_id=sid
+	_globals.sess_str=sess
+	_globals.sess=sess.xjson_map()
+	return _globals.sess
+}
+void	sess_add(char* name, char* value) => _globals.sess[name]=value
+char*	sess_id()		=> return _globals.sess_id
+char*	sess_file()		=> return sess_id() ? "/tmp/sess.$(sess_id())" : NULL
+char*	sess_newid()	=> return rand_str(24)
+void cookie_set(char* name,char* value,char* path="/",char* expire=NULL){
+	xexpire=''
+	if expire => xexpire="; expires=$expire"
+	ss="$name=$value; path=$path$xexpire"
+	_globals.cookie[]=ss
+}
+void sess_delete(){
+	if !sess_file() => return
+	sess_file().remove()
+	:sessid.cookie_set(:NULL,,"Thu, 01 Jan 1970 00:00:00 GMT")
+}
+map* link_relative(map* links,char* url){
+	if(!links||!url) return links
+	prepad="../".str_times(url.str_char_count('/')+1)
+	links.each v,,i
+		if v.is_map()
+			v.link_relative(url)
+			continue
+		if(v.fox_at(0)=='/') continue
+		links[i]=prepad..v
+	return links
+}
+map* header_map(char* val){
+	if !val => return NULL
+	ret={}
+	val.str_split(";").each v,,i
+		if !v.strchr('=') => ret[]=v; continue
+		pair=v.str_split("=",2)
+		ret[pair[0].str_trim()]=pair[1].str_trim().str_unquote()
+	return ret
+}
+map* http_req(){
+	ret={}
+	env=env_vars()
+	sess_init()
+	if !env.REQUEST_METHOD
+		path=_globals.args[1]
+		char* home="https://sanjir.com"..cwd().sub_str((cwd()+1).char_at("/")+1).."/"
+		ret=(home..path).parse_url()
+		ret.method=:get
+		ret.remote=:localhost
+		ret.server=:localhost
+		ret.protocol=:http
+		ret.port="80"
+		ret.path={
+			full: ret.path
+			home: home
+			next: ret.path.sub_str(home.str_len()) or "/"
+		}
+		_globals.req=ret
+		return ret
+	ret=env.REQUEST_URI.parse_url()
+	ret.remote=env.REMOTE_ADDR
+	ret.server=env.HTTP_HOST
+	ret.protocol=env.REQUEST_SCHEME
+	ret.port=env.SERVER_PORT
+	char* home=env.SCRIPT_NAME.rtrim_upto('/',1)
+	ret.path={
+		full: ret.path
+		home: home
+		next: ret.path.sub_str(home.str_len()) or "/"
+	}
+	if env.REQUEST_METHOD===:GET
+		ret.method=:get
+		_globals.req=ret
+		return ret
+	if env.REQUEST_METHOD!==:POST
+		"Method $(env.REQUEST_METHOD) not supported".http_error("405 Method not supported")
+	ret.method=:post
+	size=env.CONTENT_LENGTH.str_int()
+	if !size => "Content-Lenght was not provided".http_error("411 Length Required")
+	if size>20000000 => "Request should be with less than 20MB data".http_error("413 Request Entity Too Large")
+	char line[1024]
+	header=new_blob()
+	done=0
+	done1=0
+	int toread=min(size-done,1024)
+	while done<size && (done1=STDIN_FILENO.read(line,toread))
+		if done1<=0 => "POST data read error at $done/$size bytes".http_error("500 Internal Server Error")
+		header=header.cat(line,done1)
+		done+=done1
+		toread=min(size-done,1024)
+	ret.post=header
+	_globals.req=ret
+	return ret
+}
+int ip_connect(char* host,int port,char** err=NULL){
+	int ret=AF_INET.socket(SOCK_STREAM, 0)
+	if !ret => return "Socket creation failed".err_msg(err)
+	struct hostent *server=host.gethostbyname()
+	if !server => return "fox_error: no such host".err_msg(err)
+	struct sockaddr_in serv_addr={0}
+	serv_addr.sin_family = AF_INET
+	memcpy(&serv_addr.sin_addr.s_addr, server->h_addr,server->h_length)
+	serv_addr.sin_port = port.htons()
+	if ret.connect((struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0 => return "fox_error connecting".err_msg(err);
+	return ret
+}
+int ip_close(int sock) => sock.close();return 0
+int ip_send(char* msg, int sock) => return sock.write(msg,msg.mem_size())
+char* ip_receive(int sock,char* terminator,int size){
+	ret=''
+	return ret
+}
+char* remote_ip(int con){
+	struct sockaddr_in addr={0}
+	socklen_t len=sizeof(struct sockaddr_in)
+	getpeername(con,(struct sockaddr*)&addr,&len)
+	return addr.sin_addr.inet_ntoa()
+}
+map* sql_tokenizer(char** line){
+	str=*line
+	map* mp=[]
+	if !*str => return NULL
+	char term=closing_paren(*str)
+	if term => str++
+	while *str && *str!=term
+		if "\"'`".strchr(*str) => mp[]=read_quote(&str)
+		else if str.str_start("--") => read_theline(&str);
+		else if str.str_start("/*") => read_upto(&str,"*/");
+		else if *str==':' => mp[]=fox_read_symbol(&str)
+		else if is_oper(*str) => mp[]=fox_read_oper(&str,term)
+		else if *str>='0' && *str<='9' => mp[]=read_num(&str)
+		else if is_alpha(*str) => mp[]=read_alpha(&str)
+		else if "([{".strchr(*str) => mp.read_paren(&str,sql_tokenizer)
+		else if " \t".strchr(*str) => read_space(&str);
+		else if "\n\r".strchr(*str) => read_newline(&str);
+		else if ".,;".strchr(*str) => mp[]=str.sub_str(0,1)
+		str++
+	
+	*line=str
+	return mp
+}
+map* prop_tokenizer(char** line){
+	str=*line
+	map* mp=[]
+	if !*str => return NULL
+	char term=closing_paren(*str)
+	if term => str++
+	while *str && *str!=term
+		if "\"'`".strchr(*str) => mp[]=read_quote(&str)
+		else if str.str_start("--") => read_theline(&str);
+		else if str.str_start("/*") => read_upto(&str,"*/");
+		else if *str==':' => mp[]=fox_read_symbol(&str)
+		else if is_oper(*str) => mp[]=fox_read_oper(&str,term)
+		else if *str>='0' && *str<='9' => mp[]=read_num(&str)
+		else if is_alpha(*str) => mp[]=read_alpha(&str)
+		else if "([{".strchr(*str) => mp.read_paren(&str,sql_tokenizer)
+		else if " \t".strchr(*str) => read_space(&str);
+		else if "\n\r".strchr(*str) => read_newline(&str);
+		else if ".,;".strchr(*str) => mp[]=str.sub_str(0,1)
+		str++
+	
+	*line=str
+	return mp
+}
+map* tokenizer(char** line,char* comment){
+	str=*line
+	mp=[]
+	if !*str => return mp
+	term=*str
+	if term=='(' => term=')'
+	else if term=='[' => term=']'
+	else if term=='{' => term='}'
+	else term=0
+	if term => str++
+	while *str && *str!=term
+		if "\"'`".strchr(*str) => mp[]=read_quote(&str)
+		else if str.str_start("--") => read_theline(&str)
+		else if str.str_start("#") => mp[]=read_theline(&str)
+		else if str.str_start("/*") => read_upto_word(&str,"*/")
+		else if *str==':' => mp[]=fox_read_symbol(&str)
+		else if is_oper(*str) => mp[]=fox_read_oper(&str,term)
+		else if (*str=='.' && (str[1]>='0' && str[1]<='9'))|| (*str>='0' && *str<='9') => mp[]=read_num(&str)
+		else if is_alpha(*str) => mp[]=read_alpha(&str)
+		else if "([{".strchr(*str)
+			char temp[2]={0}
+			temp[0]=*str
+			signs="([{)]}"
+			int hit=signs-signs.strchr(*str)
+			mp[]=temp
+			mp[]=tokenizer(&str,comment)
+			temp[0]=signs[hit+3]
+			mp[]=temp
+		
+		else if " \t".strchr(*str) => read_space(&str)
+		else if "\n\r".strchr(*str) => read_newline(&str)
+		else if ".,;".strchr(*str) => mp[]=str.sub_str(0,1)
+		str++
+		
+	*line=str
+	return mp
+}
+char* full_url(char* url=NULL) => return (_globals.req.protocol or :http).."://"..(_globals.req.server or :localhost)..show_port().."/"..url.str_ltrim("/")
+//char* full_path(char* url=NULL) => return "/"..url.str_ltrim("/")
+char* url_abs(char* abs, char* rel){
+	if !rel => return abs
+	if rel.str_start("./") => return abs..rel.sub_str(2)
+	if rel[0]!='.' => return abs..rel
+	srel=rel
+	level=0
+	while srel.str_start("../") => srel+=3; level++
+	base=abs.str_split("/")
+	if abs.strstr("://") => level=max(base.map_len()-level-1,3)
+	else level=max(base.map_len()-level-1,0)
+	ret=base.vec_sub(0,level).map_join("/")
+	return ret.."/"..srel
+}
+char* base_url(char* path=NULL) => return _globals.tabs.map_key(0).url_abs(path)
+char* home_url(char* path=NULL) => return _globals.req.path.home.url_abs(path)
+char* show_port(){
+	if !_globals.req.port => return ''
+	if _globals.req.protocol===:http && _globals.req.port==="80" => return ''
+	if _globals.req.protocol===:https && _globals.req.port==="443" => return ''
+	return ":".._globals.req.port
+}
+char* md_url(char* in,int len,void* junk){
+	url=in.sub_str(0,len)	
+	if !url.url_host() || url.url_host()===:localhost || url.url_host().str_has(:habibur) => return url
+	ext3=url.sub_str(-4)
+	if !ext3.is_word(".jpg jpeg .png .gif") => return url
+	id=url.md5()
+	file="imgs/$id.jpg"
+	if file.is_file() => return file.home_url()
+	data=url.fox_curl()
+	if data => data.write_file(file,0,0); return file.home_url()
+	else return "BAD--"..url
+}
+char* file_markdown(char* infile,char* outfile=NULL) => return infile.file_read().fox_markdown().write_file(outfile)
+char* fox_markdown(char* in){
+	FILE* out
+	char* outbuff
+	size_t outsize=0
+	out=open_memstream(&outbuff,&outsize)
+	void* md=mkd_string(in,in.str_len(),0)
+	mkd_e_url(md,(mkd_callback_t)md_url)
+	markdown(md,out,0)
+	fclose(out)
+	ret=outbuff.str_dup()
+	free(outbuff)
+	return ret
+}
+size_t fox_curl_cat(void* ptr, size_t size, size_t num, void* old){
+	char** old1=(char**)old;
+	*old1=cat(*old1,ptr,size*num)
+	return size*num
+}
+char* fox_curl(char* url){
+	ret=new_blob(0)
+	CURL* curl_handle = curl_easy_init()
+	curl_handle.curl_easy_setopt(CURLOPT_URL, url)
+	curl_handle.curl_easy_setopt(CURLOPT_WRITEFUNCTION,fox_curl_cat)
+	curl_handle.curl_easy_setopt(CURLOPT_WRITEDATA, (void*)&ret)
+	curl_handle.curl_easy_setopt(CURLOPT_USERAGENT, "Mozilla/5.0 (compatible; habibur/1; +http://news.habibur.com/)")
+	curl_handle.curl_easy_setopt(CURLOPT_FOLLOWLOCATION,1)
+	curl_handle.curl_easy_setopt(CURLOPT_ENCODING,0)
+	int res = curl_handle.curl_easy_perform()
+	curl_handle.curl_easy_cleanup()
+	return res ? NULL : ret
+}
+map* lite_trigger_slno(char* name, char* pkey, char* by=NULL){
+	nby=by and " and $by=new.$by"
+	oby=by and " and $by=old.$by"
+	by&&=" where $by=new.$by"
+	return [
+		"drop trigger if exists $(name)_slno_insert_null",
+		"create trigger $(name)_slno_insert_null after insert on $name when new.slno+0=0 or abs(new.slno+0)>(select count(*) from $name$by) begin
+			update $name set slno=1+(select count(*) from $name where $pkey!=new.$pkey$nby) where $pkey=new.$pkey;
+		end",
+		"drop trigger if exists $(name)_slno_insert_negetive",
+		"create trigger $(name)_slno_insert_negetive after insert on $name when new.slno<0 and abs(new.slno)<=(select count(*) from $name$by) begin
+			update $name set slno=slno+.5 where slno>=(select count(*) from $name$by)+new.slno$nby;
+			update $name set slno=slno+.5 where slno>=(select count(*) from $name$by)+new.slno$nby;
+			update $name set slno=(select count(*) from $name$by)+new.slno+1 where $pkey=new.$pkey;
+		end",
+		"drop trigger if exists $(name)_slno_insert_positive",
+		"create trigger $(name)_slno_insert_positive after insert on $name when new.slno>0 and new.slno<=(select count(*) from $name$by) begin
+			update $name set slno=slno+.5 where slno>=new.slno and $pkey!=new.$pkey$nby;
+			update $name set slno=slno+.5 where slno>=new.slno and $pkey!=new.$pkey$nby;
+		end",
+		"create trigger $(name)_slno_delete after delete on $name begin
+			update $name set slno=slno-.5 where slno>old.slno$oby;
+			update $name set slno=slno-.5 where slno>old.slno$oby;
+		end",
+		"create trigger $(name)_slno_update_null after update on $name when new.slno is null or new.slno=0 or new.slno='' or abs(new.slno)>(select count(*) from $name$by) begin
+			update $name set slno=slno-.5 where slno>old.slno$oby;
+			update $name set slno=slno-.5 where slno>old.slno$oby;
+			update $name set slno=(select count(*) from $name$by) where $pkey=new.$pkey;
+		end",
+		"create trigger $(name)_slno_update_negetive after update on $name when new.slno<0 and new.slno>=-1*(select count(*) from $name$by) begin
+			update $name set slno=slno-.5 where slno>old.slno$oby;
+			update $name set slno=slno-.5 where slno>old.slno$oby;
+			update $name set slno=slno+.5 where slno>=(select count(*) from $name$by)+new.slno$nby;
+			update $name set slno=slno+.5 where slno>=(select count(*) from $name$by)+new.slno$nby;
+			update $name set slno=(select count(*) from $name$by)+new.slno where $pkey=new.$pkey;
+		end",
+		"create trigger $(name)_slno_update_positive after update on $name when new.slno>0 and old.slno>0 and abs(new.slno-old.slno)>=1 and new.slno<=(select count(*) from $name$by) begin
+			update $name set slno=slno-.5 where slno>old.slno and $pkey!=new.$pkey$oby;
+			update $name set slno=slno-.5 where slno>old.slno and $pkey!=new.$pkey$oby;
+			update $name set slno=slno+.5 where slno>=new.slno and $pkey!=new.$pkey$nby;
+			update $name set slno=slno+.5 where slno>=new.slno and $pkey!=new.$pkey$nby;
+		end;
+		"]
+}
+map* lite_trigger_tree(char* name,char* pkey){
+	return [
+		"drop trigger if exists $(name)_tree_insert_null",
+		
+		"create trigger $(name)_tree_insert_null after insert on $name when new.parent is null or new.parent='' begin
+		update $name set lft=(select coalesce(max(rgt),0) from $name where $pkey!=new.$pkey)+1,rgt=(select coalesce(max(rgt),0) from $name where $pkey!=new.$pkey)+2 where $pkey=new.$pkey;
+		end",
+	
+		"drop trigger if exists $(name)_tree_insert",
+
+		"create trigger $(name)_tree_insert after insert on $name when new.parent is not null and length(new.parent)>0 begin
+		update $name set lft=(select rgt from $name where $pkey=new.parent),rgt=(select rgt from $name where $pkey=new.parent)+1 where $pkey=new.$pkey;
+		update $name set lft=lft+2 where lft>(select rgt from $name where $pkey=new.parent);
+		update $name set rgt=rgt+2 where rgt>=(select rgt from $name where $pkey=new.parent) and $pkey!=new.$pkey;
+		end",
+
+		"drop trigger if exists $(name)_tree_delete",
+
+		"create trigger $(name)_tree_delete before delete on $name begin
+		update $name set lft=lft-(old.rgt-old.lft)-1 where lft>old.rgt;
+		update $name set rgt=rgt-(old.rgt-old.lft)-1 where rgt>old.rgt;
+		delete from $name where lft>old.lft and lft<old.rgt;
+		end",
+
+		"drop trigger if exists $(name)_tree_update_null",
+
+		"create trigger $(name)_tree_update_null after update of parent on $name when new.parent!=old.parent and (new.parent is null or length(new.parent)=0) begin
+		update $name set lft=lft+(select max(rgt) from $name)-old.lft+1,rgt=rgt+(select max(rgt) from $name)-old.lft+1 where lft>=old.lft and lft<=old.rgt;
+		update $name set lft=lft-(old.rgt-old.lft)-1 where lft>old.rgt;
+		update $name set rgt=rgt-(old.rgt-old.lft)-1 where rgt>old.rgt;
+		end",
+	
+		"drop trigger if exists $(name)_tree_update_right",
+
+		"create trigger $(name)_tree_update_right after update of parent on $name when new.parent is not null and length(new.parent)>0 and old.lft<(select lft from $name where $pkey=new.parent) begin
+		update $name set lft=case when lft>old.rgt and lft<(select rgt from $name where $pkey=new.parent) then lft-old.rgt+old.lft-1 when lft>=old.lft and lft<=old.rgt then lft+(select rgt from $name where $pkey=new.parent)-old.rgt-1 else lft end;
+		update $name set rgt=case when rgt>old.rgt and rgt<(select rgt from $name where $pkey=new.parent) then rgt-old.rgt+old.lft-1 when rgt>=old.lft and rgt<=old.rgt then rgt+(select rgt from $name where $pkey=new.parent)-old.rgt-1 else rgt end;
+		end",
+		
+		"drop trigger if exists $(name)_tree_update_left",
+
+		"create trigger $(name)_tree_update_left after update of parent on $name when new.parent is not null and length(new.parent)>0 and old.lft>(select lft from $name where $pkey=new.parent) begin
+		update $name set lft=case when lft<old.lft and lft>=(select rgt from $name where $pkey=new.parent) then lft+old.rgt-old.lft+1 when lft>=old.lft and lft<=old.rgt then lft-old.lft+(select rgt from $name where $pkey=new.parent) else lft end;
+		update $name set rgt=case when rgt<old.lft and rgt>=(select lft from $name where $pkey=old.$pkey) then rgt+old.rgt-old.lft+1 when rgt>=old.lft and rgt<=old.rgt then rgt-old.lft+(select lft from $name where $pkey=old.$pkey) else rgt end;
+		end"
+	]
+}

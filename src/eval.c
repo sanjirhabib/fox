@@ -16,7 +16,7 @@ char* callfunc_c(map* funcs){
 	return ret;
 };
 char* write_c(char* infile,char* outfile){
-	source_funcs();
+	source_funcs(NULL);
 	return write_file(x_c(file_read(infile,1,1)),outfile,1,1);
 };
 char* func_ccall(map* fn){
@@ -31,7 +31,16 @@ char* func_ccall(map* fn){
 		char* pre=NULL;
 		char* post=NULL;
 		char* mid=xstr("v.map_id(",int_str( i), ")", End);
-		if(str_eq(v,"char*")){ post=".is_str()"; }
+		if(str_eq(k,"...")){
+			char* mtype=NULL;
+			if(str_eq(map_val(fn,"type"),"void") || str_end(map_val(fn,"type"),"*")){ mtype="ptr"; }
+			else if(str_eq(map_val(fn,"type"),"int")){ mtype="int"; }
+			else if(str_eq(map_val(fn,"type"),"double")){ mtype="double"; }
+			else {return NULL;};
+			isvariadic=1;
+			ret=xstr("call_variadic_", mtype, "(v,", map_val(fn,"name"), ",\"", map_val(fn,"name"), "\")", End);
+			break;
+		}else if(str_eq(v,"char*")){ post=".is_str()"; }
 		else if(str_eq(v,"char**")){ preproc=xcat(preproc,xstr("char* p", k, "_", map_val(fn,"name"), "=v.map_id(",int_str( i), ").is_str(); ", End), End); mid=xstr("&p", k, "_", map_val(fn,"name"), End); }
 		else if(str_eq(v,"map*")){ post=".is_map()"; }
 		else if(is_word(v,"int long size_t time_t") || str_eq(v,"long long")){ post=".to_int()"; }
@@ -39,16 +48,7 @@ char* func_ccall(map* fn){
 			post=xstr(".is_str() ? ", mid, ".is_str()[0] : ", mid, ".to_int())", End);
 			pre="(";
 		}else if(is_word(v,"double float")){ post=".to_double()"; }
-		else if(str_eq(k,"...")){
-			char* mtype=NULL;
-			if(str_end(map_val(fn,"type"),"*")){ mtype="ptr"; }
-			else if(str_eq(map_val(fn,"type"),"int")){ mtype="int"; }
-			else if(str_eq(map_val(fn,"type"),"double")){ mtype="double"; }
-			else {return NULL;};
-			isvariadic=1;
-			ret=xstr("call_variadic_", mtype, "(v,", map_val(fn,"name"), ",\"", map_val(fn,"name"), "\")", End);
-			break;
-		}else if(!str_end(v,"*")){
+		else if(!str_end(v,"*")){
 			return NULL; };
 		if(def){ ret=xcat(ret,xstr("v->len>=",int_str( i), " ? ", pre, mid, post, " : ", sub_str(x_c(def),0,-1), ",", End), End); }
 		else{ ret=xcat(ret,xstr(pre, mid, post, ",", End), End); }; };
@@ -671,7 +671,7 @@ map* eval_params(map* sent,char* name,map* env,map* fns){
 	int named=0;
 	map* map_1=map_val(fn,"params"); for(int i=next(map_1,-1,NULL,NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i); char* k=map_key(map_1, i);
 		if(str_eq(k,"...")){
-			for(int i2=i; i2<=sent->len; i2++){
+			for(int i2=i; i2<sent->len; i2++){
 				vec_add(ret,map_id(sent,i2)); };
 			break;
 		}else if(map_has_key(sent,k)){

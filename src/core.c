@@ -34,18 +34,19 @@ void stack_dump_direct(){
 	void *array[400];
 	size_t size=backtrace(array,400);
 	backtrace_symbols_fd(array,size,STDERR_FILENO);
-	xexit(-1);
+	assert(0);
 };
 char* stack_str(){
 	void *array[400];
 	size_t size=backtrace(array,400);
 	char** lines=backtrace_symbols(array,size);
-	char* ret="\n";
+	char* ret=NULL;
 	for(int i=0; i<size; i++){
+		if(strstr(lines[i]," stack_str ") || strstr(lines[i],".dylib ") || strstr(lines[i]," fox_error ") || strstr(lines[i]," start ") || strstr(lines[i]," 0x0 ") || strstr(lines[i]," main ")){ continue; };
 		char* part=sub_str(lines[i],str_len("3|||index.cgi|||||||||||||||||||||||||||0x0000000109c950d8|"),-2147483648);
-		if(strstr(lines[i]," stack_str ") || strstr(lines[i],".dylib ") || strstr(lines[i]," fox_error ") || strstr(lines[i]," start ") || strstr(lines[i]," 0x0 ") || strstr(lines[i]," run ") || strstr(lines[i]," main ")){ continue; };
-		ret=xcat(ret,part,"\n", End); };
-//		ret.=lines[i].."\n"
+		part=sub_str(part,0,char_at(part," "));
+		ret=xstr(" -- ",part,"()",ret, End); };
+//		lines[i].printf("%s\n")
 	return ret;
 };
 void fox_stack_dump(){ fox_error("Error:\n",1); };
@@ -236,11 +237,13 @@ char* int_str(long long value){
 	return str_dup(string);
 };
 int str_eq(char* str,char* str1){
-	if(!str && !str1){ return 1; };
-	if(is_str(str) && is_str(str1)){ return strcmp(str,str1) ? 0 : 1; };
-	if(!str && is_str(str1) && !str_len(str1)){ return 1; };
-	if(!str1 && is_str(str) && !str_len(str)){ return 1; };
-	return 0;
+//	if str && !str.is_str() => return 0
+//	if str1 && !str1.is_str() => return 0
+	int len1=str_len(str);
+	int len2=str_len(str1);
+	if(!len1 && !len2){ return 1; };
+	if(len1!=len2){ return 0; };
+	return strcmp(str,str1) ? 0 : 1;
 };
 size_t str_hash(unsigned char *str){
 	int c;
@@ -400,6 +403,7 @@ double to_double(void* v){
 	return is_double(v);
 };
 long long str_int(char* v){
+	if(!v || !*v){ return 0; };
 	long long ret=0;
 	sscanf(v,"%lld",&ret);
 	return ret;
@@ -663,6 +667,9 @@ void* page_alloc(mempage* pg,int size,int type,int* full){
 	};
 	int block_size=pg->block_size;
 	int blocks=(size+block_size-1)/block_size;
+	if(!blocks){
+		printf("Block size: %d, blocks=%d\n",size,blocks);
+		stack_dump_direct(); };
 	assert(blocks);
 
 	if(block_size>16 && size<block_size/2){
@@ -799,6 +806,7 @@ void* fox_realloc(void* ptr,size_t size,int type){
 	return ret+offset;
 };
 void* fox_alloc(size_t size,int type){
+	if(size<=0){ return NULL; };
 	if(!_gcdata.stack_head){ printf("GC not started!!!"); exit(-1); };
 	if(_gcdata.inalloc){ printf("fox_error!!! Recursive fox_alloc() call"); exit(-1); };
 	_gcdata.inalloc=1;

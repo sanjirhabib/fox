@@ -1,0 +1,597 @@
+#include "html.h"
+extern int _queries;
+char* page_html(map* data){
+	head=---
+	<!DOCTYPE html>
+	<html><head><meta charset='utf-8'>
+	<title>$(data.title)</title>
+	<script type="application/ld+json">
+	{
+		"@context": "http://schema.org",
+		"@type": "WebSite",
+		"name": "Habib's Site",
+		"alternateName": "Sanjir Habib",
+		"url": "$(_globals.req.path.full.full_url())"
+	}
+	</script>
+	<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+	<meta name="application-name" content="habib"/>
+	<meta name="msapplication-square70x70logo" content="/small.jpg"/>
+	<meta name="msapplication-square150x150logo" content="/medium.jpg"/>
+	<meta name="msapplication-wide310x150logo" content="/wide.jpg"/>
+	<meta name="msapplication-square310x310logo" content="/large.jpg"/>
+	<meta name="msapplication-TileColor" content="#fff"/>
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	$(data.header)
+	<link rel='icon' href='$(data.logo)'></link>
+	</head><body>
+
+	---;
+	if _globals.req.get._print
+		return ---
+		$head
+		$(data.body)
+		</body></html>
+		---
+	return ---
+	$head
+	<div class='row-fluid alert-success'><span class='span8' style='padding-left:2em;'>$(data.msg)</span>$(data.login)</div>
+	<div class=row-fluid>
+	<div class='span3' style='text-align:center;'><a href='$(data.home)'><img style='width:auto;height:100px;padding:.3em;' src='$(data.logo)'></img></a></div>
+	<div class='span7'>
+	<h2 style='text-align:center;'>$(data.title)</h2>
+	<div style='border-top:1px solid gray;border-bottom:1px solid gray;min-height:0.2em;text-align:center;'>$(data.desc)</div>
+	</div>
+	</div>
+	$(data.tabs)$(data.ldmenu)
+	<div class=container-fluid>
+	<div class=row-fluid>$(data.body)</div>
+	<hr noshade=noshade style="width:70%;margin:auto;height:1px;margin-bottom:.5em;margin-top:8em;color:gray;">
+	<div class=footer style='color:#333;font-size:small;text-align:center;'>
+	&copy; Habib &lt;habib@habibur.com&gt;. $(data.hits) $(data.footer)
+	</div>
+	</div>
+	</body></html>
+
+	---
+}
+map* page_data(map* data){
+	data.title||="Habib's Site"
+	data.tab||=data.title
+	data.logo||="logo.jpg".home_url()
+	data.home||=home_url()
+	data.css&&="<style>\n$(data.css)</style>\n"
+	data.msg||=_globals.sess.msg
+	_globals.sess.map_del_key(:msg).map_compact()
+	head=''
+	['/res/bootstrap.css','/res/bootstrap-responsive.css','/res/jquery.js','/res/bootstrap.js']
+	.each v
+		if v.sub_str(-4)==='.css' => head.="<link rel='stylesheet' href='$v'></link>\n"
+		else head.="<script src='$v'></script>\n"
+	_globals.jsfile.each v
+		head.="<script src='$v'></script>\n"
+	data.header=head..data.css
+		..(_globals.css and "<style>\n".._globals.css.map_join("\n").."</style>\n")
+	data.desc||=data.meta.description
+	data.meta.description||=data.desc
+	data.meta.description||=data.title
+	data.meta["og:description"]=data.meta.description
+	data.meta["og:title"]=data.title
+	data.meta["og:image"]||=data.logo.full_url()
+	data.meta.each val, key
+		data.header.="<meta name=\"$key\" content=\"$val\">\n"
+	if _globals.req.get._print => return data
+	data.footer=---
+	Run Time: $(run_time())ms=$(gc_time())GC+$(run_time()-total_time()-gc_time())Code+$(total_time())DB
+	Heap: $(_gcdata.max_mem.int_kb()). Stack: $(_gcdata.max_roots.int_str()), Total: $(max_mem().int_kb()).
+	GC: $(gc_runs())runs. Queries: $(_queries.int_str()).
+	---
+	data.footer.=(_globals.js and "<script>\n".._globals.js.map_join("\n").."</script>")
+	tabs=''
+	lddata={"@context": "http://schema.org", "@type": "BreadcrumbList"}
+	i=1
+	_globals.tabs.each name, url, idx
+		active=''
+		if idx==_globals.tabs.map_len()-1
+			active=" class='active'"			
+		tabs.="<li$active><a href='$url'>$name</a></li>\n"
+			
+		lddata.itemListElement[]={
+			"@type": "ListItem",
+			"position": i++, "item": { "@id": url, "name": name }
+		}
+	if _globals.tabs.map_len()>1
+		data.tabs="<div><ul class='nav nav-tabs'>$tabs</ul></div>"
+	data.ldmenu="<script type='application/ld+json'>$lddata</script>"
+	body=''
+	_globals.css[]=---
+	a.menu {overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+	ul.menu2 {margin-top:5em;}
+	---;
+	data.menu.each name, url
+		body.="<li><a class='menu' href='$url'>$name</a></li>\n"
+	if data.menus
+		data.menus.each menu, title
+			if !menu.map_len() => continue
+			body.="</ul><h5 style='text-align:center;'>$title</h5><ul class='nav nav-tabs nav-stacked menu2'>"
+			menu.each name, url
+				body.="<li><a class='menu' href='$url'>$name</a></li>\n"
+	if data.width.is_int()==4
+		body="<div class='span11 offset1'><ul class='nav nav-pills'>$body</ul></div>"
+	else
+		body="<div class=span2><ul class='nav nav-tabs nav-stacked'>$body</ul></div>"
+
+	switch data.width.is_int()
+		case 1:
+			body.="<div class='span4'>$(data.body)</div><div class=span6>$(data.help)</div>"
+		break
+		case 3:
+			body.="<div class='span10'>$(data.help)$(data.body)</div>"
+		break
+		case 4:
+			body.="</div><div class=row-fluid>$(data.help)$(data.body)</div>"
+		break
+		default: //=2
+			body.="<div class='span7'>$(data.body)</div><div class=span3>$(data.help)</div>"
+	data.body=body
+	login=''
+	if _globals.sess.user
+		login="<span class='pull-right'>$(_globals.sess.user) as $(_globals.sess.role) | <a href='$(base_url())logout/'>Logout</a> &nbsp; </span>"
+	else
+		login="<span class='pull-right' style='margin-right:3em;'><a href='$(base_url())login/'>Login</a> | <a href='$(base_url())register/'>Register</a></span>"
+	data.login=login
+	return data
+}
+void* not_found(char* path=NULL) => "The requested content $(path or _globals.req.path.full) was not found on the server.".http_out("404 Not Found"); return NULL
+int show_page(map* data) => data.page_data().page_html().http_out(); return 0
+int is_post() => return _globals.req.method===:post
+map* post_data(){
+	if _globals.post => return _globals.post
+	map* mime=env_vars().CONTENT_TYPE.header_map()
+	if mime[0]!=="multipart/form-data"
+		return _globals.req.post.amps_map()
+	ret={}
+	char* seperator=mime.boundary
+	_globals.req.post.str_split(seperator).each v,,i
+		map* mp3=v.str_split("\r\n\r\n",2)
+		if mp3.map_len()!=2 => continue
+		mp3[0].str_split("\r\n").each v2,k2,i2
+			header=v2.header_map()
+			if header.name
+				ret[header.name].filename=header.filename
+				ret[header.name].data=mp3[1].sub_str(0,-4)
+				break
+	_globals.post=ret
+	_globals.req.post=NULL
+	return ret
+}
+char* name_tab(char* name){
+	_globals.tabs[_globals.paths.matched.home_url()]=name
+	return name
+}
+map* get(char* path, map* names=NULL){
+	ret=_globals.req.path.next.regexp("^"..path)
+	if !ret => return NULL
+	ret2=_globals.paths
+	if !ret2 => _globals.paths={}; ret2=_globals.paths
+	if names
+		for i=1; i<ret.map_len() && i<=names.map_len(); i++
+			ret2[names.map_id(i-1)]=ret[i]
+	ret2.matched=ret[0]
+	ret2.end=_globals.req.path.next.regexp("^"..path.."$") ? "yes" : NULL
+	return ret2
+}
+void show_body(char* body,map* page){
+	page.body=body
+	page.show_page()
+}
+int days_in_feb(int year){
+	if !(year%400) => return 29
+	if !(year%100) => return 28
+	if !(year%4) => return 29
+	return 28
+}
+int days_in_month(int month,int year){
+	if month==4||month==6||month==9||month==11 => return 30
+	if month==2 => return days_in_feb(year, month)
+	return 31
+}
+char* add_tab(char* path=NULL,char* name=NULL){
+	if path && path[path.str_len()-1]!='/' => path.="/"
+	path = path ? path.home_url() : _globals.paths.matched.home_url()
+	if !name
+		if !path || path==="/" => name=:Home
+		else
+			i=path.str_len()-1
+			while(i && path[--i]!='/'){}
+			name=path.sub_str(i+1,-1).str_title()
+	_globals.tabs[path]=name
+	return name
+}
+char* tz_dst(char* tz=NULL, char* date=NULL){
+	time_t ret=date.str_time()
+	if tz => setenv(:TZ, tz, 1);
+	struct tm* tm=localtime(&ret)
+	return tm->tm_isdst==1 ? :DST : ''
+}
+double tz_offset(char* tz=NULL, char* date=NULL){
+//in hours
+	time_t ret=date.str_time()
+	struct tm tm={0}
+	gmtime_r(&ret,&tm)
+	if tz => setenv(:TZ, tz, 1)
+	struct tm tml={0}
+	localtime_r(&ret,&tml)
+	tm.tm_isdst = tml.tm_isdst
+	time_t gm=mktime(&tm)
+	return (ret-gm)/3600.0
+}
+char* tz_utc(char* tz, char* date=NULL) => return tz.tz_offset(date).offset_utc()
+char* offset_utc(double off){
+	if !off => return :UTC
+	sign=off<0 ? '-' : '+'
+	off=fabs(off)
+	if off-floor(off)<1/100. => return mstr("UTC%c%d",sign,(int)off)
+	return mstr("UTC%c%d:%02d",sign,(int)off,(int)((off-(int)off)*60+0.5))
+}
+char* date_ymd(char* in,int* year, int* month,int* day){
+	*year=*month=*day=0
+	if !in => return NULL
+	sscanf(in,"%04d-%02d-%02d",year,month,day)
+	return in
+}
+char* date_human(char* in){
+	year=0
+	month=0
+	day=0
+	in.date_ymd(year,month,day)
+	return day.."-"..month.month_en3().."-"..year
+}
+char* tz_human(double tz){
+	if !tz => return :UTC
+	mins=(int)(frac(tz)*60)
+	if !mins => return mstr("UTC%c%d", tz<0 ? '-' : '+', abs((int)(tz)), mins)
+	return mstr("UTC%c%d:%d", tz<0 ? '-' : '+', (int)(tz), mins)
+}
+map* tz_data(char* name,char* date=NULL){
+	return {{
+		name =name
+		offset =name.tz_offset(date)
+		dst =name.tz_dst(date)
+		utc =name.tz_utc(date)
+	}}
+}
+char* fts5_create(char* db=NULL){
+	ret=[
+	"drop table if exists search",
+	"create virtual table search using fts5(table,key,title,body,thumb)"
+	]
+	if db => ret.sqls_exec(db)
+	return ret.map_join(";\n")
+}
+map* merge_soft(map* strong, map* soft){
+	if !strong => strong={}
+	if !soft => return strong
+	soft.each val, key
+		if !key.is_int()
+			if strong.map_has_key(key) => continue
+		else key=''
+		strong[key]=val
+	return strong
+}
+char* param(map* change=NULL){
+	return change.merge_soft(_globals.req.get).map_amps()
+}
+void save_caller(){
+	refer=url_back()
+	req=_globals.req
+	if req.method!==:get || !refer || req.get._refer || refer.str_end(req.path) => return
+	req.get._refer=refer
+	"./?$(req.get.map_amps())".http_redirect()
+}
+char* url_back(){
+	return _globals.req.get._refer or env_vars().HTTP_REFERER.parse_url().path or home_url()
+}
+char* form_html(map* mp){
+	mp.vals.each val,key
+		if mp.cols[key] => mp.cols[key].value=val
+	ret=---
+	<fieldset><legend>$(mp.title)</legend>
+	<p class='text-$(mp.error ? :error : :info)'>$(mp.msg)</p>
+	<form method=$(mp.method or :post)>
+	---
+	mp.cols.each val, name
+		ret.=---
+		<div class="control-group">
+		<label>$(val.label or val.name.str_title())</label>$(val.ctrl_html())
+		<span class='help-block'>$(mp.error[name])</span>
+		</div>
+		---
+	ret.="<div class='form-actions'><div class='btn-group'>"
+	mp.buttons.each val, name, idx
+		ret.=---
+		<input class='btn$(!idx ? " btn-primary" : "")' type='submit' name='$(val.name)' value='$(val.name.str_title())'>
+		---
+	ret.="</div></div>"
+	ret.="</form>"
+	return ret
+}
+map* param_map(char* in){
+	ret={}
+	in.str_split("&").each val
+		two=val.str_split("=",2)
+		ret[two[0]]=two[1]
+	return ret
+}
+map* form_posted(map* form){
+	save_caller()
+	if _globals.req.method!==:post => return NULL
+	param=_globals.req.post.amps_map()
+	form.buttons.each ,key
+		if param[key]
+			form.cols.each val,key
+				val.value=param[key]
+			return param
+	return NULL
+}
+char* ctrl_html(map* ctrl){
+	id=ctrl.id or ctrl.name.name_id()
+	if ctrl.list
+		ret="<option value=''>--</option>"
+		ctrl.list.each val, key
+			ret.="<option value='$(key.h())'$(ctrl.value===key ? ' selected' :'')>$(val ? val.h() : key.str_title().h())</option>"
+		return "<select name='$(ctrl.name)' id='$id' class='input-medium'>$ret</select>"
+	type={{
+		text text
+		code code
+		para para
+		source source
+		password password
+		hidden hidden
+	}}.map_type(ctrl.type)
+	if type===:code
+		return ---
+		<input type=text name=$(ctrl.name) value="$(ctrl.value)" id=$id size="input-$(ctrl.size or :medium)"></input>
+		---
+	if type===:text
+		return ---
+		<input type=text name=$(ctrl.name) value="$(ctrl.value)" id=$id size="input-$(ctrl.size or :large)"></input>
+		---
+	if type===:para
+		return ---
+		<textarea class="para" style="width:20em; height:10em;" id=$id name='$(ctrl.name)'>$(ctrl.value)</textarea>
+		---
+	if type===:hidden
+		return ---
+		<input type=hidden name=$(ctrl.name) value="$(ctrl.value)" id=$id></input>
+		---
+		
+	if type===:source
+		static int codeincluded=0
+		if !codeincluded
+			_globals.jsfile[]='/res/jquery.textarea.js'
+			_globals.css[]=".source {font-family:courier;overflow:auto;width:100%;height:30em;}"
+			_globals.js[]="$$(\"#$id\").tabby()"
+			codeincluded=1
+		return ---
+		<textarea id=$id class='source' wrap='on' name='$(ctrl.name)'>$(ctrl.value)</textarea>
+		---
+	if type===:password
+		return ---
+		<input type=password name=$(ctrl.name) value="$(ctrl.value)" id=$id></input>
+		---
+	return "control type $(ctrl.type) unspported. please provide support in ctrl_html()"
+}
+char* name_id(char* name){
+	return name
+}
+map* form_gets(map* form){
+	_globals.req.get.vals.each val,key
+		if form.cols[key] => form.cols[key].value=val
+	return form
+}
+int show_form(map* data){
+	data.body=data.form_html()
+	return data.show_page()
+}
+int is_user(char* who) => return !who.str_len() || _globals.sess.user===who || _globals.sess.role===who
+void authorized(char* who) => if !who.is_user() => _globals.req.path.not_found()
+char* col_align(map* col){
+	if col.sql || col.list => return ''
+	if {{
+		text text
+		int
+	}}.map_type(col.type)===:text => return ''
+	return " style='text-align:right;'"
+}
+char* rows_data_html(map* in){
+	return ---
+	<table class='table table-condensed table-bordered table-striped'>
+	<thead>
+	<tr>$(in.head)</tr>
+	</thead>
+	<tbody>
+	<tr>$(in.body.map_join("</tr>\n<tr>"))</tr>
+	</tbody>
+	</table>
+
+	---;
+}
+map* rows_data(map* rows, map* cols){
+	head=''
+	cols.each val
+		head.="<th$(val.col_align())>$(val.label or val.name.str_title())</th>"
+	body={}
+	rows.each row
+		s=''
+		row.each val, key
+			s.="<td$(cols[key].col_align())>$(val)</td>"
+		body[row.row_id(cols)]=s
+	return {head: head, body: body}
+}
+char* row_id(map* row, map* cols) => return row.row_ids(cols).map_join("\t").str_url()
+map* row_ids(map* row, map* cols){
+	ret=cols.cols_pkeys()
+	ret.each name
+		ret[name]=row[name]
+	return ret
+}
+void crud(char* sql,char* db){
+	path=_globals.paths	
+	curr=path.matched
+	table=sql.sql_table()
+	if path.end
+		rows=sql.sql_rows(db)
+		cols=sql.sql_cols(db)		
+		data=rows.rows_data(cols)
+		data.head=---
+		<th style='text-align:center;'>
+		<div class="btn-group">
+		<button class="btn btn-mini">Action</button>
+		<button class="btn btn-mini dropdown-toggle" data-toggle="dropdown">
+		<span class="caret"></span>
+		</button>
+		<ul class="dropdown-menu">
+			<li><a href="add/">Add New</a></li>
+		</ul>
+		</div>		
+		</th>
+
+		---..data.head
+		data.body.each row,key
+			data.body[key]=---
+			<td style='text-align:center;'>
+			<div class="btn-group">
+			<button class="btn btn-mini dropdown-toggle" data-toggle="dropdown">
+			<span class="caret"></span>
+			</button>
+			<ul class="dropdown-menu">
+				<li><a href="id.$key/edit/">Edit</a></li>
+				<li><a href="id.$key/delete/">Delete</a></li>
+			</ul>
+			</div>		
+			</td>
+
+			---..row
+		data.rows_data_html().show_body({{
+			title =sql.sql_table().str_title().." List"
+			width =4
+		}})
+		return
+	if "$(curr)add/".get().end
+		:Add.name_tab()
+		cols=sql.sql_cols(db).del_keys([:lft,:rgt])
+		form={{
+			title ="Add New $(table.str_title())"
+			cols =cols
+			buttons
+				save -
+		}}
+		data=form.form_posted()
+		if data
+			data.row_insert(table, db)
+			url_back().http_redirect("Record Added")
+		form.form_gets().show_form()
+	"$(curr)id.([^/]+)/".get([:id])
+	if "$(curr)id.[^/]+/edit/".get().end
+		:Edit.name_tab()
+		table=sql.sql_table()
+		row=path.id.id_row(table, db)
+		cols=sql.sql_cols(db).del_keys([:lft,:rgt])
+		form={{
+			title ="Edit $(table.str_title())"
+			cols =cols
+			vals =row
+			buttons
+				save -
+		}}
+		data=form.form_posted()
+		if data
+			row.row_ids(table.tbl_cols(db)).id_update(table, db, data)
+			url_back().http_redirect("Record Updated")
+		form.show_form()
+	if "$(curr)id.[^/]+/delete/".get().end
+		:Delete.name_tab()
+		form={{
+			title Delete This Record?
+			buttons
+				delete -
+				cancel -
+		}}
+		data=form.form_posted()
+		if data.cancel
+			url_back().http_redirect(:Cancelled)
+		else if data.delete
+			path.id.id_delete(table,db)
+			url_back().http_redirect("Record Deleted")
+		form.show_form()
+	not_found()
+}
+map* del_keys(map* mp,map* keys){
+	keys.each key => mp.map_del(mp.map_has_key(key)-1).map_compact()
+	return mp
+}
+char* str_bare(char* in,char* accept=NULL){
+	if !in => return in
+	ret=in
+	while *in
+		if *in>0 && !(*in).is_alphanum(accept) => *in=' '
+		in+=in.utf_len()
+	return ret
+}
+char* word_end(char* in,int len){
+	if in.str_len()<=len => return in
+	ptr=in+len
+	while *ptr && !" \t\n\r".str_chr(*ptr) => ptr++
+	if !*ptr => return in
+	return in.sub_str(0,ptr-in)
+}
+void go_back(char* msg) => url_back().http_redirect(msg)
+void* sqlite_func(char* name, char* db){
+	func=user_funcs()[name]
+	db.lite_conn().sqlite3_create_function(name, -1, SQLITE_UTF8, func, sqlite_func_handler, NULL, NULL)
+	return name
+}
+int confirm(char* msg="Confirm?"){
+	form={{
+		title =msg
+		buttons
+			yes -
+			cancel -
+	}}
+	data=form.form_posted()
+	if data.yes
+		return 1
+	if data => return 0
+	return form.show_form()
+}
+static void sqlite_func_handler(sqlite3_context *context, int argc, sqlite3_value **argv){
+	map* func=context.sqlite3_user_data()
+	params=[]
+	for i=0; i<argc; i++
+		if func.params[i].type===:int
+			params[]=argv[i].sqlite3_value_int().int_var()
+		else if func.params[i].type==="char*"
+			params[]=(void*)sqlite3_value_text(argv[i])
+		else if func.params[i].type===:double
+			params[]=argv[i].sqlite3_value_double().double_var()
+		else
+			"Function parameter type $(func.params[i].type) not supported in call inside sqlite function()".fox_error()
+	void* ret=params.user_invoke(func.name)
+	if func.type===:double
+		sqlite3_result_double(context, ret.to_double())
+	else if func.type==="char*"
+		sqlite3_result_text(context, ret, ret.str_len(), SQLITE_TRANSIENT)
+	else if func.type===:int
+		sqlite3_result_int(context, ret.to_int())
+	else
+		sqlite3_result_null(context)
+}
+void retree(){
+	rows=:section.sql_rows(:blog)
+	"delete from section".sql_exec(:blog)
+	rows.each row
+		row.map_del_key(:lft)
+		row.map_del_key(:rgt)
+		row.row_insert(:section,:blog)
+}

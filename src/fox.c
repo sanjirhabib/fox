@@ -223,6 +223,11 @@ char* str_end(char* str,char* end){
 };
 int str_start(char* str,char* start){ return str && start && is_str(str) && strncmp(str,start,strlen(start))==0; };
 char* str_chr(char* str,char c){ return !str||!c||!is_str(str) ? NULL : strchr(str,c); };
+int str_chrs(char* str,char* chars){
+	for(int i=0; i<strlen(chars); i++){
+		if(str_chr(str,chars[i])){ return 1; }; };
+	return 0;
+};
 char* str_ltrim(char* str,char* chars){
 	if(!str || !*str){ return NULL; };
 	return str+lchars(str,chars);
@@ -278,7 +283,7 @@ int has_str(char* str,char* substr){
 	return ret;
 };
 char* str_replace(char* str,void* find,void* replace){
-	if(!str || !find){ return str; };
+	if(!str || !find || !str_len(str)){ return str; };
 	assert(is_str(str));
 	if(is_str(find)){
 		if(!str_has(str,find)){ return str; };
@@ -296,15 +301,18 @@ char* str_replace(char* str,void* find,void* replace){
 		dels+=i*str_len(k);
 		adds+=i*str_len(v); };
 	if(!dels){ return str; };
-	char* ret=new_str(str_len(str)+adds-dels-1);
+	char* ret=new_str(str_len(str)+adds-dels);
 	char* temp=str;
 	char* temp2=ret;
 	for(;*temp;temp++,temp2++){
 		int found=0;
 		for(int  i3=next(find,-1,NULL,NULL); has_id(find, i3);  i3++){ void* v3=map_id(find, i3); char*  k3=map_key(find,  i3);
 			if(str_start(temp,k3)){
-				strcat(temp2,v3);
-				temp2+=strlen(v3)-1;
+				if(v3){
+					strcat(temp2,v3);
+					temp2+=strlen(v3)-1;
+				}else{
+					temp2--; };
 				temp+=strlen(k3)-1;
 				found=1;
 				break; }; };
@@ -3089,13 +3097,13 @@ char* fork_exec(char* cmd,map* params){
 		else if(WIFSIGNALED(status)){ mstr("command %s killed",cmd, End); }; };
 	return NULL;
 };
-map* source_funcs(){
-	if(!map_val(map_val(_globals,"cache"),"funcs")){
-		map* mp=new_map();	
-		map* map_1=source_files(); for(int i=next(map_1,-1,NULL,NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i);
-			map* mp3=file_funcs(v,0);
-			map_merge(mp,mp3); };
-		add(add_key(_globals,"cache",Map),"funcs",mp); };
+map* source_funcs(map* infiles){
+	if(!infiles){ return map_val(map_val(_globals,"cache"),"funcs"); };
+	map* mp=new_map();	
+	for(int i=next(infiles,-1,NULL,NULL); has_id(infiles,i); i++){ void* v=map_id(infiles,i);
+		map* mp3=file_funcs(v,0);
+		map_merge(mp,mp3); };
+	add(add_key(_globals,"cache",Map),"funcs",mp);
 	return map_val(map_val(_globals,"cache"),"funcs");
 };
 map* file_funcs(char* filename,int withbody){ return x_funcs(file_read(filename,1,1),withbody,filename); };

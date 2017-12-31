@@ -25,7 +25,7 @@ int utf_lang(char* in){
 	return 0;
 };
 int is_letter(int code){
-	if(code>='a' && code<='z' || code>='A' && code<='Z' || code>='0' && code<='9' || code>0x0980 && code<0x09F7 || code>=0x620 && code<=0x669){
+	if(code>='a' && code<='z' || code>='A' && code<='Z' || code>='0' && code<='9' || code>0x980 && code<0x9F7 || code>=0x620 && code<=0x669){
 		return 1; };
 	return 0;
 };
@@ -42,7 +42,7 @@ char* word_stem(char* in){
 	if(lang==2){ return stem_arabic(in); };
 	return stem_english(in);
 };
-char* word_end(char* in){
+char* utf_word_end(char* in){
 	while(*in){
 		int code=utf_unicode(in);
 		if(is_letter(code)){ in+=utf_len(in); continue; };
@@ -50,7 +50,7 @@ char* word_end(char* in){
 		break; };
 	return in;
 };
-char* word_start(char* in){
+char* utf_word_start(char* in){
 	while(*in && !is_letter(utf_unicode(in))){ in+=utf_len(in); };
 	return in;
 };
@@ -76,31 +76,24 @@ map* str_words(char* in){
 	map* ret=new_vec();
 	if(!in){ return ret; };
 	while(*in){
-		char* head=word_start(in);
+		char* head=utf_word_start(in);
 		if(!*head){ break; };
-		char* tail=word_end(head);
+		char* tail=utf_word_end(head);
 		vec_add(ret,xmap(
-			"word", sub_str(head,tail-head,-2147483648),
+			"word", sub_str(head,0, tail-head),
 			"from",int_var( head-start),
 			"len",int_var( tail-head
 		), End));
 		in=tail; };
 	return ret;
 };
-void go(char* in){
-	int* codes=str_ucs(in);
-	int i=0;
-	while(codes[i++]){
-		px(int_var(codes[i-1]),1); };
-	px(ucs_str(codes,0),1);
-};
 char* stem_arabic(char* in){
 	if(!map_val(_globals,"stemmer")){ add(_globals,"stemmer",sb_stemmer_new("arabic","UTF_8")); };
-	return px(str_dup(sb_stemmer_stem(map_val(_globals,"stemmer"), in, str_len(in))),1);
+	return str_dup(sb_stemmer_stem(map_val(_globals,"stemmer"), in, str_len(in)));
 };
 char* stem_english(char* in){
 	if(!map_val(_globals,"stemmer")){ add(_globals,"stemmer",sb_stemmer_new("english","ISO_8859_1")); };
-	return str_dup(sb_stemmer_stem(map_val(_globals,"stemmer"), in, str_len(in)));
+	return str_dup(sb_stemmer_stem(map_val(_globals,"stemmer"), str_lower(in), str_len(in)));
 };
 char* stem_bangla(char* in){
 	map* map_1=xmap(
@@ -154,7 +147,7 @@ char* stem_bangla(char* in){
 		"টি",NULL,
 		"টা",NULL,
 		"য়ে",NULL,
-		".ে", ".",
+"//",		".ে .",
 		"ে",NULL,
 		"ই",NULL,
 		"য়",NULL,

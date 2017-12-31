@@ -624,13 +624,8 @@ char* re_union(map* cls){
 	return xstr(" union ",map_join(cls," "), End);
 };
 char* re_limit(map* cls){
-	int i=0;
 	if(!cls){ return NULL; };
-	char* ret=" limit ";
-	int ioff=is_int(map_val(cls,"offset"));
-	if(ioff){ ret=xcat(ret,int_str(ioff),", ", End); };
-	ret=xcat(ret,int_str(is_int(map_val(cls,"limit"))), End);
-	return ret;
+	return xstr(" limit ",str_join(is_int(map_val(cls,"offset")) ? to_str(map_val(cls,"offset"),"",0) : NULL,", ",to_str(map_val(cls,"limit"),"",0)), End);
 };
 char* map_sql(map* mp){
 	if(!mp){ return NULL; };
@@ -1359,12 +1354,19 @@ map* tbls_sync_sqls(map* new_tbls,map* old_tbls){
 		map_compact(map_del_key(oldtbls,map_val(match,name))); };
 	map* sqls=new_vec();
 	for(int next1=next(match,-1,NULL,NULL); has_id(match,next1); next1++){ void* oldt=map_id(match,next1); char* newt=map_key(match, next1);
-		vec_merge(sqls,sync_sqls(map_val(new_tbls,newt),map_val(old_tbls,oldt))); };
-	for(int next1=next(newtbls,-1,NULL,NULL); has_id(newtbls,next1); next1++){ void* newt=map_id(newtbls,next1);
+		map* changes=sync_sqls(map_val(new_tbls,newt),map_val(old_tbls,oldt));
+		if(!str_eq(oldt,newt)){
+			px(xstr(oldt, " renamed ", newt, "...", End),1);
+		}else if(changes){
+			px(xstr(newt, " updated...", End),1); };
+		vec_merge(sqls,changes); };
+	for(int next1=next(newtbls,-1,NULL,NULL); has_id(newtbls,next1); next1++){ void* newt=map_id(newtbls,next1); char* name=map_key(newtbls, next1);
+		px(xstr(name, " created...", End),1);
 		vec_add(sqls,create_sql(newt,NULL));
 		vec_merge(sqls,create_index_sqls(newt));
 		vec_merge(sqls,tbl_trigger_sqls(newt)); };
-	for(int next1=next(oldtbls,-1,NULL,NULL); has_id(oldtbls,next1); next1++){ void* oldt=map_id(oldtbls,next1);
+	for(int next1=next(oldtbls,-1,NULL,NULL); has_id(oldtbls,next1); next1++){ void* oldt=map_id(oldtbls,next1); char* name=map_key(oldtbls, next1);
+		px(xstr(name, " dropped...", End),1);
 		vec_add(sqls,drop_sql(map_val(oldt,"name"))); };
 	return sqls;
 };
@@ -1522,14 +1524,14 @@ char* str_url(char* in){
 	int bad=0;
 	char* head=in;
 	for(;*in;in++){
-		if(!is_alphanum(*in,NULL) && !strchr("-.[]*$%{}()@!~",*in)){ bad=1; break; }; };
+		if(!is_alphanum(*in,"\"'-.[]*$%{}()@!~")){ bad++; }; };
 	if(!bad){ return head; };
-	char* ret=new_str(str_len(head)*3);		
+	char* ret=new_str(str_len(head)+bad*2);		
 	int off=0;
 	in=head;
 	for(;*in;in++){
-		if(!is_alphanum(*in,NULL) && !strchr("-.[]*$%{}()@!~",*in)){
-			sprintf(ret+off,"%%%02X",*in);
+		if(!is_alphanum(*in,"\"'-.[]*$%{}()@!~")){
+			sprintf(ret+off,"%%%02X",(unsigned char)*in);
 			off+=3;
 		}else{
 			ret[off]=*in;
@@ -1555,7 +1557,8 @@ char* url_str(char* in){
 };
 char* map_amps(void* val,char* name){
 	if(!val){ return NULL; };
-	if(is_str(val)){
+	if(!is_map(val)){
+		val=to_str(val,"",0);
 		return name ? xstr(str_url(name),"=",str_url(val), End) : NULL; };
 	char* ret=NULL;
 	if(name){ name=xcat(name,".", End); };

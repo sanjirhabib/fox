@@ -1,0 +1,38 @@
+#include <fox.h>
+extern int _iscmd;
+__attribute__((destructor)) static void maindtor(void){
+	close_conns()
+	if !_iscmd
+		http_out()
+	gc_end()
+}
+void* px(void* str,int newline=1){
+	void* ret=str
+	str=str.to_str()
+	if !str.str_len() && !newline => return ret
+	if _iscmd
+		str.print()
+		if newline => "\n".print()
+	else
+		_globals.out.=str
+	return ret
+}
+void xexit(int val=0){
+	if !_iscmd
+		http_out()
+	gc_end()
+	exit(val)
+}
+void* fox_error(char* msg,int dump=0){
+	if !_iscmd
+		---
+		$msg
+		$(stack_str().str_replace("\n","<br/>\n"))
+		---.http_error("500 Internal Server Error")
+	else
+		msg.fputs(stderr)
+		stack_str().fputs(stderr)
+		xexit(-1)
+	return NULL
+}
+void* call_php(map* params,char* func) => return "DUMMY"

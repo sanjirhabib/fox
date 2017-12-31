@@ -155,22 +155,31 @@ char* write_configm4(char* name, char* outfile){
 	"", 
 	"", End),outfile,0,1);
 };
-map* source_files(){ return xvec("astrostr.fox", "cgi.fox", "cmd.fox", "core.fox", "fox.fox", "generator.fox", "main.fox", "maincgi.fox", "run.fox", "sql.fox", "text.fox", "astro/astro.h", "eval.fox", End); };
-void write_source(){
-	source_funcs();
+void write_source(char* infile,...){
+	map* files=xvec(infile, End);
+	va_list args;
+	va_start(args,infile);
+	while(1){
+		char* name=va_arg(args,char*);
+		if(name==End){ break; };
+		vec_add(files,name); };
+	va_end(args);
+	px((xstr("Compiling ",map_join(files,", "), End)),1);
+//	files=["src/astrostr.fox", "src/cgi.fox", "src/cmd.fox", "src/core.fox", "src/fox.fox", "src/generator.fox", "src/main.fox", "src/maincgi.fox", "src/run.fox", "src/sql.fox", "src/text.fox", "astro/astro.h", "src/eval.fox", "src/dbmeta.fox"]
+	source_funcs(files);
 	write_foxh(file_rename("fox.h","include",NULL,NULL,NULL,NULL));
-	map* map_1=source_files(); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* infile=map_id(map_1,next1);
+	for(int next1=next(files,-1,NULL,NULL); has_id(files,next1); next1++){ void* infile=map_id(files,next1);
 		if(str_end(infile,".h")){ continue; };
 		fox_c(infile,xstr(file_rename(infile,"src",".fox",NULL,NULL,NULL),".c", End)); };
 		//infile.fox_h(infile.file_rename(:include,".fox")..".h")
-	write_file((xstr("#include <fox.h>\n\n",funcs_meta(source_funcs(),source_macros(), source_structs(),NULL), End)),file_rename("meta.c","src",NULL,NULL,NULL,NULL),0,1);
+	write_file((xstr("#include <fox.h>\n\n",funcs_meta(source_funcs(NULL),source_macros(), source_structs(),NULL), End)),file_rename("meta.c","src",NULL,NULL,NULL,NULL),0,1);
 	px(mem_usage(),1);
 };
 char* write_foxh(char* outfile){
-	return write_file((xstr(foxh(),funcs_cdecl(source_funcs(),0), End)),outfile,0,1);
+	return write_file((xstr(foxh(),funcs_cdecl(source_funcs(NULL),0), End)),outfile,0,1);
 };
 char* fox_phpc(char* infile,char* outfile){
-	map* fns=infile ? file_funcs(infile,0) : source_funcs();
+	map* fns=infile ? file_funcs(infile,0) : source_funcs(NULL);
 	map* temp=str_split(infile,"/",0);
 	temp=str_split(map_id(temp,map_len(temp)-1),".",0);
 	void* name=map_id(temp,0);
