@@ -221,6 +221,29 @@ char* str_end(char* str,char* end){
 	if(str_len(str)<str_len(end)){ return NULL; };
 	return strcmp(str+str_len(str)-str_len(end),end)==0 ? str : NULL;
 };
+int str_starti(char* str,char* start){
+	if(!str || !start || !*str || !*start){ return 0; };
+	for(int i=0; i<strlen(start); i++){
+	while(*str && *start){
+		if(*str!=*start){
+			char c=*str; 
+			if(c>='A' && c<='Z'){ c+='a'-'A'; printf("C=%c\n",c); };
+			if(c!=*start){ return 0; }; };
+		start++;
+		str++; };
+	if(*start){ return 0; };
+	return 1;
+ };
+	while(*str && *start){
+		if(*str!=*start){
+			char c=*str; 
+			if(c>='A' && c<='Z'){ c+='a'-'A'; printf("C=%c\n",c); };
+			if(c!=*start){ return 0; }; };
+		start++;
+		str++; };
+	if(*start){ return 0; };
+	return 1;
+};
 int str_start(char* str,char* start){ return str && start && is_str(str) && strncmp(str,start,strlen(start))==0; };
 char* str_chr(char* str,char c){ return !str||!c||!is_str(str) ? NULL : strchr(str,c); };
 int str_chrs(char* str,char* chars){

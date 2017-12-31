@@ -1,0 +1,50 @@
+#include "htmltext.h"
+run(){
+	---
+	<div>hello</div>
+	<script>
+	hi di
+	</script>
+
+	---.html_text().px()
+	return 0
+}
+
+int str_at(char* in, char* find){
+	head=in
+	while *in
+		if in.str_start(find) => return in-head
+		in++
+	return 0
+}
+char* html_text(char* in){
+	len=0
+	head=in
+	while *in
+		if *in=='<'
+			if in.str_starti("<script")
+				while *in && !in.str_starti("</script") => in++
+			if in.str_starti("<style")
+				while *in && !in.str_starti("</style") => in++
+			while *in && *in!='>' => in++
+			if *in=='>' => in++
+			continue
+		in++
+		len++	
+	if len==in.str_len() => return in
+	ret=len.new_str()
+	len=0
+	in=head
+	while *in
+		if *in=='<'
+			if in.str_starti("<script")
+				while *in && !in.str_starti("</script") => in++
+			if in.str_starti("<style")
+				while *in && !in.str_starti("</style") => in++
+			while *in && *in!='>' => in++
+			if *in=='>' => in++
+			continue
+		ret[len++]="\n\r".strchr(*in) ? ' ' : *in
+		in++
+	return ret
+}

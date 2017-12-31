@@ -55,7 +55,8 @@ bin/fox: obj/run.o $(OBJ) $(FOXS) $(XLIBS) Makefile
 
 $(CFILES) src/meta.c: $(FOXS)
 	echo $(CFILES)
-	fox write_source "src/astrostr.fox" "src/cgi.fox" "src/cmd.fox" "src/core.fox" "src/fox.fox" "src/generator.fox" "src/main.fox" "src/maincgi.fox" "src/run.fox" "src/sql.fox" "src/text.fox" "astro/astro.h" "src/eval.fox" "src/dbmeta.fox"
+	#fox write_source "src/astrostr.fox" "src/cgi.fox" "src/cmd.fox" "src/core.fox" "src/fox.fox" "src/generator.fox" "src/main.fox" "src/maincgi.fox" "src/run.fox" "src/sql.fox" "src/text.fox" "astro/astro.h" "src/eval.fox" "src/dbmeta.fox"
+	fox write_source $(FOXS) "astro/astro.h"
 
 lib/libfoxcgi.so: $(OBJ) obj/cgi.o
 	rm -f $@
