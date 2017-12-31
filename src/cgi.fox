@@ -27,7 +27,7 @@ void* fox_error(char* msg,int dump=0){
 	if !_iscmd
 		---
 		$msg
-		$(stack_str().str_replace("\n","<br/>\n"))
+		$(stack_str())
 		---.http_error("500 Internal Server Error")
 	else
 		msg.fputs(stderr)

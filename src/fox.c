@@ -227,7 +227,7 @@ int str_starti(char* str,char* start){
 	while(*str && *start){
 		if(*str!=*start){
 			char c=*str; 
-			if(c>='A' && c<='Z'){ c+='a'-'A'; printf("C=%c\n",c); };
+			if(c>='A' && c<='Z'){ c+='a'-'A'; };
 			if(c!=*start){ return 0; }; };
 		start++;
 		str++; };
@@ -237,7 +237,7 @@ int str_starti(char* str,char* start){
 	while(*str && *start){
 		if(*str!=*start){
 			char c=*str; 
-			if(c>='A' && c<='Z'){ c+='a'-'A'; printf("C=%c\n",c); };
+			if(c>='A' && c<='Z'){ c+='a'-'A'; };
 			if(c!=*start){ return 0; }; };
 		start++;
 		str++; };
@@ -3744,6 +3744,12 @@ map* prop_map(char* in,char* name){
 			set(val,0,"type"); };
 		add(ret,data_unquote(map_id(val,0)),data_unquote(map_id(val,1))); };
 	return ret;
+};
+char* utf_letter(char* in, char* out){
+	int len=utf_len(in);
+	if(!len){ return NULL; };
+	out[len]=0;
+	return memcpy(out,in,len);
 };
 int utf_strlen(char* in){
 	int i=0;

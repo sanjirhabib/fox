@@ -204,7 +204,17 @@ fts5_tokenizer xtokenizer={0};
 int xTokenize(Fts5Tokenizer* unused1, void *pCtx, int flags, const char *pText, int nText, void* callback){
 	int (*xToken)(void *, int, const char *, int, int, int)=callback;
 	map* map_1=words_stem(str_words(sub_str(pText,0,nText))); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* val=map_id(map_1,next1);
-		xToken(pCtx, 0, map_val(val,"word"), str_len(map_val(val,"word")), is_int(map_val(val,"from")), is_int(map_val(val,"from"))+to_int(map_val(val,"len"))); };
+		xToken(pCtx, 0, map_val(val,"word"), str_len(map_val(val,"word")), is_int(map_val(val,"from")), is_int(map_val(val,"from"))+to_int(map_val(val,"len")));
+		int lang=utf_lang(map_val(val,"word"));
+		if(lang==1){
+			map* phonetic=bangla_english(map_val(val,"word"));
+			xToken(pCtx, FTS5_TOKEN_COLOCATED, phonetic, str_len(to_str(phonetic,"",0)), is_int(map_val(val,"from")), is_int(map_val(val,"from"))+to_int(map_val(val,"len")));
+			char* sound=soundex(phonetic);
+			xToken(pCtx, FTS5_TOKEN_COLOCATED, sound, str_len(sound), is_int(map_val(val,"from")), is_int(map_val(val,"from"))+to_int(map_val(val,"len")));
+		}else if(!lang){
+			char* sound=soundex(map_val(val,"word"));
+			xToken(pCtx, FTS5_TOKEN_COLOCATED, sound, str_len(sound), is_int(map_val(val,"from")), is_int(map_val(val,"from"))+to_int(map_val(val,"len"))); };
+	};
 	return SQLITE_OK;
 };
 int xCreate(void* unused, const char **azArg, int nArg, Fts5Tokenizer **ppOut){
@@ -232,4 +242,114 @@ char* db_init_tokenizer(char* db){
 };
 map* bangla_joins(){
 	return str_split("ক্ক ক্ট ক্ট্র ক্ত ক্ত্র ক্ব ক্ম ক্য ক্র ক্ল ক্ষ ক্ষ্ণ ক্ষ্ব ক্ষ্ম ক্ষ্ম্য ক্ষ্য ক্স খ্য খ্র গ্‌ণ গ্ধ গ্ধ্য গ্ধ্র গ্ন গ্ন্য গ্ব গ্ম গ্য গ্র গ্র্য গ্ল ঘ্ন ঘ্য ঘ্র ঙ্ক ঙ্‌ক্ত ঙ্ক্য ঙ্ক্ষ ঙ্খ ঙ্গ ঙ্গ্য ঙ্ঘ ঙ্ঘ্য ঙ্ঘ্র ঙ্ম চ্চ চ্ছ চ্ছ্ব চ্ছ্র চ্ঞ চ্ব চ্য জ্জ জ্জ্ব জ্ঝ জ্ঞ জ্ব জ্য জ্র ঞ্চ ঞ্ছ ঞ্জ ঞ্ঝ ট্ট ট্ব ট্ম ট্য ট্র ড্ড ড্ব ড্য ড্র ড়্গ ঢ্য ঢ্র ণ্ট ণ্ঠ ণ্ঠ্য ণ্ড ণ্ড্য ণ্ড্র ণ্ঢ ণ্ণ ণ্ব ণ্ম ণ্য ৎক ত্ত ত্ত্ব ত্ত্য ত্থ ত্ন ত্ব ত্ম ত্ম্য ত্য ত্র ত্র্য ৎল ৎস থ্ব থ্য থ্র দ্গ দ্ঘ দ্দ দ্দ্ব দ্ধ দ্ব দ্ভ দ্ভ্র দ্ম দ্য দ্র দ্র্য ধ্ন ধ্ব ধ্ম ধ্য ধ্র ন্ট ন্ট্র ন্ঠ ন্ড ন্ড্র ন্ত ন্ত্ব ন্ত্য ন্ত্র ন্ত্র্য ন্থ ন্থ্র ন্দ ন্দ্য ন্দ্ব ন্দ্র ন্ধ ন্ধ্য ন্ধ্র ন্ন ন্ব ন্ম ন্য প্ট প্ত প্ন প্প প্য প্র প্র্য প্ল প্স ফ্র ফ্ল ব্জ ব্দ ব্ধ ব্ব ব্য ব্র ব্ল ভ্ব ভ্য ভ্র ম্ন ম্প ম্প্র ম্ফ ম্ব ম্ব্র ম্ভ ম্ভ্র ম্ম ম্য ম্র ম্ল য্য র্ক র্ক্য র্গ্য র্ঘ্য র্চ্য র্জ্য র্ণ্য র্ত্য র্থ্য র্ব্য র্ম্য র্শ্য র্ষ্য র্হ্য র্খ র্গ র্গ্র র্ঘ র্চ র্ছ র্জ র্ঝ র্ট র্ড র্ণ র্ত র্ত্র র্থ র্দ র্দ্ব র্দ্র র্ধ র্ধ্ব র্ন র্প র্ফ র্ভ র্ম র্য র্ল র্শ র্শ্ব র্ষ র্স র্হ র্ঢ্য ল্ক ল্ক্য ল্গ ল্ট ল্ড ল্প ল্‌ফ ল্ব ল্‌ভ ল্ম ল্য ল্ল শ্চ শ্ছ শ্ন শ্ব শ্ম শ্য শ্র শ্ল ষ্ক ষ্ক্র ষ্ট ষ্ট্য ষ্ট্র ষ্ঠ ষ্ঠ্য ষ্ণ ষ্প ষ্প্র ষ্ফ ষ্ব ষ্ম ষ্য স্ক স্ক্র স্খ স্ট স্ট্র স্ত স্ত্ব স্ত্য স্ত্র স্থ স্থ্য স্ন স্প স্প্র স্প্‌ল স্ফ স্ব স্ম স্য স্র স্ল হ্ণ হ্ন হ্ব হ্ম হ্য হ্র হ্ল হৃ"," ",0);
+};
+map* bangla_english(char* in){
+	map* letters=xmap(	
+		"ক", "k",
+		"খ", "kh",
+		"গ", "g",
+		"ঘ", "gh",
+		"ঙ", "ng",
+		"চ", "c",
+		"ছ", "ch",
+		"জ", "j",
+		"ঝ", "jh",
+		"ট", "t",
+		"ঠ", "th",
+		"ড", "d",
+		"ঢ", "dh",
+		"ণ", "n",
+		"ত", "t",
+		"থ", "th",
+		"দ", "d",
+		"ধ", "dh",
+		"ন", "n",
+		"প", "p",
+		"ফ", "f",
+		"ব", "b",
+		"ভ", "v",
+		"ম", "m",
+		"য", "j",
+		"র", "r",
+		"ল", "l",
+		"শ", "sh",
+		"ষ", "sh",
+		"স", "sh",
+		"হ", "h",
+		"ড়", "r",
+		"ঢ়", "r",
+		"য়", "y",
+		"ৎ",   "t",
+		"ং",   "ng",
+		"া", "a",
+		"ি", "i",
+		"ী", "i",
+		"ু", "u",
+		"ূ", "u",
+		"ৃ", "ri",
+		"ে", "e",
+		"ৈ", "oi",
+		"ো", "o",
+		"ৌ", "ou",
+		"অ", "a",
+		"আ", "a",
+		"ই", "i",
+		"ঈ", "i",
+		"উ", "u",
+		"ঊ", "u",
+		"ঋ", "r",
+		"এ", "e",
+		"ঐ", "oi",
+		"ও", "o",
+		"ঔ", "ou",
+		"১", "1",
+		"২", "2",
+		"৩", "3",
+		"৪", "4",
+		"৫", "5",
+		"৬", "6",
+		"৭", "7",
+		"৮", "8",
+		"৯", "9",
+		"০", "0"
+
+	, End);
+	char letter[4];
+	char* ret=NULL;
+	while(utf_letter(in,letter)){
+		ret=xcat(ret,map_val(letters,letter), End);
+		in+=strlen(letter); };
+	return ret;
+};
+char* soundex(char *s) {
+	static const char *cls[] = { "AEIOU", "", "BFPV", "CGJKQSXZ", "DT", "L", "MN", "R", 0};
+	static char code[128] = {0};
+	if(!code[80]){
+		for(int i = 0; cls[i]; i++){
+			char* s=cls[i];
+			int c=i-1;
+			while(*s){
+				code[(int)*s] = code[0x20 ^ (int)*s] = c;
+				s++; }; };
+	};
+	static char out[5];
+	int c;
+	int prev;
+	int i;
+
+	out[0] = out[4] = 0;
+	if(!s || !*s){ return NULL; };
+
+	out[0] = *s++;
+
+	prev = code[(int)out[0]];
+	for(i = 1; *s && i < 4; s++){
+		if((c = code[(int)*s]) == prev){ continue; };
+
+		if(c == -1){ prev = 0; }
+		else if(c > 0){
+			out[i++] = c + '0';
+			prev = c; }; };
+	while(i < 4){ out[i++] = '0'; };
+	return str_dup(out);
 };

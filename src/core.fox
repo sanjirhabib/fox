@@ -45,7 +45,7 @@ char* stack_str(){
 		if lines[i].strstr(" stack_str ") || lines[i].strstr(".dylib ") || lines[i].strstr(" fox_error ") || lines[i].strstr(" start ") || lines[i].strstr(" 0x0 ") || lines[i].strstr(" main ") => continue
 		part=lines[i].sub_str("3|||index.cgi|||||||||||||||||||||||||||0x0000000109c950d8|".str_len())
 		part=part.sub_str(0,part.char_at(" "))
-		ret=" -- "..part.."()"..ret
+		ret.=" -- "..part.."()"
 //		lines[i].printf("%s\n")
 	return ret
 }

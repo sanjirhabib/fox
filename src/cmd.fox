@@ -14,9 +14,8 @@ void xexit(int val=0){
 	exit(val)
 }
 void* fox_error(char* msg,int dump=0){
-	msg.fputs(stderr)
-	"\n".fputs(stderr)
-	if dump => stack_str().fputs(stderr)
+	stderr.fprintf("%s",msg)
+	if dump => stderr.fprintf("%s",stack_str())
 	xexit(-1)
 	return NULL
 }

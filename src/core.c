@@ -45,7 +45,7 @@ char* stack_str(){
 		if(strstr(lines[i]," stack_str ") || strstr(lines[i],".dylib ") || strstr(lines[i]," fox_error ") || strstr(lines[i]," start ") || strstr(lines[i]," 0x0 ") || strstr(lines[i]," main ")){ continue; };
 		char* part=sub_str(lines[i],str_len("3|||index.cgi|||||||||||||||||||||||||||0x0000000109c950d8|"),-2147483648);
 		part=sub_str(part,0,char_at(part," "));
-		ret=xstr(" -- ",part,"()",ret, End); };
+		ret=xcat(ret," -- ",part,"()", End); };
 //		lines[i].printf("%s\n")
 	return ret;
 };

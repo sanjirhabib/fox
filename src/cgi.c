@@ -27,7 +27,7 @@ void* fox_error(char* msg,int dump){
 	if(!_iscmd){
 		http_error(xstr("", 
 		msg, "\n", 
-		str_replace(stack_str(),"\n","<br/>\n"), 
+		stack_str(), 
 		"", End),"500 Internal Server Error");
 	}else{
 		fputs(msg,stderr);

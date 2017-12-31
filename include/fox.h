@@ -406,6 +406,7 @@ char* skip_upto(char* in, char* chars);
 void* data_unquote(char* in);
 map* prop_vec(char* in);
 map* prop_map(char* in, char* name);
+char* utf_letter(char* in, char* out);
 int utf_strlen(char* in);
 int unicode_len(int ucs2);
 char* unicode_utf(int ucs2, char* ret);
@@ -873,6 +874,8 @@ int xCreate(void* unused, const char ** azArg, int nArg, Fts5Tokenizer ** ppOut)
 static int xDelete(Fts5Tokenizer* unused);
 char* db_init_tokenizer(char* db);
 map* bangla_joins();
+map* bangla_english(char* in);
+char* soundex(char * s);
 char* db_write_meta(char* db);
 char* db_meta_str(char* db);
 char* data1_str(void* in);

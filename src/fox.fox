@@ -227,7 +227,7 @@ int str_starti(char* str,char* start){
 	while *str && *start
 		if *str!=*start
 			c=*str 
-			if c>='A' && c<='Z' => c+='a'-'A'; printf("C=%c\n",c)
+			if c>='A' && c<='Z' => c+='a'-'A'
 			if c!=*start => return 0
 		start++
 		str++
@@ -3734,6 +3734,12 @@ map* prop_map(char* in,char* name=NULL){
 			val[0]=:type
 		ret[val[0].data_unquote()]=val[1].data_unquote()
 	return ret
+}
+char* utf_letter(char* in, char* out){
+	len=in.utf_len()
+	if !len => return ''
+	out[len]=0
+	return memcpy(out,in,len)
 }
 int utf_strlen(char* in){
 	i=0
