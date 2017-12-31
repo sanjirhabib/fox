@@ -1,5 +1,5 @@
 #include <libstemmer.h>
-#include "text.h"
+#include <fox.h>
 
 char* ucs_str(int* in,int len){
 	if(!len){
@@ -33,7 +33,7 @@ map* str_stem(char* in){
 	return words_stem(str_words(in));
 };
 map* words_stem(map* in){
-	for(int next1=next(in,-1,NULL,NULL); has_id(in,next1); next1++){ void* val=map_id(in,next1); add(val,"word",word_stem(map_val(val,"word"))); };	
+	for(int next1=next(in,-1,NULL,NULL); has_id(in,next1); next1++){ void* val=map_id(in,next1); add(val,"stem",word_stem(map_val(val,"word"))); };	
 	return in;
 };
 char* word_stem(char* in){
@@ -159,7 +159,7 @@ char* stem_bangla(char* in){
 			if(str_end(in,key) && str_eq(sub_str(in,-str_len(key)-6,3),"ে")){
 				return xstr(sub_str(in,0,-str_len(key)-6),"া",sub_str(in,-str_len(key)-3,3), End); };
 			continue; };
-		if(str_end(in,key)){
+		if(str_end(in,key) && !str_eq(sub_str(in,-str_len(key)-3,3),"্")){
 			return xstr(sub_str(in,0, -str_len(key)),val, End); }; };
 	return in;
 };
@@ -204,17 +204,19 @@ fts5_tokenizer xtokenizer={0};
 int xTokenize(Fts5Tokenizer* unused1, void *pCtx, int flags, const char *pText, int nText, void* callback){
 	int (*xToken)(void *, int, const char *, int, int, int)=callback;
 	map* map_1=words_stem(str_words(sub_str(pText,0,nText))); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* val=map_id(map_1,next1);
-		xToken(pCtx, 0, map_val(val,"word"), str_len(map_val(val,"word")), is_int(map_val(val,"from")), is_int(map_val(val,"from"))+to_int(map_val(val,"len")));
+		xToken(pCtx, 0, map_val(val,"stem"), str_len(map_val(val,"stem")), is_int(map_val(val,"from")), is_int(map_val(val,"from"))+to_int(map_val(val,"len")));
+		if(!str_eq(map_val(val,"stem"),map_val(val,"word"))){
+			xToken(pCtx, 0, map_val(val,"word"), str_len(map_val(val,"word")), is_int(map_val(val,"from")), is_int(map_val(val,"from"))+to_int(map_val(val,"len"))); };
 		int lang=utf_lang(map_val(val,"word"));
 		if(lang==1){
 			map* phonetic=bangla_english(map_val(val,"word"));
-			xToken(pCtx, FTS5_TOKEN_COLOCATED, phonetic, str_len(to_str(phonetic,"",0)), is_int(map_val(val,"from")), is_int(map_val(val,"from"))+to_int(map_val(val,"len")));
-			char* sound=soundex(phonetic);
-			xToken(pCtx, FTS5_TOKEN_COLOCATED, sound, str_len(sound), is_int(map_val(val,"from")), is_int(map_val(val,"from"))+to_int(map_val(val,"len")));
-		}else if(!lang){
-			char* sound=soundex(map_val(val,"word"));
-			xToken(pCtx, FTS5_TOKEN_COLOCATED, sound, str_len(sound), is_int(map_val(val,"from")), is_int(map_val(val,"from"))+to_int(map_val(val,"len"))); };
-	};
+			xToken(pCtx, FTS5_TOKEN_COLOCATED, phonetic, str_len(to_str(phonetic,"",0)), is_int(map_val(val,"from")), is_int(map_val(val,"from"))+to_int(map_val(val,"len"))); }; };
+//			sound=phonetic.soundex()
+//			xToken(pCtx, FTS5_TOKEN_COLOCATED, sound, sound.str_len(), val.from.is_int(), val.from.is_int()+val.len.to_int())
+//		else if !lang
+//			sound=val.word.soundex()
+//			xToken(pCtx, FTS5_TOKEN_COLOCATED, sound, sound.str_len(), val.from.is_int(), val.from.is_int()+val.len.to_int())
+		
 	return SQLITE_OK;
 };
 int xCreate(void* unused, const char **azArg, int nArg, Fts5Tokenizer **ppOut){

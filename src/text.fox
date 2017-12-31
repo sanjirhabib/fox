@@ -1,5 +1,5 @@
 #include <libstemmer.h>
-#include "text.h"
+#include <fox.h>
 
 char* ucs_str(int* in,int len=0){
 	if !len
@@ -33,7 +33,7 @@ map* str_stem(char* in){
 	return in.str_words().words_stem()
 }
 map* words_stem(map* in){
-	in.each val => val.word=val.word.word_stem()	
+	in.each val => val.stem=val.word.word_stem()	
 	return in
 }
 char* word_stem(char* in){
@@ -159,7 +159,7 @@ char* stem_bangla(char* in){
 			if in.str_end(key) && in.sub_str(-key.str_len()-6,3)==="ে"
 				return in.sub_str(0,-key.str_len()-6).."া"..in.sub_str(-key.str_len()-3,3)
 			continue
-		if in.str_end(key)
+		if in.str_end(key) && in.sub_str(-key.str_len()-3,3)!=="্"
 			return in.sub_str(0, -key.str_len())..val
 	return in
 }
@@ -204,16 +204,18 @@ fts5_tokenizer xtokenizer={0};
 int xTokenize(Fts5Tokenizer* unused1, void *pCtx, int flags, const char *pText, int nText, void* callback){
 	int (*xToken)(void *, int, const char *, int, int, int)=callback
 	pText.sub_str(0,nText).str_words().words_stem().each val
-		xToken(pCtx, 0, val.word, val.word.str_len(), val.from.is_int(), val.from.is_int()+val.len.to_int())
+		xToken(pCtx, 0, val.stem, val.stem.str_len(), val.from.is_int(), val.from.is_int()+val.len.to_int())
+		if val.stem!==val.word
+			xToken(pCtx, 0, val.word, val.word.str_len(), val.from.is_int(), val.from.is_int()+val.len.to_int())
 		lang=val.word.utf_lang()
 		if lang==1
 			phonetic=val.word.bangla_english()
 			xToken(pCtx, FTS5_TOKEN_COLOCATED, phonetic, phonetic.str_len(), val.from.is_int(), val.from.is_int()+val.len.to_int())
-			sound=phonetic.soundex()
-			xToken(pCtx, FTS5_TOKEN_COLOCATED, sound, sound.str_len(), val.from.is_int(), val.from.is_int()+val.len.to_int())
-		else if !lang
-			sound=val.word.soundex()
-			xToken(pCtx, FTS5_TOKEN_COLOCATED, sound, sound.str_len(), val.from.is_int(), val.from.is_int()+val.len.to_int())
+//			sound=phonetic.soundex()
+//			xToken(pCtx, FTS5_TOKEN_COLOCATED, sound, sound.str_len(), val.from.is_int(), val.from.is_int()+val.len.to_int())
+//		else if !lang
+//			sound=val.word.soundex()
+//			xToken(pCtx, FTS5_TOKEN_COLOCATED, sound, sound.str_len(), val.from.is_int(), val.from.is_int()+val.len.to_int())
 		
 	return SQLITE_OK
 }

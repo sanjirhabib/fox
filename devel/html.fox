@@ -548,7 +548,7 @@ char* word_end(char* in,int len){
 }
 void go_back(char* msg) => url_back().http_redirect(msg)
 void* sqlite_func(char* name, char* db){
-	func=user_funcs()[name]
+	map* func=user_funcs()[name]
 	if !func => "Function $name not found in sqlite_func".fox_error()
 	db.lite_conn().sqlite3_create_function(name, -1, SQLITE_UTF8, func, sqlite_func_handler, NULL, NULL)
 	return name
