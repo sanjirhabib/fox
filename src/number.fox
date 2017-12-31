@@ -1,0 +1,9 @@
+#include <fox.h>
+
+int is_numeric(char* str){
+	if !str => return 0
+	deci=0
+	for ;*str;str++ => if (*str<'0' || *str>'9') && (*str!='.' || deci++) => return 0
+	return 1
+}
+

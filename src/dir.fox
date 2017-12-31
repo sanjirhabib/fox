@@ -1,0 +1,95 @@
+#include <fox.h>
+
+char* file_dir(char* file){
+	len=file.str_len()
+	i=0
+	for i=len-1;i>=0;i--
+		if file[i]=='/' => break
+	if i==-1 => return NULL
+	return file.sub_str(0,i+1)
+}
+char* file_rename(char* file,char* dir=NULL,char* delext=NULL,char* addext=NULL,char* prefix=NULL,char* postfix=NULL){
+	olddir=file.file_dir()
+	ret=file
+	if olddir => ret=ret.sub_str(olddir.str_len())
+	if delext && ret.str_end(delext) => ret=ret.sub_str(0,-delext.str_len())
+	if prefix => ret=prefix..ret
+	if postfix => ret.=postfix
+	if addext => ret.=addext
+	if dir => olddir=dir
+	return olddir.sane_dir()..ret
+}
+char* sane_dir(char* dir) => return dir ? dir.str_rtrim("/").."/" : NULL
+char* write_file(char* data,char* filename,int readonly=0,int verbose=1){
+	if !filename => return data
+	if filename==="-" => return data.px()
+	if verbose => "-> $filename".px()
+	if readonly && filename.is_file() => filename.chmod(0666)
+	FILE* fp=filename.fopen(:w)
+	if !fp => "writting to file $filename failed".fox_error()
+	data.print(fp)
+	fp.fclose()
+	if readonly => filename.chmod(0444)
+	return data
+}
+char* file_read(char* filename, int istext=1, int error_on_fail=1){
+	assert(filename)
+	FILE* fp=filename.fopen(:r)
+	size_t size=0
+	size_t read=0
+	if !fp => return error_on_fail ? "Can't read file $filename".fox_error(1) : NULL
+	fp.fseek(0,SEEK_END)
+	size=fp.ftell()
+	ret=istext ? size.new_str() : size.new_blob()
+	fp.fseek(0,SEEK_SET)
+	read=ret.fread(1,size,fp)
+	fp.fclose()
+	if read!=size => return NULL
+	assert(!ret[ret.str_len()])
+	assert(ret.str_len()==size)
+	return ret
+}
+char* read_stdin(int size=0,char* terminator=NULL){
+	ret=''
+	char buff[1024+1]={0}
+	block=1024
+	if size && size<block
+		block=size
+	done=0
+	while((done=buff.fread(1,block,stdin)))
+		buff[done]='\0'
+		ret.=buff
+		if size
+			size-=done
+			if size<=0 => break
+			block=min(size,1024)
+	
+	return ret
+}
+map* dir_files(char* path){
+	if !path => return NULL
+	DIR *d=opendir(path)
+	if !d => return NULL
+	ret=[]
+	struct dirent *dir
+	padd=''
+	if path!=="."
+		padd=path
+		if padd.fox_at(-1)!='/' => padd.="/"
+	
+	while (dir=d.readdir())
+		char* name=dir->d_name
+		if name.is_word(". ..") => continue
+		ret[]="$padd$name"
+		
+	d.closedir()
+	return ret
+}
+size_t file_time(char* file){
+	struct stat statbuf
+	if stat(file,&statbuf)==-1
+		perror(file)
+		return 0
+	
+	return statbuf.st_mtime
+}

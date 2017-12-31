@@ -1,0 +1,411 @@
+#include <fox.h>
+
+map* xadd(map* mp, void* ...){
+	type=mp.ptr_type()
+	va_list args
+	args.va_start(mp)
+	while 1
+		if type==Map
+			char* n=args.va_arg(char*)
+			if n==End => break
+			void* v=args.va_arg(void*)
+			mp[n]=v
+		else
+			void* v=args.va_arg(void*)
+			if v==End => break
+			mp[]=v
+	args.va_end()
+	return mp
+}
+map* to_map(void* val) => return val.is_map() ? val : val.to_str().str_map()
+map* del_index(map* mp,int idx){
+	if !mp => return mp
+	assert(idx>=0 && idx<mp->len)
+	id=mp.map_key(idx)
+	if !id
+		assert(0)
+		return mp
+	int next=mp->pairs[idx].nextid
+	mp->pairs[idx].nextid=-1
+	i=id.key_hash() & (mp.map_size()-1)
+	if mp->pairs[i].hkey==idx+1 => mp->pairs[i].hkey=next > 0 ? next : 0 //0=empty for hkey. -1=end for nextid
+	else
+		i=mp->pairs[i].hkey
+		nextid=0
+		while((nextid=mp->pairs[i-1].nextid)!=idx+1 && nextid>0) i=nextid
+		if nextid==idx+1
+			if i==next => "inf loop with i($i)=next-1($next-1)".fox_error()
+			mp->pairs[i-1].nextid=next
+		else assert(0)
+	return mp
+}
+map* map_del_key(map* mp,char* key) => return mp.map_del(mp.map_has_key(key)-1)
+map* map_del(map* mp,int idx,int len=1){
+	if !mp||idx<0 => return mp
+	if len<=0 => len+=(mp->len-idx)
+	if len<=0 => return mp
+	if mp.ptr_type()==Vector => return mp.vec_del(idx,len)
+	// don't memset(0) as there is hash indexing info here too.
+	while len--
+		mp.del_index(idx+len)
+		mp->pairs[idx+len].val=&skip
+		mp->pairs[idx+len].nextid=0
+		mp->pairs[idx+len].id=(char*)&skip
+	return mp
+}
+map* xjson_map(char* in,int type=Map) => return xjson_map_recurse(&in,type)
+map* xjson_map_recurse(char** line,int type=Map){
+	if !line||!*line||!**line => return type==Vector ? [] : {}
+	str=*line
+	term='}'
+	map* ret=NULL
+	if *str=='['
+		type=Vector
+		term=']'
+		ret=[]
+		str++
+	else if *str=='{'
+		ret={}
+		str++
+	else
+		ret=type==Vector ? [] : {}
+		term='\0'
+	last=''
+	sep=" \t\n\r"
+	temp=str
+	temp=temp.skip_word(":=,")
+	if ":=".strchr(*temp)
+		temp=temp.skip_word(",")
+			if *temp==',' => sep="\t\n\r,"
+	else if *temp==',' => sep="\t\n\r,"
+	if term => sep.=term.char_str()
+	while *str && *str!=term
+		name=NULL
+		value=NULL
+		if str==last => str.px()
+		assert(str!=last)
+		last=str
+		str=str.skip_over(" \t\n\r,]}")
+		if *str=='{'||*str=='['
+			value=xjson_map_recurse(&str,type)
+		else if *str==':' || *str=='='
+			str=(str+1).skip_over(" \t\n\r")
+			value=read_value(&str,sep)
+		else if type==Vector
+			value=read_upto(&str,sep)
+		else
+			name=read_upto(&str," \t\n\r,=:]}")
+			str=str.skip_over(" \n\r\t")
+			if ":=".str_chr(*str)
+				str=(str+1).skip_over(" \n\r\t")
+				value=read_value(&str,sep)
+			else
+				if type!=Keys
+					value=name//.str_title()
+		ret.map_add_pair(name,value,type)
+	if *str==term => str++
+//	ret.map_add_pair(name,value,type)
+//	if type!=Vector && ret.type && ret.name => ret=xmap(ret.name,ret)
+	*line=str
+	return ret
+}
+int str_level(char* line){
+	if !line||!line.is_str() => return 0
+	ret=0
+	while(*line=='\t'||*line==' '){ ret++; line++; }
+	return ret
+}
+int block_level(char* str){
+	ret=0
+	if !str => return 0
+	while *str
+		if *str=='\n'||*str=='\r' => ret=0
+		else if *str=='\t'||*str==' ' => ret++
+		else return ret
+		str++
+		
+	return ret
+}
+map* xkeys(char* str) => return str.xjson_map(Keys)
+map* xindex(char* str) => return str.xjson_map(Index)
+map* xarray(char* str) => return str.str_map(Vector)
+map* str_vec(void* str){
+	if str.is_map() => return str
+	return str ? str.str_map(Vector) : NULL
+}
+map* str_map(char* str,int type=Map){
+	if str.is_map() => return str.is_map()
+	if !str.str_len() => return str.xjson_map(type)
+	ret=str.cache(:str_map)
+	if ret => return ret
+	if (!str.strchr('\n') && !str.strchr('\r')) => ret=str.xjson_map(type)
+	else ret=str.block_map(str.block_level(),type)
+	return str.cache(:str_map,ret)
+}
+map* vec_del(map* mp,int from,int len=1){
+	if !mp.map_len() => return NULL
+	assert(mp.is_vec())
+	if from<0 => from+=mp->len
+	if len<=0 => len+=mp->len
+	assert(from>=0 && len>0)
+	assert(from<mp->len)
+	//assert(from+len<=mp->len);// fix it by, len=mp->len-from
+	if from+len>mp->len => len=mp->len-from
+	int rest=mp->len-(from+len)
+	if rest => for(int i=0;i<len;i++) mp[i+from]=&skip
+	else mp->len-=len
+	return mp
+}
+map* vec_shift(map* mp,int idx,int len,int offset){
+	if !mp => return mp
+	if mp->len<idx+len => len=mp->len-idx
+	if !len => return mp
+	int ofrom=offset<0 ? offset+idx : idx+len
+	int olen=offset.abs()
+	assert(ofrom>=0 && ofrom<mp->len)
+	old=mp.vec_sub(ofrom,olen)
+	memmove(mp->vars+ofrom,mp->vars+idx,olen*sizeof(void*))
+	int ointo=offset<0 ? ofrom+len : idx
+	memcpy(mp->vars+ointo,old->vars,old->len*sizeof(void*))
+	return mp
+}
+map* vec_sub(map* mp,int from,int len=0){
+	if from<0 => from=0
+	if !mp => return NULL
+	if mp.ptr_type()!=Vector => return mp
+	if from>mp->len => from=mp->len; len=0
+	else if from+len>mp->len => len=mp->len-from
+	if !len => len=mp->len-from
+	if len<=0 => return NULL
+	ret=[]
+	ret.vec_realloc(len);	
+	memcpy(ret->vars,mp->vars+from,sizeof(void*)*len)
+	ret->len=len
+	return ret
+}
+map* vec_slice(map* mp,int from,int len=0){
+	ret=mp.vec_sub(from,len)
+	mp.vec_del(from,len)
+	return ret
+}
+map* map_splice(map* mp,int from,int del,map* ad){
+	ret={}
+	mp.each v,k,idx
+		if idx==from
+			ad.each v2,k2,idx2
+				if k2.is_str()
+					if !mp[k2] => ret[k2]=v2
+				else ret[]=v2
+		if idx>=from && idx<from+del => continue
+		if k.is_str()
+			if !mp[k] => ret[k]=v
+		else ret[]=v
+	return ret
+}
+void* vec_pop(map* mp){
+	if !mp||!mp->len => return NULL
+	void* ret=mp[mp->len-1]
+	mp.vec_del(mp->len-1)
+	return ret
+}
+map* vec_splice(map* mp,int from,int del,map* add){
+	if !mp => return mp
+	assert(mp.ptr_type()==Vector)
+	if from < 0 => from+=mp->len
+	assert(del>=0)
+	assert(from>=0 && from<=mp->len)
+
+	int inc=add ? add->len : 0
+	int len=mp->len
+
+	if from>len => from=len; del=0
+	else if from+del>len => del=len-from
+
+	int offset=inc-del
+	if offset>0 => mp.vec_realloc(offset)
+
+	int moved=len-(from+del)
+	if offset && moved => memmove(mp->vars+from+inc,mp->vars+from+del,sizeof(void*)*moved)
+	if add => memcpy(mp->vars+from,add->vars,add->len*sizeof(void*))
+	mp->len+=offset
+	if offset<0 => memset(mp->vars+mp->len,0,sizeof(void*)*offset*-1)
+	return mp
+}
+map* vec_dup(map* mp){
+	if !mp||!mp->len => return []
+	ret=[]
+	ret.vec_realloc(mp->len)
+	memcpy(ret->vars,mp->vars,mp->len*sizeof(void*))
+	ret->len=mp->len
+	return ret
+}
+map* map_dup(map* mp){
+	if !mp => return NULL
+	ret={}
+	if !mp.map_len() => return ret
+	assert(mp.ptr_type()==Map)
+	ret->pairs=fox_alloc(mp.map_size()*Mapcell.sizeof(),Cell2)
+	memcpy(ret->pairs,mp->pairs,mp.map_size()*Mapcell.sizeof())
+	ret->len=mp->len
+	return ret
+}
+map* map_merge(map* mp1,map* mp2){
+	if !mp1 => mp1={}
+	mp2.each v ,k,idx=> mp1.map_add(k.is_int() ? NULL : k,v)
+	return mp1
+}
+map* vec_merge(map* mp1,map* mp2){
+	if !mp2 => return mp1
+	if !mp1 => return mp2.vec_dup()
+	mp1.vec_realloc(mp2->len)
+	memcpy(((char*)mp1->vars)+mp1->len*sizeof(void*),mp2->vars,mp2->len*sizeof(void*))
+	mp1->len+=mp2->len
+	return mp1
+}
+map* map_compact(map* mp){
+	if !mp || mp.ptr_type()!=Map => return mp
+	off=0
+	i=0
+	for i=0;i+off<mp->len;i++
+		while(i+off<mp->len && mp->pairs[i+off].id==(char*)&skip) off++
+		if i+off>=mp->len => break
+		if off => mp->pairs[i]=mp->pairs[i+off]
+	mp->len-=off
+	if off => mp.map_reindex()
+	return mp
+}
+map* vec_reverse(map* mp){
+	if !mp => return mp
+	int len=mp->len
+	for i=0; i<len/2; i++
+		void* temp=mp->vars[len-i-1]
+		mp->vars[len-i-1]=mp->vars[i]
+		mp->vars[i]=temp
+	return mp
+}
+map* vec_compact(map* mp){
+	if !mp || mp.ptr_type()!=Vector => return mp
+	off=0
+	i=0
+	for i=0;i+off<mp->len;i++
+		while(i+off<mp->len && mp->vars[i+off]==&skip) off++
+		if i+off>=mp->len => break
+		if off => mp->vars[i]=mp->vars[i+off]
+	
+	while(i<mp->len) mp->vars[i++]=NULL
+	mp->len-=off
+	return mp
+}
+map* change_key(map* mp,int idx,char* id){
+	if !mp => return mp
+	assert(idx>=0 && idx<=mp->len)
+	assert(mp.ptr_type()==Map)
+	if mp.key_eq(idx,id) => return mp
+	mp.del_index(idx)
+	mp.map_del(mp.map_has_key(id)-1)
+	mp->pairs[idx].id=id
+	mp.map_index(idx)
+	return mp
+}
+map* add_id(map* mp,int idx){
+	if !mp[idx].is_map() => mp[idx]={}
+	return mp[idx]
+}
+map* add_key(map* mp,char* k,int type=Map){
+	if !mp[k].is_map() => mp[k]=type==Vector ? [] : {}
+	return mp[k]
+}
+char* map_join(map* mp,char* joiner=""){
+	if !mp.is_map() => return mp.to_str()
+	ret=''
+	mp.each v,,idx
+		if idx => ret.=joiner
+		if v.is_map() => ret.=v.map_join(joiner)
+		else ret.=v.to_str()
+	
+	return ret
+}
+char* map_str(map* mp) => return mp.map_str_indent(0)
+char* map_str_indent(map* mp,int indent){
+	ret=''
+	if !mp => return ret
+	int type=mp.ptr_type()
+	istr="\t".str_times(indent)
+	mp.each v,k,i
+		ret.=istr
+		if v.is_map()
+			if v.ptr_type()!=Vector && v.type
+				ret=ret.xcat(k,"=:",v.type)
+				v.each v2,k2,i2
+					if k2===:type || k2===:name && v.type
+						continue
+					else if v2.is_map()
+						ret=ret.xcat(" ",k2,"=",v2.json())
+					else if !v2 || k2===v2 || v2.is_int()==1
+						ret=ret.xcat(" ",k2)
+					else if v2.is_code()
+						ret=ret.xcat(" ",k2,"=",v2)
+					else if v2.is_num()
+						if v2.is_int()
+							ret=ret.xcat(" ",k2,"=#",v2.is_int())
+						else v2.is_double()
+							ret=ret.xcat(" ",k2,"=#",v2.is_double())
+					else
+						ret=ret.xcat(" ",k2,"=",v2.str_quote())
+				ret.="\n"
+			else
+				int eq=0
+				if type==Vector||k.is_int() => ret.="="; eq=1
+				else ret.=k
+				if v.ptr_type()==Vector
+					if !eq => ret.="="
+					ret.="[]"
+				
+				bl=v.map_str_indent(indent+1)
+				if bl => ret.="\n"..bl
+		else if type==Vector||k.is_int()
+			ret.=v.to_str().."\n"
+		else if v.is_i() => ret=ret.xcat(k,"=#",v.is_int(),"\n")
+		else if v.is_double() => ret=ret.xcat(k,"=#",v.is_double(),"\n")
+		else if v.is_str()
+			if v.strchr('\n')
+				ret=ret.xcat(k,"=|\n")
+				v.str_split("\n").each v2,k2,i2
+					ret=ret.xcat("\t".str_times(indent+1),v2,"\n")
+			else
+				marker="\\"
+				if is_alpha(v.fox_at(0)) => marker=NULL
+				ret=ret.xcat(k,"=",marker,v,"\n")
+	
+	return ret
+}
+map* map_vec(map* mp){
+	if mp.ptr_type()==Vector => return mp
+	ret=[]
+	mp.each v,,i => ret[]=v
+	return ret
+}
+map* map_split(map* mp,char* str,int limit=0){
+	if !mp => return mp
+	if limit==1 => return mp.map_vec()
+	ret=[]
+	curr=[]
+	mp.each ,,i
+		if mp[i]===str
+			if curr->len
+				ret[]=curr
+				curr=[]
+			if limit==1 => break
+			limit--
+			continue
+		curr[]=mp[i]
+	if curr->len => ret[]=curr
+	return ret
+}
+map* map_implode(map* mp,char* joiner){
+	ret=[]
+	mp.each v,,i
+		if i>0 => ret[]=joiner
+		ret.vec_merge(v)
+	return ret
+}

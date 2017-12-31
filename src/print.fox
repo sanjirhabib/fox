@@ -1,0 +1,8 @@
+#include <fox.h>
+
+char* outx(char* str){
+	str.px()
+	xexit(0)
+	return NULL
+}
+char* flush_out() => char* ret=_globals.out; _globals[:out]=NULL; return ret

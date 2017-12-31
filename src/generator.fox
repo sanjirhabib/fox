@@ -527,3 +527,1133 @@ int cgi_init(char* name){
 	if !:Makefile.is_file() => name.gen_cgi_makefile(:Makefile)
 	return 0
 }
+char* c_h(char* infile,char* outfile=NULL) => return infile.file_funcs().funcs_cdecl(0).write_file(outfile)
+char* fox_h(char* infile,char* outfile=NULL) => return ("#include <fox.h>\n"..infile.file_funcs().funcs_cdecl(0)).write_file(outfile)
+map* x_map(char* in) => return c_tokenizer(&in,'\0')
+char* c_x(char* in) => return in.x_map().map_tox().toks_c()
+
+char* map_ccode(void* mp){
+	if !mp => return :NULL
+	if mp.is_str() => return mp.str_quote()
+	if mp.is_int() => return mp.is_int().int_str()
+	if mp.ptr_type()==Map
+		if(!mp.map_len()) return "new_map()"
+		ret="xmap("
+		mp.each v,k,i
+			ret.="$(k.str_quote()),$(v.map_ccode()),"
+		return ret.."End)"
+	if mp.ptr_type()==Vector
+		if(!mp.map_len()) return "new_vec()"
+		ret="xvec("
+		mp.each v1,,i1
+			ret.="$(v1.map_ccode()),"
+		return ret.."End)"
+	return "Unknown type of variable $(mp.to_str()) [$(mp.ptr_name())]".fox_error()	
+}
+char* file_foxh(char* infile,char* outfile=NULL){
+	return infile.file_funcs().funcs_cdecl(1).write_file(outfile)
+}
+char* func_cdecl(map* fn,int show_default=1){
+	ret2=""
+	fn.params.each param,name,i2
+		s=param.type.str_join(" ",name)
+		if name==="..." => s=name
+		if show_default => s=s.str_join("=",param.default)
+		ret2=ret2.str_join(", ",s)
+	return "$(fn.decltype) $(fn.name)($ret2);"
+}
+char* funcs_cdecl(map* fns=funcs(),int show_default=1){
+	ret=""
+	fns.each v, k, i
+		if k.is_word("main") => continue
+		ret.=v.func_cdecl(show_default)
+		ret.="\n"
+	return ret
+}
+char* foxh(){
+	return '---
+	/* This is a generated file. To change it, edit function foxh() in fox.c */
+	#pragma once
+	#define _XOPEN_SOURCE
+	#ifndef _GNU_SOURCE
+	#define _GNU_SOURCE
+	#endif
+	#include <setjmp.h>
+	#include <memory.h>
+	#include <stdio.h>
+	#include <stdlib.h>
+	#include <assert.h>
+	#include <stdarg.h>
+	#include <math.h>
+	#include <time.h>
+	#include <assert.h>
+	#include <sys/time.h>
+	#include <regex.h>
+	#ifndef __MINGW32__
+	#include <execinfo.h>
+	#include <sys/wait.h>
+	#include <sys/socket.h>
+	#include <netinet/in.h>
+	#include <arpa/inet.h>
+	#include <netdb.h>
+	#endif
+	#include <unistd.h>
+	#include <ctype.h>
+	#include <dirent.h>
+	#include <sys/types.h>
+	#include <sys/stat.h>
+
+	#include <signal.h>
+	#include <sqlite3.h>
+//	#include <openssl/md5.h>
+
+	enum Types {
+		Null,Int,Double,String,Blob,Map,Vector,Index,Keys,Cell,Cell2,Tail
+	};
+	typedef struct Mapcell {
+		short nextid;
+		int hkey;
+		char* id;
+		void* val;
+	} Mapcell;
+	typedef struct map {
+		int len;
+		char type;
+		union {
+			struct Mapcell* pairs;
+			void** vars;
+		};
+	} map;
+
+	#define each_mem(pg,i) int i=0; for(mempage* pg=_gcdata.pages;i<_gcdata.total_pages;i++,pg=_gcdata.pages+i)
+	#define max(a,b) ((a)>(b)?(a):(b))
+	#define min(a,b) ((a)<(b)?(a):(b))
+	#ifdef __MINGW32__
+	#define is_i(x) ((int)(x)>>30 & 1)
+	#else
+	#define is_i(x) ((long long)(x)>>61 & 2)
+	#define is_f(x) ((*(long long*)&(x))>>61 & 1)
+	#define is_num(x) ((*(long long*)&(x))>>61 & 3)
+	#endif
+
+	typedef struct mempage {
+		int no;
+		int idx;
+		int block_size;
+		int blocks;
+		int free;
+		char* types;
+		char* page;
+		map chains;
+		int abandoned;
+	} mempage;
+	struct gcdata {
+		int total_pages;
+		void** stack_head;
+		int page_no;
+		long long max_used;
+		long long curr_used;
+		long long max_mem;
+		long long curr_mem;
+		mempage* pages;
+		int gcruns;
+		int gcwaste;
+		int inalloc;
+		int gctime;
+		int gcmax;
+		int max_roots;
+		struct timeval run_time;
+		struct timeval time;
+		size_t clockstart;
+		int total_time;
+	};
+	extern struct gcdata _gcdata;
+	extern map* _globals;
+
+	extern int _printed;
+	extern int _is_web;
+
+	extern char* skip;
+
+	#define None 0x0F9AD3BA
+	#define End (char*)(0x0FF1B14E059AD3BA)
+
+	void* invoke(map* v,char* name);
+	char* strstr(const char* str1,const char* str2);
+	int chdir(const char* path);
+	int max_mem();
+	int curr_mem();
+	map* reflect();
+	char* version();
+
+	---'
+}
+void* marked_str(char* str,char* name=NULL){
+	if !str => return NULL
+	str=str.str_trim(" \t")
+	if str==="\"\"" => return ""
+	if !str.str_len() => return NULL
+	if str===:NULL
+		return NULL
+
+	if str[0]=='{'
+		if str[str.str_len()-1]=='}' => str[str.str_len()-1]='\0'
+		mp=xjson_map(str+1,Map)
+		return mp
+	
+	if str.is_numeric() => return str.stoi().int_var()
+	if str[0]=='['
+		if str[str.str_len()-1]==']' => str[str.str_len()-1]='\0'
+		mp=xjson_map(str+1,Vector)
+		return mp
+	
+	if str[0]=='\\' => return str.sub_str(1)
+	if str[0]==':'
+		str++
+		thealpha=read_alpha(&str)
+		return {type: thealpha,name: name}.map_merge(xjson_map(str+1,Index))
+	return str
+}
+map* map_add_pair(map* mp,void* name,void* value,int type){
+	if !name && !value => return mp	
+
+	if name===:null => name=NULL
+	else if name.is_numeric() => name=(name.to_int()+1).int_var()
+	else name=name.str_unquote()
+
+	if name && value && *(char*)value==':'
+		if !mp.map_len()
+			return mp.xadd(:type,value.sub_str(1),:name,name)
+		else
+			char* str=value
+			str++
+			thealpha=read_alpha(&str)
+			value={type: thealpha,name: name}.map_merge(xjson_map(str+1,Index))
+
+	if value===:null => value=NULL
+	else if value.is_numeric() => value=value.to_int().int_var()
+	else value=value.str_unquote()
+
+	if type==Vector => return mp[]=value
+	return mp[name]=value
+}
+map* add_name_val(map* mp,char* str,char** name,char** val,int type){
+	name1=*name
+	val1=*val
+	if !name1 && !val1 => return mp
+	*name=NULL
+	*val=NULL
+	void* v=NULL
+	if type==Vector
+		s=name1.sub_str(0,str-name1).str_trim()
+		return mp[]=s.marked_str()
+	
+	if(val1)
+		name1=name1.str_trim(" \t")
+		name1=name1.str_replace("\\=","=")
+		if !name1.str_len() => name1=NULL
+		v=val1.sub_str(0,str-val1).marked_str(name1)
+	else if name1 => v=name1.sub_str(0,str-name1).marked_str(); name1=NULL
+	if type==Index && !name1.str_len() => name1=v.to_str()
+	else if type==Keys && !name1
+		name1=v.to_str()
+		v=NULL
+	mp.map_add(name1,v)
+	return mp
+}
+char* read_as_block(char** from,int level,char* terminator="-"){
+	str=*from
+	ret=''
+	while *str
+		if str.str_start("//") => str+=str.line_len(); continue
+		tabs=str.str_level()
+		len=str.line_len()
+		if tabs>=level||str.line_isempty()
+			ret.=len-level>0 ? str.sub_str(level,len-level) : "\n"
+		else break
+		str+=len
+	if str.sub_str(str.str_level(),str.line_len()-str.str_level()).str_trim()===terminator
+		len2=str.line_len()
+		str+=len2
+	*from=str
+	if ret.str_len() && ret[ret.str_len()-1]=='\n' => ret=ret.sub_str(0,-1)
+	return ret
+}
+map* block_map(char** from,int inlevel,int maptype){
+	if !from => return NULL
+	map* ret=NULL
+	if maptype==Vector => ret=[]
+	else ret={}
+	str=*from
+	if !str.str_len() => return NULL
+	level=0
+	iscomment=0
+	blk=''
+	name=''
+	val=''
+	for ;*str;str++
+		if *str=='\n'||*str=='\r'
+			ret.add_name_val(str,name,val,maptype)
+			level=0
+			iscomment=0
+			blk=NULL
+			continue
+		if !name && !val
+			if iscomment => continue
+			if !blk => blk=str
+			if *str=='/' && str[1]=='/' => str++; iscomment=1; continue
+			if *str=='\t' => level++; continue
+			if level<inlevel
+				*from=blk
+				return ret
+			if level>inlevel
+				s=ret[ret->len-1].is_str()
+				if s==="|" => read_as_block(&blk,inlevel+1).set_map(ret,ret->len-1)
+				else if s && s.str_start("---") => read_as_block(&blk,inlevel+1,s).set_map(ret,ret->len-1)
+				else if ret[ret->len-1].ptr_type()==Vector => block_map(&blk,inlevel+1,Vector).set_map(ret,ret->len-1)
+				else if ret[ret->len-1].ptr_type()==Map => block_map(&blk,inlevel+1,Map).set_map(ret,ret->len-1)
+				else if maptype==Vector
+					continue
+				else
+					if (s.str_len() && ret.map_key(ret->len-1).is_int()) => ret.change_key(ret->len-1,s)
+					block_map(&blk,inlevel+1,maptype).set_map(ret,ret->len-1)
+				str=blk-1
+				level=0
+				iscomment=0
+				blk=NULL
+				name=NULL
+				val=NULL
+				continue
+			
+			if maptype!=Vector && *str=='=' => val=str+1; continue
+			name=str
+		
+		if !val
+			if *str=='\\' => str++; continue
+			if maptype!=Vector && *str=='='
+				name=name.sub_str(0,str-name)
+				val=str+1
+				continue
+			continue
+		continue
+	ret.add_name_val(str,name,val,maptype)
+	*from=str
+	return ret
+}
+char* old_decl_type(map* mp,int idx){
+	int from=mp.stm_start(idx,"{};,().>:=><!&-+/?")
+	for int i=from;i<idx;i+=2
+		if mp[i].is_word("int long double float char void struct map static extern unsigned register mempage size_t time_t const")
+			return mp.vec_sub(from,idx-from-1).toks_c()
+	return NULL
+}
+char* toks_str(map* mp){
+	ret=''
+	mp.each val => ret.=val.is_map() ? val.toks_str() : val
+	return ret
+}
+map* toks_keywords(map* mp,char* keywords){
+	if !mp => return mp
+	ret={}
+	curr=[]
+	curr_key=''
+	mp.each ,,i
+		if mp[i].is_word(keywords)
+			if curr->len
+				ret[curr_key]=curr.toks_align()
+				curr=[]
+			curr_key=mp[i]
+			continue
+		curr[]=mp[i]
+	if curr->len => ret[curr_key]=curr.toks_align()
+	return ret
+}
+char* read_num(char** in){
+	str=*in
+	deci=0
+	str++
+	while *str && ((*str>='0' && *str<='9')||(*str=='.' && !deci++ && !str[1].is_alpha()))
+		str++
+	from=*in
+	*in=str-1
+	return from.sub_str(0,str-from)
+}
+char* skip_over(char* in,char* chars=" \t\n\r"){
+	while(*in && chars.strchr(*in)) in++
+	return in
+}
+char* skip_word(char* in,char* seperators=" \t\r\n,"){
+	if !in || !*in => return in
+	term='\0'
+	counter=0
+	opener='\0'
+	if "[({".strchr(*in) => opener=*in;
+	if "\"'`".strchr(*in) => term=*in; in++
+	else if *in=='[' => term=']'; in++
+	else if *in=='(' => term=')'; in++
+	else if *in=='{' => term='}'; in++
+	while *in
+		if opener
+			if "\"'`".strchr(*in) => in=in.skip_word(seperators); continue
+			else if *in==opener => counter++
+		if *in==term
+			if !counter => in++; break
+			counter--
+		else if !term && seperators.strchr(*in) => break
+		else if *in=='\\' && in[1] => in++
+		in++
+	return in
+}
+void* read_value(char** str, char* sep){
+	if **str=='{'||**str=='[' => return xjson_map_recurse(str)
+	from=*str
+	*str=from.skip_word(sep)
+	ret=from.sub_str(0,*str-from)
+	return ret ? ret : :null
+}
+char* read_upto(char** in,char* terminators){
+	str=*in
+	isquote=0
+	if *str=='"' => terminators="\""; str++
+	else if *str=='\'' => terminators="'"; str++
+	while(*str && !terminators.strchr(*str))
+		if *str=='\\' && str[1] => str++
+		str++
+	if (*terminators=='\'' || *terminators=='"') && *str==*terminators => str++
+	from=*in
+	*in=str
+	return from.sub_str(0,str-from)
+}
+char* read_alpha(char** in){
+	str=*in
+	str++
+	while(*str && is_alphanum(*str)) str++
+	from=*in
+	*in=str-1
+	return from.sub_str(0,str-from)
+}
+char* fox_read_symbol(char** in){
+	str=*in
+	str++
+	while *str
+		if *str=='\\'
+			str+=2
+			continue
+		if !is_alphanum(*str) => break
+		str++
+	from=*in
+	*in=str-1
+	return from.sub_str(0,str-from)
+}
+char* fox_read_oper(char** in,char term){
+	str=*in
+	from=*in
+	while(*str && is_oper(*str) && *str!=term) str++
+	ret=from.sub_str(0,str-from)
+	less=0
+	while ret.strlen() && !ret.is_word("~ ! @ # $ % ^ & * - = + | < > ? / \\ } ] ) . != >= <= += -= /= *= || && << >> => ++ -- ** *** **** |= &= >>= <<= ^^ ... -> == === !== .= .. ||= &&=")
+		ret[ret.strlen()-1]='\0'
+		less++
+	*in=str-1-less
+	return ret
+}
+char* read_upto_word(char** in,char* upto){
+	str=*in
+	while(*str && !str.str_start(upto)) str++
+	from=*in
+	if *str
+		*in=str+upto.strlen()-1
+		return from.sub_str(0,str-from+upto.strlen())
+	else
+		*in=str-1
+		return from.sub_str(0,str-from)
+}
+char* read_theline(char** in){
+	if !in||!*in||!**in => return NULL
+	str=*in
+	while(*str && !"\n\r".strchr(*str)) str++
+	if *str=='\r' && str[1]=='\n' => str++
+	from=*in
+	*in=str-1
+	return from.sub_str(0,str-from)
+}
+char* read_newline(char** in){
+	str=*in
+	while(*str && "\n\r".strchr(*str)) str++
+	from=*in
+	*in=str-1
+	return from.sub_str(0,str-from)
+}
+char* read_space(char** in,char* spaces=" \t"){
+	str=*in
+	while(*str && spaces.strchr(*str)) str++
+	from=*in
+	*in=str-1
+	return from.sub_str(0,str-from)
+}
+map* read_data(char** in){
+	str=*in
+	from=*in
+	while *str && !str.str_start("}}")
+		str+=str.line_len()
+		str+=str.str_level()
+	if *str => str+=2
+	*in=str-1
+	return from.sub_str(0,str-from).data_toks()
+}
+char* read_heredoc(char** in){
+	str=*in
+	len=str.line_len()
+	hd=str.sub_str(0,len).str_trim()
+	from=*in
+	lno=0
+	str+=len
+	tabs=str.str_level()
+	str+=tabs
+	while *str && !str.str_start(hd)
+		len=str.line_len()
+		tabs=(str+len).str_level()
+		str+=len+tabs
+	if *str => str+=hd.str_len()-1
+	*in=str
+	return from.sub_str(0,str-from+1)
+}
+char* read_multistr(char** in){
+	str=*in
+	end=*str
+	hd=''
+	from=*in
+	lno=0
+	word_start=''
+	str++
+	while *str
+		if *str=='\\' => if(!hd) str++
+		else if *str==end => if(!hd) break
+		else if *str=='\n'||*str=='\r'
+			if !lno && word_start
+				hd=word_start.sub_str(0,str-word_start)
+			lno++
+			word_start=NULL
+		else if *str!=' ' && *str!='\t'
+			if !word_start
+				word_start=str
+				if hd && lno && str.str_start(hd) && str[hd.str_len()]==end
+					str+=hd.str_len()
+					break
+		str++
+	*in=str
+	return from.sub_str(0,str-from+1)
+}
+char* read_quote(char** in){
+	str=*in
+	end=*str
+	str++
+	while *str
+		if *str=='\\' => str++
+		else if *str==end => break
+		str++
+	
+	from=*in
+	*in=str
+	return from.sub_str(0,str-from+1)
+}
+char closing_paren(char c) => switch(c) => case '{': return '}'; case '[': return ']'; case '(': return ')'; default: return '\0'
+int map_has_word(map* mp,char* str){
+	mp.each v,,idx => if v===str => return idx+1
+	return 0
+}
+int is_keyword(char* str) => return str.is_word("abstract and as break callable case catch class clone const continue declare default do echo else elseif enddeclare endfor endforeach endif endswitch endwhile extends final for foreach def function global goto if implements include include_once instanceof insteadof interface namespace new or private protected public require require_once return static switch throw trait try use while xor yield false true null")
+char* toks_c(map* mp){
+	ret=''
+	if !mp => return ret
+	mp.each ,,i
+		if mp[i].is_map()
+			ret.=mp[i].toks_c()
+			continue
+		str=mp[i].is_str()
+		assert(str || !mp[i].is_str())
+		if !str => continue
+		ret.=mp[i]
+	return ret
+}
+map* add_ctok(void* data,map* mp,int iscode){
+	if !data => return mp
+	data.assert()
+	assert(mp.ptr_type()==Vector)
+	int incode=!(mp->len%2)
+	if incode && iscode
+		mp[]=NULL
+		mp[]=data
+	else if incode && !iscode => mp[]=data
+	else if !incode && !iscode
+		if mp->len
+			old=mp[mp->len-1].is_str()
+			mp->vars[mp->len-1]=old..data
+		else mp[]=data
+	else if !incode && iscode => mp[]=data
+	return mp
+}
+map* c_tokenizer(char** line,char term){
+	if !line||!*line||!**line => return NULL
+	head=*line
+	int headlen=head.str_len()
+	expected_end=head+head.str_len()
+	str=*line
+	mp=[]
+	space=''
+	int code=0
+	last=''
+	while *str && *str!=term
+		assert(last!=str)
+		assert(head.str_len()==headlen)
+		last=str
+		if str.str_start("//") => read_theline(&str).add_ctok(mp,0)
+		else if str.str_start("/*") => read_upto_word(&str,"*/").add_ctok(mp,0)
+		else if str.str_start("#") => read_theline(&str).add_ctok(mp,0)
+		else if " \t".strchr(*str) => read_space(&str).add_ctok(mp,0)
+		else if "\n\r".strchr(*str) => read_newline(&str).add_ctok(mp,0)
+		else if "\"`".strchr(*str) => read_quote(&str).add_ctok(mp,1)
+		else if *str=='\'' => read_multistr(&str).add_ctok(mp,1)
+		else if str.str_start("{{")
+			if !(mp->len%2) => mp[]=NULL
+			mp.vec_merge(read_data(&str))
+		else if str.str_start("---") => read_heredoc(&str).add_ctok(mp,1)
+		else if *str==':' => fox_read_symbol(&str).add_ctok(mp,1)
+		else if is_oper(*str) => fox_read_oper(&str,term).add_ctok(mp,1)
+		else if *str>='0' && *str<='9' => read_num(&str).add_ctok(mp,1)
+		else if is_alpha(*str) => read_alpha(&str).add_ctok(mp,1)
+		else if "([{".strchr(*str)
+			char c=*str
+			str++
+			c.char_str().add_ctok(mp,1)
+			c_tokenizer(&str,c.closing_paren()).add_ctok(mp,1)
+			if *str => c.closing_paren().char_str().add_ctok(mp,1)
+		else if ','==*str => str.sub_str(0,1).add_ctok(mp,1)
+		else if ';'==*str => str.sub_str(0,1).add_ctok(mp,1)
+		if *str => str++
+	assert(term || str==expected_end)
+	*line=str
+	return mp
+}
+int func_dot(map* mp,int idx){
+	idx++
+	if mp[idx]!=="(" => return idx
+	if !mp[idx-2].is_str().is_code() => return idx
+	if mp[idx-4]==="." => return idx
+	if mp[idx-2].is_str().is_keyword() => return idx
+	params=mp[idx+2].is_map()
+	if !params->len => return idx
+	if params[1].ptr_type()!=String && !params[1].is_str().is_code() => return idx
+	int len=2
+	while 1
+		s=params[len+1].is_str()
+		if s.is_word("( [ {") => len+=6
+		else if s.is_word(". ->") || s.is_code() => len+=2
+		else break
+	
+	if params->len>len && params[len+1]!=="," => return idx
+	out=params.vec_slice(1,len-1)
+	params.vec_del(0,1)
+	if params->len>len => params.vec_del(len,2)
+	vec_compact(params)
+	out.xadd(NULL,".",NULL)
+	mp.vec_splice(idx-1-1,0,out)
+	mp.vec_compact()
+	return idx-3
+}
+map* multiline_parts(char* str){
+	lines=str.sub_str(1,-1).str_split("\n",0)
+	indent=0
+	end=str+str.str_len()-1
+	while(end>str){ if("\t\n\r".strchr(*end)) break; end--; }
+	while(end>str){ if(*end!='\t') break; end--; indent++; }
+	tabs="\t".str_times(indent).null_str()
+	parts=[]
+	lines.each v,,i
+		int cut=v.str_level()
+		if cut>indent => cut=indent;	
+		nl=""
+		if i<lines.map_len()-1
+			nl="\\n"
+		if i => parts[]="\n"..tabs
+		parts[]="\"%s%s\"".mstr(v.sub_str(cut).str_escape(),nl)
+	return parts
+}
+map* heredoc_parts(char* str){
+//	if !str.is_str() => return NULL
+	if !str || !str.is_str() ||!*str => return NULL
+	if !((*str=='\'' && str.strchr('\n'))||(*str=='"' && str[1]!='"' && str.strchr('\n'))||str.str_start("---")) => return NULL
+	if "\"`".str_chr(*str) => return str.multiline_parts()
+	lines=str.str_split("\n",0)
+	indent=0
+	end=str+str.str_len()-1
+	while(end>str){ if("\t\n\r".strchr(*end)) break; end--; }
+	while(end>str){ if(*end!='\t') break; end--; indent++; }
+	tabs="\t".str_times(indent).null_str()
+	parts=["\"\""]
+	lines.each v,,i
+		if i==0 => continue
+		if i==lines->len-1 => continue
+		int cut=v.str_level()
+		if cut>indent => cut=indent;	
+		nl="\\n"
+		if i==lines->len-2 => nl=""
+		parts[]="\n"..tabs
+		parts[]="\"%s%s\"".mstr(v.sub_str(cut).str_escape(),nl)
+	parts.xadd("\n"..tabs,"\"\"")
+	return parts
+}
+map* heredoc_str(map* mp){
+	for int idx=1; idx<mp.map_len(); idx+=2
+		if mp[idx].is_map() => mp[idx].heredoc_str()
+		parts=mp[idx].heredoc_parts()
+		if !parts => continue
+		mp.vec_splice(idx,1,parts)
+	return mp
+}
+map* dot_each(map* mp){
+	int temp=0
+	for int idx=1; idx<=mp->len; idx+=2
+		if mp[idx].is_map() => mp[idx].dot_each()
+		if idx<2 || !mp[idx-2].is_str().is_word("each each_mem")
+			continue
+		params=mp[idx+2].is_map().toks_split(",")
+		newp=mp[idx+2].is_map().toks_split(",")
+		if params[0].map_len()>=4
+			temp++
+			temp_name=:map_..temp.int_str()
+			pre=xcat("map* ",temp_name.."=",params[0].toks_c(),"; ").x_map().vec_del(0).vec_compact()
+			newp[0]=temp_name.x_map()
+			mp[idx+2]=newp.toks_join(",")
+			mp.vec_splice(idx-2,0,pre)
+			assert(mp[pre.map_len()-3+idx]===" ")
+		if mp[idx-2]===:each
+			next1=:next1
+			start="-1"
+			upto=''
+			step="++"
+			if params[3][1]
+				incs=params[3].toks_keywords("= to step")
+				next1=incs[0].toks_c()
+				if incs["="]
+					start=incs["="].toks_c().str_trim()
+					if start.is_numeric() => start=(start.to_int()-1).int_str()
+					else start.="-1"
+					if incs.to
+						upto=" $next1<="..incs.to.toks_c().str_trim().." &&"
+					if incs.step
+						step=incs.step.toks_c().str_trim()
+						if step.is_numeric() && step.to_int()==1 => step="++"
+						else if step[0]=='-'
+							step="-="..(step+1)
+						else step="+="..step
+
+			mpname=params[0].toks_c()
+			expr="int $next1=next($mpname,$start);$upto has_id($mpname,$next1); $next1$step"
+			mp[idx-2]=:for
+			mp[idx+2]=expr.x_map()
+			expr=''
+			if params[1][1]
+				if params[1].map_len()<=2 => expr.=" void* "
+				else expr.=" "
+				expr.=params[1].toks_c().."=map_id($mpname,$next1);"
+			if params[2][1]
+				expr.=" char* "..params[2].toks_c().."=map_key($mpname, $next1);"
+			mp[idx+8].vec_splice(0,0,expr.x_map())
+	return mp
+}
+int tok_indent(char* str){
+	if !str => return 0
+	if !str.strchr('\n') => return 0
+	int ret=1
+	for int i=str.str_len()-1;i>=0;i--
+		if "\t ".strchr(str[i]) => ret++
+		else if "\n\r".strchr(str[i]) => break
+		else ret=1
+	
+	return ret
+}
+int requires_semicolon(map* mp,int idx){
+	idx++
+	if idx<2 => return 0
+	if !mp[idx-1].str_chr('\n') => return 0
+	pre=mp[idx-2].is_str()
+	if !pre => return 0
+	post=mp[idx].is_str()
+	if pre==="}" && post.is_word(:else) => return 0
+	if post===")" => return 0
+	if pre===";" || post===";" => return 0
+	forbidden="+=-/?:.&,|!%"
+	if (forbidden.strchr(pre.fox_at(-1))||post && forbidden.strchr(post[0])) && !pre.is_word("++ --") && !post.str_start("---") => return 0
+	return 1
+}
+map* add_semicolon(map* mp,int recurse=1){
+	if(!mp) return mp
+	for(int idx=1;idx<mp->len;idx+=2)
+		if recurse && mp[idx]==="{" && (mp[idx-2]===")" || (mp[idx-2].is_keyword() && !mp[idx-2].is_word("return")))
+			mp[idx+2].add_semicolon()
+			idx+=4
+			continue
+		if(mp.requires_semicolon(idx-1)) mp.vec_splice(idx-1,0,[NULL,";"])//.vec_sub(idx-6,12).px()
+	if(!mp[mp->len-mp->len%2-1].is_word(";"))
+		mp.vec_splice(mp->len-mp->len%2,0,[NULL,";"])
+	return mp
+}
+int tok_endl(map* mp,int from){
+	for ;from<=mp->len;from+=2 => if(mp[from-1].is_str().str_chr('\n')) break
+	return from
+}
+map* force_curly(map* mp){
+	if !mp.is_map() => return mp
+	for int idx=1; idx<mp->len; idx+=2
+		if mp[idx].is_map() => mp[idx].force_curly()
+		w=mp[idx].is_str()
+		if !w => continue
+		if !w.is_word("if while for each do else each_mem")
+			continue
+		if w.is_word(:else) && mp[idx+2]===:if => continue
+		int curly_at=9
+		if w.is_word("else do") => curly_at=3
+		if w===:while && idx>8 && mp[idx-8]===:do => continue
+		if mp[idx+curly_at-1]==="{" => continue
+		oldidx=idx
+		idx+=curly_at
+		from=idx
+		if mp->len<from
+			if !(mp->len%2) => mp[]=" "
+			mp.xadd("{",NULL,NULL,NULL,"}",NULL,";")
+			continue
+		upto=idx
+		while upto<mp->len
+			if upto>mp->len
+				upto-=2
+				break
+			if mp[upto].tok_indent() => break
+			if(mp[upto-1]===";") => break
+			upto+=2
+		subs=[NULL]
+		subs.vec_merge(mp.vec_sub(from-1,upto-from+1))
+		if subs[subs.map_len()-subs.map_len()%2-1]!==";"
+			if !(subs.map_len()%2) => subs.xadd(NULL)
+			subs.xadd(";")
+		mp.vec_splice(from-1,upto-from+1,["{",NULL,subs,NULL,"}"])
+		idx=oldidx
+	return mp
+}
+map* expand_main(map* mp){
+	for int idx=1;idx<=mp->len;idx+=2
+		if mp[idx]===:run && mp[idx+2]==="(" && mp[idx+8]==="{" && !mp[idx+4].map_len() && mp[idx-2]!==:int
+			mp.vec_splice(idx,7,"int run(map* args)".x_map().vec_del(0,1)).vec_compact()
+	return mp
+}
+map* add_curly(map* mp,int recursive=1){
+	for(int idx=1;idx<=mp->len;idx+=2)
+		if(mp[idx]==="=>")
+			int from=idx
+			int upto=mp.tok_endl(idx+2)
+			mp.vec_splice(from-1,upto-from,[NULL,"{",NULL,mp.vec_sub(from+1,upto-from-2)," ","}"]).vec_compact()
+		if !recursive => continue
+		if(mp[idx]==="{")
+			mp[idx+2].add_curly()
+			idx+=4
+			continue
+		w=mp[idx].is_str()
+		if !w => continue
+		if !w.is_word("if while switch for each do else each_mem") => continue
+		if w.is_word(:else) && mp[idx+2]===:if && !mp[idx+1].block_level() => continue
+		int from=0
+		int upto=0
+		if(mp[idx+1].is_str().str_chr(' ') && !w.is_word("else do"))
+			from=idx+2
+			upto=mp->len-mp->len%2
+			for(int i=from;i<=mp->len;i+=2)
+				if(mp[i-1].tok_indent() || mp[i]==="=>")
+					upto=i-1
+					break
+			mp[idx+1]=NULL
+			sub=[ NULL,"(", NULL,mp.vec_sub(from-1,upto-from+1), NULL,")"]
+			if w.is_word(:while) && mp[idx-2]==="}" && mp[idx-8]===:do
+				sub.xadd(NULL,";")
+			mp.vec_splice(from-1,upto-from+1,sub).vec_compact()
+
+		if idx>=8 && w.is_word(:while) && mp[idx-2]==="}" && mp[idx-8]===:do => continue
+
+		//if:1 (:3 x:5 ):7 {:9
+		int curly_at=9
+		if(w.is_word("else do")) curly_at=3
+		if(!mp[idx+curly_at-2].tok_indent() && mp[idx+curly_at-1]==="{") continue
+		if(!mp[idx+curly_at-2].tok_indent()) // "else i=3;"
+			continue
+		int curr_indent=0
+		for int i=idx;i>0;i-=2
+			int ind=mp[i-1].tok_indent()
+			if(!ind) continue
+			curr_indent=ind
+			break
+		if(!curr_indent && mp[0].str_level()) curr_indent=mp[0].str_level()+1
+		if(!curr_indent) curr_indent=1
+		from=idx+curly_at-1
+		upto=mp->len-mp->len%2
+		for(int i=from;i<=mp->len;i+=2)
+			int ind=mp[i-1].tok_indent()
+			if(ind && ind<=curr_indent)
+				upto=i-1
+				break
+		if(curr_indent) curr_indent--
+		space=" "
+		blankline=mp[upto].is_str()
+		tail=''
+		if(blankline)
+			lns=blankline.str_split("\n",3)
+			if(((lns->len==3||(lns->len==2 && mp->len==upto+1)) && !lns[1].has_chars()) || w.is_word(:do) || (w.is_word(:if) && mp[upto+1]===:else))
+				if(lns->len==3) tail="\n"..lns[2]
+				else tail=lns[2]
+				space=lns[0].."\n".."\t".str_times(curr_indent)
+				mp[upto]=tail
+		mp.vec_splice(from-1,upto-from+1,[NULL,"{",NULL,mp.vec_sub(from-1,upto-from+1),space,"}"]).vec_compact()
+	return mp
+}
+map* dot_key(map* mp){
+	return mp
+	for(int idx=1;idx<=mp.map_len();idx+=2)
+		if mp[idx].is_map() => mp[idx].dot_key(); continue
+		str=mp[idx].is_str()
+		if !str => continue
+		if idx>=2 && *str=='"' && mp[idx-2]==="."
+			mp.vec_splice(idx,1,[:map_val,NULL,"(",NULL,[NULL,str],NULL,")"])
+	return mp
+}
+int str_hasvar(char* in){
+	if !in => return 0
+	for int i=0; i<in.strlen(); i++
+		if in[i]!='$' => continue
+		if in[i+1].is_alpha("($") => return 1
+	return 0
+}
+char* str_mstr(char* in){
+	ret=in.str_len().new_str()
+	rethead=ret
+	type=''
+	str=in
+	params=[]
+	expr=''
+	for ;*str;str++
+		if *str=='%'	
+			if str[1]=='%'
+				str++
+			else
+				type=str+1
+		else if type && *str=='{'
+			if type==str
+				*ret++='s'
+			expr=str+1
+			type=NULL
+			continue
+		else if type && !"cdieEfgGosuxXpnhlL* +-#0123456789.".strchr(*str)
+			type=NULL
+		else if expr && *str=='}'
+			params[]=expr.sub_str(0,str-expr)
+			expr=NULL
+			continue
+		if !expr
+			*ret++=*str
+	if !params->len => return in
+	args=params.map_join(", ")
+	return "mstr($(rethead), $(args), End)"
+}
+map* xstr_parts(char* in){
+	ret=[]
+	tok=in.str_len().new_str()
+	tokhead=tok
+	incode=0
+	str=in
+	if "\"'".strchr(*str) => str=str.sub_str(1,-1)//.str_unquote()
+	while 1
+		if incode
+			if incode>1 && *str=='('
+				incode++
+			else if *str==')'
+				incode--
+				if incode==1 => incode=0; if *str => str++
+			else if incode==1 && !is_alphanum(*str)
+				incode=0
+			if !incode || !*str
+				*tok='\0'
+				if tokhead.str_len() => ret[]=tokhead.str_dup()
+				tok=tokhead
+		if !incode
+			if *str=='$'
+				if str[1]=='$'
+					str++
+				else if str[1].is_alpha()
+					incode=1
+					str++
+				else if str[1]=='('
+					incode=2
+					str+=2
+					if *str=='(' => incode++
+			if incode || !*str
+				*tok='\0'
+				if tokhead.str_len() => ret[]=tokhead.str_quote()
+				tok=tokhead
+		if !*str => break
+		*tok++=*str++
+	return ret
+}
+char* str_xstr(char* in){
+	parts=in.heredoc_parts()
+	if parts
+		nparts=[]
+		parts.each val,,idx
+			if idx%2 => continue
+			if !val.str_hasvar()
+				nparts[]=idx ? parts[idx-1]..val : val
+			else
+				xparts=val.str_unquote().xstr_parts()
+				if idx => xparts[0]=parts[idx-1]..xparts[0]
+				nparts.vec_merge(xparts)
+		ret="xstr($(nparts.map_join(\", \")))"
+		return ret
+			
+	ret=in.str_unquote().xstr_parts()
+	return ret.map_len()==1 ? ret[0] : "xstr(%s)".mstr(ret.map_join(", "))
+}
+map* str_dollars(map* mp){
+	if !mp => return mp
+	assert(mp.is_map())
+	for int idx=1; idx<mp.map_len(); idx+=2
+		if mp[idx].is_map()
+			mp[idx].str_dollars()
+			continue
+		str=mp[idx].is_str()
+		if !str => continue
+		if (*str=='"' || str.str_start("---")) && str.str_hasvar()
+			subs=str.str_xstr().x_map().colon_str().dot_key().vec_sub(1)
+			mp.vec_splice(idx,1,subs)
+			idx+=subs.map_len()-1
+	return mp
+}
+map* single_quotes(map* mp){
+	for(int idx=1;idx<=mp.map_len();idx+=2)
+		if mp[idx].is_map() => mp[idx].single_quotes(); continue
+		str=mp[idx].is_str()
+		if !str => continue
+		if str==="''"
+			mp[idx]=:NULL
+		else if *str=='\'' && (str.str_len()>4 || (str[1]!='\\' && str.str_len()>3))
+			*str='"'
+			str[str.str_len()-1]='"'
+	return mp
+}
+map* colon_str(map* mp){
+	for(int idx=1;idx<=mp.map_len();idx+=2)
+		if mp[idx].is_map() => mp[idx].colon_str(); continue
+		str=mp[idx].is_str()
+		if !str => continue
+		if str.str_len()>1 && *str==':'
+			str=str.sub_str(1).str_unquote().str_quote()
+			mp[idx]=str
+		if idx>=2 && *str=='"' && mp[idx-2]==="."
+			mp.vec_splice(idx,1,[:map_val,NULL,"(",NULL,[NULL,str],NULL,")"])
+	return mp
+}
+map* dot_func(map* mp){
+	for int i9=0;i9<mp.map_len();i9+=2
+		if mp[i9+1].is_map()
+			mp[i9+1].dot_func()
+			continue
+		idx=i9+1
+		if idx<=2 => continue
+		if mp[idx]!=="." => continue
+		if !mp[idx+2].is_str().is_code() => continue
+		if mp[idx+4]!=="(" => continue
+		int from=idx-2
+		while from>0
+			s=mp[from].is_str()
+			if !s => break
+			s2=mp[from+2].is_str()
+			if(s.is_word(") } ]") && s2.is_word(". -> ( [")) from-=6
+			else if(s.is_word(". ->") || *s=='"' || *s=='\'' || s.str_start("---")) from-=2
+			else if((s.is_code()||s.is_numeric()) && s2.is_word(". -> ( { [")) from-=2
+			else break
+		if mp[from+2]===:return => from+=2
+		if idx-from<=2 => continue
+		prespace=mp[idx-1].is_str()
+		mp.vec_del(idx-1,2).vec_compact()
+		from+=2
+		idx-=2
+		sub=mp.vec_slice(from,idx-from+2)
+		sub.each ,,idx2
+			if(sub[idx2].is_str().fox_at(0)==')' && sub[idx2+2].is_str().fox_at(0)=='(') sub.vec_shift(idx2+2,6,-idx2-2)
+			//if(sub[idx].is_str().fox_at(0)==')' && sub[idx+2].is_str().fox_at(0)=='(') sub.vec_shift(idx+2,6,-idx-2)
+			idx2++
+		params=mp[idx+6].is_map()
+		params.assert()
+		if !params => params=mp->vars[idx+6]=[]
+		if params->len => sub.xadd(",")
+		else sub.vec_del(sub->len-1,1).vec_compact()
+		sub1=[]
+		sub1[]=prespace
+		sub1.vec_merge(sub)
+		params.vec_splice(1-1,0,sub1)
+		params.vec_compact()
+		params.dot_func()
+		mp.vec_compact()
+		i9-=4
+	return mp
+}
+
+map* map_tox(map* mp){
+	if !mp => return mp
+	for int idx=1+next(mp,-1);idx;idx=1+next(mp,idx-1)
+		if idx%2-1
+			mp1=mp[idx-1].is_map()
+			if(mp1) mp1.map_tox()
+			continue
+		idx=mp.func_dot(idx-1)
+	return mp
+}
+int stm_start(map* mp,int idx,char* terms="};,).>:"){
+	idx-=2
+	while idx>0
+		if terms.str_chr(mp[idx].fox_at(0)) => break
+		idx-=2
+	return idx+2
+}
+map* syn_func(map* syn,int with_body=0,char* filename=NULL){
+	len=syn.map_len()
+	map* body=NULL
+	params_at=5
+	if syn[len-3]==="}"
+		body=syn[len-5]
+		params_at=11
+	params={}
+	mp1=syn[len-params_at].toks_split(",")
+	mp1.each v,,i2
+		param_name=v.syn_var_name()
+		param_type=v.syn_var_type()
+		void* param_default= v.is_assign() ? param_default=v.vec_sub(v.syn_assign_val()).toks_c() : NULL
+		if param_name!=="..." && !param_type
+			"$(syn[len-params_at-4])() parameter $param_name type not set".fox_error()
+		assert(param_name==="..." || param_type)
+		assert(param_name)
+		params[param_name]={type: param_type, default: param_default}
+	name=syn[len-params_at-4].is_str()
+	type=syn.vec_sub(1,len-params_at-6)
+	decltype=type.toks_c()
+	type.each v3,,i3
+		if v3.is_word(:inline) => type.vec_del(i3,2)
+	ret={name: name, type: type.toks_c(), decltype: decltype, params: params}
+	if with_body => ret.body=body
+	if filename => ret.file=filename
+	return ret
+}
+map* syn_funcs(map* mp,int with_body=0,char* filename=NULL){
+	ret={}
+	for int i=1; i<mp.map_len(); i+=2
+		if mp[i].is_func_decl()
+			fn=mp[i].syn_func(with_body,filename)
+			if fn.name===:main => continue
+			ret[fn.name]=fn
+	return ret
+}

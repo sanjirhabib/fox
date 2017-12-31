@@ -1,0 +1,159 @@
+#include <fox.h>
+
+#define MAXMEM 10*1024*1024
+#define MIN_CHAIN 1
+char* mem_usage(){
+	runtime=run_time()
+	totaltime=total_time()
+	gctime=gc_time()
+	codetime=runtime-totaltime-gctime
+	return "Memory:%s-%s [%d%% garbage], Pages: %d/%d, GC runs=%d-%d, Time=%d[gc]+%d[code]=%d ms [%d%% gc] GC Max: %d msec, Root Objs: %d".mstr(
+		_gcdata.max_mem.int_kb(),
+		max_mem().int_kb(),
+		(_gcdata.max_mem-_gcdata.max_used)*100/_gcdata.max_mem,
+		_gcdata.total_pages,
+		_gcdata.page_no,
+		_gcdata.gcruns,
+		_gcdata.gcwaste,
+		gctime,
+		codetime,
+		runtime,
+		gctime*100/(codetime+gctime),
+		_gcdata.gcmax/1000,
+		_gcdata.max_roots
+	)
+}
+char* int_kb(size_t i,char* unit=:B){
+	size_t ks=1
+	if i<10*ks*1024=> return i.int_human()
+	if i<10*ks*1024*1024 => return (i/(1024)).int_human(:K..unit)
+	if i<10*ks*1024*1024*1024 => return (i/(1024*1024)).int_human(:M..unit)
+	return (i/(1024*1024*1024)).int_human("G"..unit)
+}
+char* int_human(int i,char* unit='',char* zero=""){
+	if !i => return zero
+	ret=i.int_str()
+	addat=3
+	while addat<ret.str_len()
+		ret=ret.sub_str(0,-addat)..","..ret.sub_str(-addat)
+		addat+=4
+	if ret && unit => ret.=unit
+	return ret
+}
+void rewrite_ptr(mempage* pg,void** ptr){
+	if *ptr<(void*)pg->page||*ptr>(void*)pg->types => return
+	off=ptr_block(*ptr,pg)
+	if !(pg->types[off] & (1<<6))
+		*ptr=**(void***)ptr
+		return
+	len=1
+	while(len<=off && (pg->types[off-len] & (1<<6))) len++
+	assert(len<=off)
+	head=pg->page+(off-len)*pg->block_size
+	*ptr=*(char**)head+((char*)*ptr-head)
+}
+void rewrite_ptrs(mempage* old){
+	pg.each_mem(mem_i){
+		if pg==old => continue
+		for i=0;i<pg->blocks;i++
+			if !pg->types[i] || pg->types[i] & (1<<6) => continue
+			char type=pg->types[i] & (31)
+			if type<Map => continue
+			len1=1
+			while(pg->types[i+len1] & (1<<6)) len1++
+			size1=len1*pg->block_size
+			void* data=pg->page+i*pg->block_size
+			void* ptr=NULL
+			if type==Map||type==Vector => old.rewrite_ptr((void**)&(((map*)data)->vars))
+			else if type==Cell
+				void** vars=(void**)data
+				size1/=sizeof(void*)
+				for(i=0;i<size1;i++) old.rewrite_ptr((void**)&(vars[i]))
+			else if type==Cell2
+				Mapcell* pairs=(Mapcell*)data
+				size1/=Mapcell.sizeof()
+				for i=0;i<size1;i++
+					old.rewrite_ptr((void**)&(pairs[i].val))
+					old.rewrite_ptr((void**)&(pairs[i].id))
+			i+=len1-1
+	}	
+	void** sp=NULL
+	root_ptrs().each v,,i => old.rewrite_ptr(v)
+	memset(old->types,0,old->blocks)
+
+	old->free=old->blocks
+	memset(old->types,0,old->blocks)
+}
+int copy_page(mempage* from,mempage* to){
+	for i1=0;i1<from->blocks;i1++
+		char type1=from->types[i1]
+		type1 &= (31)
+		if !type1 => continue
+		len=1
+		while(from->types[i1+len] & (1<<6)) len++
+		size=len*from->block_size
+		void* ptr=from->page+i1*from->block_size
+		void* ret=to.page_alloc(size,type1)
+		ret.assert()
+		ret.memcpy(ptr,size)
+		*(void**)ptr=ret
+		assert(ret.ptr_type()==type1 && ret.mem_size()>=size)
+		i1+=len-1
+	
+	from.rewrite_ptrs()
+	"End copy mempage".printf()
+	return 0
+}
+int page_map(mempage* pg){
+	if pg->blocks==1
+		"[---- %d KB / %d KB ----]\n".printf(pg->free * pg->block_size / 1024,pg->block_size/1024)
+		return 0
+	
+	"[".printf()
+	int skip=pg->blocks/80
+	int cont=0
+	for int i=0;i<pg->blocks;i++
+		char type=pg->types[i]
+		if skip && i%skip => continue
+		if type & (1<<6)
+			"=".printf()
+			continue
+		type &=(31)
+		if !type => ".".printf()
+		else if type==String => :s.printf()
+		else if type==Blob => :s.printf()
+		else if type==Map => :m.printf()
+		else if type==Vector => :v.printf()
+		else if type==Cell => :v.printf()
+		else if type==Cell2 => :m.printf()
+		else if type==Tail => :t.printf()
+		else "?".printf()
+	"]:%d %d*%d=%d KB/%d%%\n".printf(pg->no, pg->blocks,pg->block_size,pg->block_size * pg->blocks / 1024,(pg->blocks-pg->free)*100/pg->blocks)
+	return 0
+}
+int dump_chain(mempage* pg,int line){
+	"________________ line=%d, page=%d, free=%d/%d\n".printf(line,pg->no,pg->free,pg->blocks)
+	for int i=0; i<pg->chains.len; i++
+		"%d => %p\n".printf(*(int*)(pg->chains.vars[i]),pg->chains.vars[i])
+	"----------------\n".printf()
+	assert(0)
+//	"Chain fox_error".fox_error()
+	return 0
+}
+int check_chains(mempage* pg,int line=__LINE__){
+	for int i=1; i<pg->chains.len; i++
+		if *(int*)(pg->chains.vars[i])<MIN_CHAIN
+			pg.dump_chain(line)
+		if !(*(int*)(pg->chains.vars[i])<=*(int*)(pg->chains.vars[i-1]))
+			pg.dump_chain(line)
+		if *(int*)(pg->chains.vars[i])==*(int*)(pg->chains.vars[i-1])
+			if !(pg->chains.vars[i]>pg->chains.vars[i-1])
+				pg.dump_chain(line)
+//	"sort ok on %d points\n".printf(pg->chains.len)
+	return 0
+}
+int page_maps(char* title=""){
+	"%s\n".printf(title)
+	pg.each_mem(mem_i) pg.page_map()
+	return 0
+}

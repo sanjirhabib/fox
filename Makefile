@@ -15,13 +15,12 @@ OBJS=$(filter-out $(FILTER),$(notdir $(CFILES:.c=.o)))
 OBJ=$(patsubst %,obj/%,$(OBJS))
 OBJC=$(patsubst %,src/%,$(OBJS:.o=.c))
 
-default: bin/fox
 
-.PHONY: install clean php tests www
 
 obj/%.o: src/%.c
 	$(CC) -c -o $@ $< $(CFLAGS) $(LIBS)
 
+default: bin/fox
 
 habib:
 	echo $(CSRC)
@@ -108,3 +107,4 @@ safe: bin/fox
 	cp bin/fox .
 	touch src/*.fox && make
 
+.PHONY: install clean php tests www

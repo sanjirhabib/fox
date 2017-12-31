@@ -1,0 +1,26 @@
+#include <fox.h>
+
+int ip_connect(char* host,int port,char** err=NULL){
+	int ret=AF_INET.socket(SOCK_STREAM, 0)
+	if !ret => return "Socket creation failed".err_msg(err)
+	struct hostent *server=host.gethostbyname()
+	if !server => return "fox_error: no such host".err_msg(err)
+	struct sockaddr_in serv_addr={0}
+	serv_addr.sin_family = AF_INET
+	memcpy(&serv_addr.sin_addr.s_addr, server->h_addr,server->h_length)
+	serv_addr.sin_port = port.htons()
+	if ret.connect((struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0 => return "fox_error connecting".err_msg(err);
+	return ret
+}
+int ip_close(int sock) => sock.close();return 0
+int ip_send(char* msg, int sock) => return sock.write(msg,msg.mem_size())
+char* ip_receive(int sock,char* terminator,int size){
+	ret=''
+	return ret
+}
+char* remote_ip(int con){
+	struct sockaddr_in addr={0}
+	socklen_t len=sizeof(struct sockaddr_in)
+	getpeername(con,(struct sockaddr*)&addr,&len)
+	return addr.sin_addr.inet_ntoa()
+}
