@@ -1,13 +1,13 @@
 CC=gcc
 INSTALL_DIR?=/usr/local
-CFLAGS=-m64 -Iinclude -std=gnu99 -Wno-logical-op-parentheses -Os -Wno-int-conversion -Llib -L/usr/local/lib -L/usr/lib64/ -fPIC -Wno-unused-command-line-argument -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lm -g -I/usr/local/include
+CFLAGS=-m64 -Iinclude -std=gnu99 -Wno-logical-op-parentheses -Os -Wno-int-conversion -Llib -L/usr/local/lib -L/usr/lib64/ -fPIC -Wno-unused-command-line-argument -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lm -g -I/usr/local/include -I/usr/local/include/libxml2
 FOXFILES=$(wildcard src/*.fox)
 FOXS=$(notdir $(FOXFILES))
 CSRC=$(notdir $(wildcard src/*.c))
 CFOX = $(FOXS:.fox=.c)
 CEXTRA = $(filter-out $(CFOX), $(CSRC))
 CFILES = $(CEXTRA) $(CFOX)
-LIBS=-lsqlite3 -lcrypto -lmarkdown -lcurl -lstemmer -lfoxastro
+LIBS=-lsqlite3 -lcrypto -lmarkdown -lcurl -lstemmer -lfoxastro -lxml2
 XLIB=libfoxstatic.a libfox.so libfoxcgi.so libfoxcgistatic.a libfoxcmdstatic.a libfoxmain.a libfoxmaincgi.a
 XLIBS=$(patsubst %,lib/%,$(XLIB))
 FILTER=cgi.o cmd.o main.o maincgi.o run.o
@@ -23,7 +23,7 @@ obj/%.o: src/%.c
 default: bin/fox
 
 habib:
-	echo $(CSRC)
+	echo $(CEXTRA)
 fox: $(FOXFILES)
 	$(CC) -c $(wildcard src/*.c) $(CFLAGS) $(LIBS)
 	mv *.o obj/

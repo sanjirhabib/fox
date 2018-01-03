@@ -350,3 +350,151 @@ int has_chars(char* line){
 	for(;*line;line++){ if(!strchr("\n\r \t",*line)){ return 1; }; };
 	return 0;	
 };
+char* drop_right(char* str,char* w){
+	if(w && is_str(w) && str_end(w,w)){ return sub_str(str,-str_len(w),-2147483648); };	
+	return str;
+};
+char* drop_left(char* str,char* w){
+	if(str && is_str(str) && str_start(str,w)){ return sub_str(str,str_len(w),-2147483648); };	
+	return str;
+};
+char* str_toupper(char* str){
+	if(!str) {return NULL;};
+	char* ret=str;
+	for(;*str;str++) {*str=toupper(*str);};
+	return ret;
+};
+char* str_tolower(char* str){
+	if(!str) {return NULL;};
+	char* ret=str;
+	for(;*str;str++) {*str=tolower(*str);};
+	return ret;
+};
+char* str_title(char* str){
+	if(!str) {return NULL;};
+	map* words=str_split(str,"_",0);
+	for(int i=next(words,-1,NULL,NULL); has_id(words,i); i++){ void* v=map_id(words,i);
+		char* s=v;
+		if(!str_len(s)) {map_del(words,i,1);}
+		else if(is_word(s,"lft rgt id slno")){
+			str_toupper(s);
+		}else {s[0]=toupper(s[0]);}; };
+	return map_join(words," ");
+};
+char hex_char(char* in){
+	char temp[3]={0};
+	if(!in[0]||!in[1]) {return '\0';};
+	temp[0]=in[0];
+	temp[1]=in[1];
+	return (char)strtol(temp,NULL,16);
+};
+char* rand_str(int len){
+	char* ret=NULL;
+	while(str_len(ret)<len){ ret=xcat(ret,int_str(rand()), End); };
+	return sub_str(ret,0,len);
+};
+
+int str_char_count(char* str,char c){
+	int ret=0;
+	if(!str) {return ret;};
+	while(*str) {if(*str++==c) {ret++;};};
+	return ret;
+};
+char* str_join(char* str1,char* joiner,char* str2){
+	if(!str_len(str1)){ return str2; };
+	if(!str_len(str2)){ return str1; };
+	return xstr(str1,joiner,str2, End);
+};
+char* var_bits(void* var){
+	char* ret=new_str(71);
+	unsigned char *ptr = (unsigned char*)&var;
+	for(int idx=64,i=0;idx--;i++){
+		if(i && !(i%8)){ ret[i+i/8-1]='-'; };
+		ret[i+i/8]=ptr[idx/8] & (1u << (idx%8) ) ? '1' : '0'; };
+	return ret;
+};
+char* rtrim_upto(char* in,char upto,int keep){
+	if(!in){ return in; };
+	char* at=strrchr(in,upto);
+	if(!at){ return in; };
+	return sub_str(in,0,at-in + (keep ? 1 : 0));
+};
+map* split_by(char* str, char term, int max){
+//	"spliting by $(term.char_str())".px()
+	if(!*str){ return NULL; };
+	map* ret=new_vec();
+	char* head=str;
+	if(!str_chr(" \t\n\r",term)){ head=skip_over(head," \t\n\r"); };
+	while(*str && (!max || map_len(ret)<max-1)){
+		if(strchr("\"'`",*str)){ str=skip_quote(str); continue; }
+		else if(strchr("([{",*str)){ str=skip_paren(str); continue; }
+		else if(*str==term){
+			vec_add(ret,sub_str(head,0,str-head));
+			head=str+1;
+			if(!str_chr(" \t\n\r",term)){ head=skip_over(head," \t\n\r"); }; };
+		str++; };
+	while(*str){ str++; };
+	if(str>head){ vec_add(ret,sub_str(head,0,str-head)); };
+	return ret;
+};
+char* str_hex(char* in){
+	char* ret=new_str(str_len(in)*2);
+	for(int i=0; i<str_len(in); i++){
+		sprintf(ret+i*2,"%02x",((unsigned char*)in)[i]); };
+	return ret;
+};
+char* str_tr(char* in, map* replace){
+	if(!in){ return NULL; };
+	char* ret=NULL;
+	char* saved=in;
+	int maxlen=0;
+	for(int next1=next(replace,-1,NULL,NULL); has_id(replace,next1); next1++){ char* key=map_key(replace, next1); maxlen=max(maxlen,str_len(key)); };
+	char* buff=new_str(maxlen);
+	while(*in){
+		while(*in && !is_alphanum(*in,NULL)) {in+=utf_len(in);};
+		char* head=in;
+		while(*in && is_alphanum(*in,NULL)) {in+=utf_len(in);};
+		if(!(in-head)){ break; };
+		if(in-head>maxlen){ continue; };
+		memcpy(buff,head,in-head);
+		buff[in-head]='\0';
+		if(!map_val(replace,buff)){ continue; };
+		ret=xcat(ret,sub_str(saved,0,head-saved), End);
+		ret=xcat(ret,map_val(replace,buff), End);
+		saved=in;
+	};
+	if(saved<in){
+		ret=xcat(ret,sub_str(saved,0,in-saved), End);
+	};
+	return ret;	
+};
+char* skip_over(char* in,char* chars){
+	while(*in && strchr(chars,*in)) {in++;};
+	return in;
+};
+char* skip_quote(char* str){
+	if(!str || !*str){ return str; };
+	char end=*str;
+	str++;
+	while(*str && *str!=end){
+		if(*str=='\\'){
+			str++;
+			if(!*str){ break; }; };
+		str++; };
+	if(*str==end){ str++; };
+	return str;
+};
+char* skip_paren(char* str){
+	char open=*str;
+	char close=closing_paren(open);
+	int level=1;
+	str++;
+	while(*str && level){
+		if(str_chr("\"'`",*str)){ str=skip_quote(str); continue; }
+		else if(*str==open){ level++; }
+		else if(*str==close){ level--; }
+		else if(*str=='\\'){ str++; if(!*str){ break; }; };
+		str++; };
+	return str;
+};
+char closing_paren(char c){ switch(c){ case '{': return '}'; case '[': return ']'; case '(': return ')'; default: return '\0'; }; };

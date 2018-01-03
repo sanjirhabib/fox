@@ -409,3 +409,17 @@ map* map_implode(map* mp,char* joiner){
 		ret.vec_merge(v)
 	return ret
 }
+map* file_vec(char* in) => return in.file_read().str_vec()
+map* map_keys(map* mp){
+	ret=[]
+	mp.each ,k => ret[]=k
+	return ret
+}
+map* vec_rdup(map* mp){
+	assert(mp.is_vec())
+	ret=mp.vec_dup()
+	ret.each v,k,i
+		if v.is_vec() => ret[i]=v.vec_rdup()
+	return ret
+}
+map* set_map(void* val,map* mp,int idx) => return set(mp,idx,val)

@@ -44,7 +44,7 @@ char* stack_str(){
 	for(int i=0; i<size; i++){
 		if(strstr(lines[i]," stack_str ") || strstr(lines[i],".dylib ") || strstr(lines[i]," fox_error ") || strstr(lines[i]," start ") || strstr(lines[i]," 0x0 ") || strstr(lines[i]," main ")){ continue; };
 		char* part=sub_str(lines[i],str_len("3|||index.cgi|||||||||||||||||||||||||||0x0000000109c950d8|"),-2147483648);
-		part=sub_str(part,0,char_at(part," "));
+		part=sub_str(part,0,strchr(part,' ')-part);
 		ret=xcat(ret," -- ",part,"()", End); };
 //		lines[i].printf("%s\n")
 	return ret;
@@ -1024,5 +1024,5 @@ map* str_split(char* str,char* by,int limit){
 };
 char* str_has(char* str,char* sub){
 	if(!str||!sub||!is_str(str)){ return NULL; };
-	return str_str(str,sub);
+	return strstr(str,sub);
 };

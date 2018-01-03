@@ -6,3 +6,10 @@ char* outx(char* str){
 	return NULL
 }
 char* flush_out() => char* ret=_globals.out; _globals[:out]=NULL; return ret
+int ret_print(void* ret){
+	if _printed => return ret.is_i() ? ret.is_int() : 0
+	if ret.is_map() => ret.json(1).px(); return 0
+	if ret.is_blob() => ret.print()
+	else if ret.is_str() || ret.is_num() => ret.to_str().px()
+	return ret.is_i() ? ret.is_int() : 0
+}

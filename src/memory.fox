@@ -157,3 +157,25 @@ int page_maps(char* title=""){
 	pg.each_mem(mem_i) pg.page_map()
 	return 0
 }
+char* ptr_id(void* ptr){
+	static char temp[128];
+	mempage* pg=ptr.ptr_page()
+	if !pg => return ptr
+	int block=ptr.ptr_block(pg)
+	type=ptr.ptr_type()
+	if type
+		int len=block.block_len(pg)
+		int head=block.block_head(pg)
+		int pre=block-head
+		sprintf(temp,"%d#%d+%d-%d*%d[%s]",pg->no,block,len,pre,pg->block_size,ptr.ptr_name())
+		return temp
+	sprintf(temp,"%d#%d+%d [%s]",pg->no,block,pg->block_size,ptr.ptr_name())
+	return temp
+}
+void benchmark_gc(){
+	ret=[]
+	for i=0;i<1000000;i++
+		ret[i%200000]=1023.new_str()
+	ret.map_len().dx()
+	mem_usage().dx()
+}

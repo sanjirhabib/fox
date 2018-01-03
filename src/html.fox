@@ -355,3 +355,12 @@ char* show_port(){
 	if _globals.req.protocol===:https && _globals.req.port==="443" => return ''
 	return ":".._globals.req.port
 }
+char* h(char* in){
+	return in.str_replace({
+	"&": "&amp;",
+	"<": "&gt;",
+	">": "&lt;",
+	"\"": "&quot;",
+	"'": "&apos;"
+	})
+}

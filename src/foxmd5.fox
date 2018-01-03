@@ -1,0 +1,4 @@
+#include <fox.h>
+
+char* c_md5(char* in, size_t initial_len, char* out);
+char* md5(char* in) => char ret[33]; return c_md5(in,in.str_len(),ret).str_dup()

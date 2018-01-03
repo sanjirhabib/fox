@@ -44,7 +44,7 @@ char* stack_str(){
 	for i=0; i<size; i++
 		if lines[i].strstr(" stack_str ") || lines[i].strstr(".dylib ") || lines[i].strstr(" fox_error ") || lines[i].strstr(" start ") || lines[i].strstr(" 0x0 ") || lines[i].strstr(" main ") => continue
 		part=lines[i].sub_str("3|||index.cgi|||||||||||||||||||||||||||0x0000000109c950d8|".str_len())
-		part=part.sub_str(0,part.char_at(" "))
+		part=part.sub_str(0,part.strchr(' ')-part)
 		ret.=" -- "..part.."()"
 //		lines[i].printf("%s\n")
 	return ret
@@ -1024,5 +1024,5 @@ map* str_split(char* str,char* by,int limit=0){
 }
 char* str_has(char* str,char* sub){
 	if !str||!sub||!str.is_str() => return NULL
-	return str.str_str(sub)
+	return str.strstr(sub)
 }

@@ -1,5 +1,6 @@
 #include <libstemmer.h>
 #include <fox.h>
+enum {English, Bangla, Arabic};
 
 char* ucs_str(int* in,int len){
 	if(!len){
@@ -19,10 +20,10 @@ char* ucs_str(int* in,int len){
 	return ret;
 };
 int utf_lang(char* in){
-	if(!in || !*in){ return 0; };
-	if(in[0]==-32){ return 1; };
-	if(in[0]==-39||in[0]==-40){ return 2; };
-	return 0;
+	if(!in || !*in){ return English; };
+	if(in[0]==-32){ return Bangla; };
+	if(in[0]==-39||in[0]==-40){ return Arabic; };
+	return English;
 };
 int is_letter(int code){
 	if(code>='a' && code<='z' || code>='A' && code<='Z' || code>='0' && code<='9' || code>0x980 && code<0x9F7 || code>=0x620 && code<=0x669){
@@ -38,8 +39,8 @@ map* words_stem(map* in){
 };
 char* word_stem(char* in){
 	int lang=utf_lang(in);
-	if(lang==1){ return bangla_norm(stem_bangla(in)); };
-	if(lang==2){ return stem_arabic(in); };
+	if(lang==Bangla){ return bangla_norm(stem_bangla(in)); };
+	if(lang==Arabic){ return stem_arabic(in); };
 	return stem_english(in);
 };
 char* utf_word_end(char* in){
@@ -208,12 +209,12 @@ int xTokenize(Fts5Tokenizer* unused1, void *pCtx, int flags, const char *pText, 
 		if(!str_eq(map_val(val,"stem"),map_val(val,"word"))){
 			xToken(pCtx, 0, map_val(val,"word"), str_len(map_val(val,"word")), is_int(map_val(val,"from")), is_int(map_val(val,"from"))+to_int(map_val(val,"len"))); };
 		int lang=utf_lang(map_val(val,"word"));
-		if(lang==1){
+		if(lang==Bangla){
 			map* phonetic=bangla_english(map_val(val,"word"));
 			xToken(pCtx, FTS5_TOKEN_COLOCATED, phonetic, str_len(to_str(phonetic,"",0)), is_int(map_val(val,"from")), is_int(map_val(val,"from"))+to_int(map_val(val,"len"))); }; };
 //			sound=phonetic.soundex()
 //			xToken(pCtx, FTS5_TOKEN_COLOCATED, sound, sound.str_len(), val.from.is_int(), val.from.is_int()+val.len.to_int())
-//		else if !lang
+//		else if lang==English
 //			sound=val.word.soundex()
 //			xToken(pCtx, FTS5_TOKEN_COLOCATED, sound, sound.str_len(), val.from.is_int(), val.from.is_int()+val.len.to_int())
 		
@@ -354,4 +355,19 @@ char* soundex(char *s) {
 			prev = c; }; };
 	while(i < 4){ out[i++] = '0'; };
 	return str_dup(out);
+};
+char* num_lang(char* in,int langid){
+	if(!in || !*in){ return NULL; };
+	char buff[5]={0};
+	int points[]={ 48, 2534, 1632 };
+	char* ret=NULL;
+	int code=0;
+	while((code=utf_unicode(in))){
+		in+=utf_len(in);
+		for(int i=0; i<3; i++){
+			if(i!=langid && code>=points[i] && code<points[i]+10){
+				code-=(points[i]-points[langid]);
+				break; }; };
+		ret=xcat(ret,unicode_utf(code,buff), End); };
+	return ret;
 };

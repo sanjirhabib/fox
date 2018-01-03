@@ -355,3 +355,12 @@ char* show_port(){
 	if(str_eq(map_val(map_val(_globals,"req"),"protocol"),"https") && str_eq(map_val(map_val(_globals,"req"),"port"),"443")){ return NULL; };
 	return xstr(":",map_val(map_val(_globals,"req"),"port"), End);
 };
+char* h(char* in){
+	return str_replace(in,xmap(
+	"&", "&amp;",
+	"<", "&gt;",
+	">", "&lt;",
+	"\"", "&quot;",
+	"'", "&apos;"
+	, End),NULL);
+};

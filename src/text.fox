@@ -1,5 +1,6 @@
 #include <libstemmer.h>
 #include <fox.h>
+enum {English, Bangla, Arabic};
 
 char* ucs_str(int* in,int len=0){
 	if !len
@@ -19,10 +20,10 @@ char* ucs_str(int* in,int len=0){
 	return ret
 }
 int utf_lang(char* in){
-	if !in || !*in => return 0
-	if in[0]==-32 => return 1
-	if in[0]==-39||in[0]==-40 => return 2
-	return 0
+	if !in || !*in => return English
+	if in[0]==-32 => return Bangla
+	if in[0]==-39||in[0]==-40 => return Arabic
+	return English
 }
 int is_letter(int code){
 	if code>='a' && code<='z' || code>='A' && code<='Z' || code>='0' && code<='9' || code>0x980 && code<0x9F7 || code>=0x620 && code<=0x669
@@ -38,8 +39,8 @@ map* words_stem(map* in){
 }
 char* word_stem(char* in){
 	lang=in.utf_lang()
-	if lang==1 => return in.stem_bangla().bangla_norm()
-	if lang==2 => return in.stem_arabic()
+	if lang==Bangla => return in.stem_bangla().bangla_norm()
+	if lang==Arabic => return in.stem_arabic()
 	return in.stem_english()
 }
 char* utf_word_end(char* in){
@@ -208,12 +209,12 @@ int xTokenize(Fts5Tokenizer* unused1, void *pCtx, int flags, const char *pText, 
 		if val.stem!==val.word
 			xToken(pCtx, 0, val.word, val.word.str_len(), val.from.is_int(), val.from.is_int()+val.len.to_int())
 		lang=val.word.utf_lang()
-		if lang==1
+		if lang==Bangla
 			phonetic=val.word.bangla_english()
 			xToken(pCtx, FTS5_TOKEN_COLOCATED, phonetic, phonetic.str_len(), val.from.is_int(), val.from.is_int()+val.len.to_int())
 //			sound=phonetic.soundex()
 //			xToken(pCtx, FTS5_TOKEN_COLOCATED, sound, sound.str_len(), val.from.is_int(), val.from.is_int()+val.len.to_int())
-//		else if !lang
+//		else if lang==English
 //			sound=val.word.soundex()
 //			xToken(pCtx, FTS5_TOKEN_COLOCATED, sound, sound.str_len(), val.from.is_int(), val.from.is_int()+val.len.to_int())
 		
@@ -354,4 +355,19 @@ char* soundex(char *s) {
 			prev = c;
 	while i < 4 => out[i++] = '0'
 	return out.str_dup()
+}
+char* num_lang(char* in,int langid){
+	if !in || !*in => return NULL
+	char buff[5]={0}
+	int points[]={ 48, 2534, 1632 }
+	ret=''
+	code=0
+	while (code=in.utf_unicode())
+		in+=in.utf_len()
+		for i=0; i<3; i++
+			if i!=langid && code>=points[i] && code<points[i]+10
+				code-=(points[i]-points[langid])
+				break
+		ret.=code.unicode_utf(buff)
+	return ret
 }

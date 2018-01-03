@@ -79,7 +79,7 @@ map* page_data(map* data){
 	data.meta["og:title"]=data.title
 	data.meta["og:image"]||=data.logo.full_url()
 	data.meta.each val, key
-		data.header.="<meta name=\"$key\" content=\"$val\">\n"
+		data.header.="<meta property=\"$key\" content=\"$val\">\n"
 	if _globals.req.get._print => return data
 	data.footer=---
 	Run Time: $(run_time())ms=$(gc_time())GC+$(run_time()-total_time()-gc_time())Code+$(total_time())DB

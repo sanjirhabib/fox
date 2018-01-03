@@ -157,3 +157,25 @@ int page_maps(char* title){
 	each_mem(pg,mem_i) {page_map(pg);};
 	return 0;
 };
+char* ptr_id(void* ptr){
+	static char temp[128];
+	mempage* pg=ptr_page(ptr);
+	if(!pg){ return ptr; };
+	int block=ptr_block(ptr,pg);
+	int type=ptr_type(ptr);
+	if(type){
+		int len=block_len(block,pg);
+		int head=block_head(block,pg);
+		int pre=block-head;
+		sprintf(temp,"%d#%d+%d-%d*%d[%s]",pg->no,block,len,pre,pg->block_size,ptr_name(ptr));
+		return temp; };
+	sprintf(temp,"%d#%d+%d [%s]",pg->no,block,pg->block_size,ptr_name(ptr));
+	return temp;
+};
+void benchmark_gc(){
+	map* ret=new_vec();
+	for(int i=0;i<1000000;i++){
+		set(ret,i%200000,new_str(1023)); };
+	dx(int_var(map_len(ret)),NULL,0);
+	dx(mem_usage(),NULL,0);
+};

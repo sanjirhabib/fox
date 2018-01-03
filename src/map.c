@@ -409,3 +409,17 @@ map* map_implode(map* mp,char* joiner){
 		vec_merge(ret,v); };
 	return ret;
 };
+map* file_vec(char* in){ return str_vec(file_read(in,1,1)); };
+map* map_keys(map* mp){
+	map* ret=new_vec();
+	for(int next1=next(mp,-1,NULL,NULL); has_id(mp,next1); next1++){ char* k=map_key(mp, next1); vec_add(ret,k); };
+	return ret;
+};
+map* vec_rdup(map* mp){
+	assert(is_vec(mp));
+	map* ret=vec_dup(mp);
+	for(int i=next(ret,-1,NULL,NULL); has_id(ret,i); i++){ void* v=map_id(ret,i); char* k=map_key(ret, i);
+		if(is_vec(v)){ set(ret,i,vec_rdup(v)); }; };
+	return ret;
+};
+map* set_map(void* val,map* mp,int idx){ return set(mp,idx,val); };

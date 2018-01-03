@@ -93,3 +93,9 @@ size_t file_time(char* file){
 	
 	return statbuf.st_mtime
 }
+char* file_path(char* file){
+	int i=0
+	for i=file.str_len(); i>0; i-- => if file[i-1]=='/' => break
+	if !i => return "./"
+	return file.sub_str(0,i)
+}

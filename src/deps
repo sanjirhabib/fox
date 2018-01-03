@@ -1,0 +1,6 @@
+#!/bin/bash
+if [[ $2 ]]; then
+	fox file_callmap $1.fox | grep $2.fox
+else
+	fox file_callmap $1.fox | cut -d' ' -f3 | sort | uniq
+fi
