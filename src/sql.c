@@ -1,6 +1,5 @@
 #line 2 "sql.fox"
 #include <fox.h>
-#include <regex.h>
 
 int _queries=0;
 
@@ -807,7 +806,8 @@ map* pre_tables(){
 				"id4=code",NULL,
 				"tbl=code",NULL,
 				"body=text",NULL, End), End)
-	, End);
+	
+		, End);
 };
 map* db_table(char* db,char* tbl){
 	return cols_table(db_cols(db,tbl),tbl,db);
@@ -1331,19 +1331,6 @@ int sql_count(char* sql,char* db,map* params){
 		map* map_1=sql_cols(sql,db,NULL); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* val=map_id(map_1,next1); char* key=map_key(map_1, next1);
 			if(!map_val(val,"aggregate")){ expr=xstr("distinct ", key, End); break; }; }; };
 	return to_int(sql_value((xstr(xstr("select count(", expr, ") ", End),re_from(map_val(sqls,"from")),re_where(map_val(sqls,"where")), End)),db,params));
-};
-map* regexp(char* in, char* pattern){
-	int status=0;
-	regex_t	re={0};
-	regmatch_t match[10]={0};
-	if(regcomp(&re, pattern, REG_EXTENDED)){ return NULL; };
-	if(regexec(&re, in, 10, match, 0)){ regfree(&re); return NULL; };
-	map* ret=new_vec();
-	for(int i=0; i<10; i++){
-		if(match[i].rm_so<0){ break; };
-		vec_add(ret,sub_str(in,match[i].rm_so, match[i].rm_eo-match[i].rm_so)); };
-	regfree(&re);
-	return ret;
 };
 char* read_textblock(map* lines, int* lineno,char* terminator,char** outline){
 	terminator=str_trim(terminator," \t\n\r");

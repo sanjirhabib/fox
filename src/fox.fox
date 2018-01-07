@@ -5,6 +5,7 @@ NOTE:
 BUGS:
 	Dec-2017
 	"'$k'=" doesn't compile correctly.
+	a[hello][world] bug
 	Dec-2017
 	---; <-- requires ending semicolon.
 TODO:

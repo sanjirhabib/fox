@@ -49,7 +49,7 @@ char* stack_str(){
 //		lines[i].printf("%s\n")
 	return ret
 }
-void fox_stack_dump() => fox_error("Error:\n",1)
+void fox_stack_dump() => fox_error("Error:",1)
 size_t blob_size(char* in){
 	if !in => return 0
 	char* head=in.ptr_head()

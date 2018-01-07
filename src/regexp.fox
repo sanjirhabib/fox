@@ -1,0 +1,15 @@
+#include <fox.h>
+#include <regex.h>
+map* regexp(char* in, char* pattern){
+	status=0
+	regex_t	re={0}
+	regmatch_t match[10]={0}
+	if regcomp(&re, pattern, REG_EXTENDED) => return NULL
+	if regexec(&re, in, 10, match, 0) => regfree(&re); return NULL
+	ret=[]
+	for i=0; i<10; i++
+		if match[i].rm_so<0 => break
+		ret[]=in.sub_str(match[i].rm_so, match[i].rm_eo-match[i].rm_so)
+	regfree(&re);
+	return ret
+}

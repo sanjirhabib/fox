@@ -1,6 +1,5 @@
 #line 2 "sql.fox"
 #include <fox.h>
-#include <regex.h>
 
 int _queries=0;
 
@@ -1331,19 +1330,6 @@ int sql_count(char* sql,char* db,map* params=NULL){
 		sql.sql_cols(db).each val,key
 			if !val.aggregate => expr="distinct $key"; break
 	return ("select count($expr) "..sqls.from.re_from()..sqls.where.re_where()).sql_value(db,params).to_int()
-}
-map* regexp(char* in, char* pattern){
-	status=0
-	regex_t	re={0}
-	regmatch_t match[10]={0}
-	if regcomp(&re, pattern, REG_EXTENDED) => return NULL
-	if regexec(&re, in, 10, match, 0) => regfree(&re); return NULL
-	ret=[]
-	for i=0; i<10; i++
-		if match[i].rm_so<0 => break
-		ret[]=in.sub_str(match[i].rm_so, match[i].rm_eo-match[i].rm_so)
-	regfree(&re);
-	return ret
 }
 char* read_textblock(map* lines, int* lineno,char* terminator,char** outline){
 	terminator=terminator.str_trim()

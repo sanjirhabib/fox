@@ -6,7 +6,7 @@ size_t fox_curl_cat(void* ptr, size_t size, size_t num, void* old){
 	*old1=cat(*old1,ptr,size*num);
 	return size*num;
 };
-char* fox_curl(char* url){
+char* url_fetch(char* url){
 	char* ret=new_blob(0);
 	CURL* curl_handle = curl_easy_init();
 	curl_easy_setopt(curl_handle,CURLOPT_URL, url);

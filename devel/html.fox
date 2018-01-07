@@ -374,7 +374,7 @@ char* ctrl_html(map* ctrl){
 			_globals.js[]="$$(\"#$id\").tabby()"
 			codeincluded=1
 		return ---
-		<textarea id=$id class='source' wrap='on' name='$(ctrl.name)'>$(ctrl.value)</textarea>
+		<textarea id=$id class='source' wrap='soft' name='$(ctrl.name)'>$(ctrl.value)</textarea>
 		---
 	if type===:password
 		return ---
@@ -627,4 +627,22 @@ char* html_text(char* in){
 		ret[len++]="\n\r".strchr(*in) ? ' ' : *in
 		in++
 	return ret
+}
+char* url_filename(char* url){
+	question=url.rchar_at("?")
+	if question>=0 => url=url.sub_str(0,question)
+	slash=url.rchar_at("/")
+	if slash<0 => return url
+	return url.sub_str(slash+1)
+}
+char* file_noext(char* filename){
+	ext=filename.file_ext()
+	if !ext => return filename
+	return filename.sub_str(0,-ext.str_len()-1)
+}
+char* file_ext(char* filename,char* def=''){
+	idx=filename.rchar_at("/.")
+	if idx<0 => return def
+	if filename[idx]=='/' => return def
+	return filename.sub_str(idx+1)
 }

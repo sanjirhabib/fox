@@ -330,7 +330,7 @@ map* auto_types(map* toks,char* context,int is_script,map* env,map* fns,map* fun
 		return toks; };					
 	return toks;
 };
-map* file_callmap(char* filename){ return func_depends(file_funcs(filename,1)); };
+map* file_callmap(char* filename){ return func_depends(file_funcs(filename,1),filename); };
 map* func_depend(map* mp,map* ret){
 	for(int i=0; i<map_len(mp); i+=2){
 		if(is_map(map_id(mp,i+1))){ func_depend(map_id(mp,i+1),ret); continue; };
@@ -338,10 +338,28 @@ map* func_depend(map* mp,map* ret){
 		if(name){ add(ret,name,map_val(map_val(funcs(),name),"file")); }; };
 	return ret;
 };
-map* func_depends(map* mp){
+map* file_depends(char* filename,...){
+	map* files=new_map();
+	add(files,filename,file_funcs(filename,1));
+	map* filenames=new_vec();
+	va_list args;
+	va_start(args,filename);
+	while(1){
+		void* val=va_arg(args,void*);
+		if(val==End){ break; };
+		vec_add(filenames,val); };
+	va_end(args);
+	for(int next1=next(filenames,-1,NULL,NULL); has_id(filenames,next1); next1++){ void* name=map_id(filenames,next1);
+		add(files,name,file_funcs(name,1)); };
+	map* funcs=new_map();
+	map* map_1=map_val(files,filename); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ char* name=map_key(map_1, next1);
+		func_depend_recursive(name,filename,funcs,files); };
+	return funcs;
+};
+map* func_depends(map* mp,char* filename){
 	map* ret=new_map();
 	for(int next1=next(mp,-1,NULL,NULL); has_id(mp,next1); next1++){ void* fn=map_id(mp,next1); char* name=map_key(mp, next1);
-		map* map_1=func_depend(map_val(fn,"body"),new_map()); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* val=map_id(map_1,next1); char* key=map_key(map_1, next1); px(xstr(name, " ", key, " ", val, End),1); }; };
+		map* map_1=func_depend(map_val(fn,"body"),new_map()); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* val=map_id(map_1,next1); char* key=map_key(map_1, next1); px(xstr(filename, " ", name, " ", key, " ", val, End),1); }; };
 	return ret;
 };
 int utests(char* test,char* file){
@@ -711,3 +729,21 @@ void* call_func(map* params,char* name,map* env){
 	return ret;
 };
 map* ping_map(map* in){ return in; };
+map* func_depend_recursive(char* func, char* file, map* funcs, map* files){
+	if(map_val(funcs,func)){ return funcs; };
+	add(funcs,func,file);
+	if(!file){
+		px(xstr("-- ", func, " -- --", End),1);
+		return funcs; };
+	if(!map_val(files,file)){ add(files,file,file_funcs(file,1)); };
+	void* mp=map_val(files,file);
+	mp=func_depend(map_val(map_val(mp,func),"body"),new_map());
+	for(int next1=next(mp,-1,NULL,NULL); has_id(mp,next1); next1++){ void* ffile=map_id(mp,next1); char*  fname=map_key(mp, next1);
+		if(map_val(funcs,fname)){ continue; };
+		if(!ffile){
+			for(int next1=next(files,-1,NULL,NULL); has_id(files,next1); next1++){ void* fncs=map_id(files,next1); char*  fs=map_key(files, next1);
+				if(map_val(fncs,fname)){ ffile=fs; break; }; }; };
+		px(xstr(file, " ", func, " ", fname, " ", ffile, End),1);
+		func_depend_recursive(fname,ffile, funcs, files); };
+	return funcs;
+};

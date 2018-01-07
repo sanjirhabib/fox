@@ -1,0 +1,74 @@
+#include <MagickWand/MagickWand.h>
+#include "draw.h"
+run(){
+	args[1].file_read(0).img_resize(args[3].to_int(),args[4].to_int(),args[5].to_int()).write_file(args[2])
+	return 0
+}
+char* img_resize(char* img, double enlarge=0, int width=0,int height=0){
+	MagickWand *mw = NULL
+	MagickWandGenesis()
+	mw=NewMagickWand()
+	MagickReadImageBlob(mw,img,img.str_len())
+
+	int iwidth = MagickGetImageWidth(mw)
+	int iheight = MagickGetImageHeight(mw)
+
+	if width && height
+		if enlarge==-1
+			nheight=width*1.0/iwidth*iheight
+			if nheight>height
+				width=height*1.0/iheight*iwidth
+			else
+				height=nheight
+		else if enlarge==1
+			nheight=width*1.0/iwidth*iheight
+			if nheight<height
+				width=height*1.0/iheight*iwidth
+			else
+				height=nheight
+		else if !enlarge
+			nheight=width*1.0/iwidth*iheight
+			if nheight<height
+				nwidth=height*1.0/iheight*iwidth
+				MagickCropImage(mw,width,height,(nwidth-width)/2,0)
+			else
+				MagickCropImage(mw,width,height,0,(nheight-height)/2)
+			MagickSetImageCompressionQuality(mw,95)
+			MagickResetIterator(mw)
+			size_t size=0
+			char* ret1=MagickGetImageBlob(mw,&size)
+			ret=ret1.blob_dup(size)
+			ret1.MagickRelinquishMemory()
+			mw.DestroyMagickWand()
+			MagickWandTerminus();
+			return ret
+			
+	if enlarge==1 && width && !height && iwidth>width => width=iwidth
+	if enlarge==1 && height && !width && iheight>height => height=iheight
+	if enlarge==-1 && width && !height && iwidth<width => width=iwidth
+	if enlarge==-1 && height && !width && iheight<height => height=iheight
+
+	if enlarge!=1 && enlarge>0 && !width && !height
+		width=enlarge*width
+		height=enlarge*height
+
+	if !width => width=height*1.0/iheight*iwidth
+	if !height => height=width*1.0/iwidth*iheight
+
+		
+
+	if width && height
+		MagickResizeImage(mw,width,height,LanczosFilter)
+
+	MagickSetImageCompressionQuality(mw,95)
+	MagickResetIterator(mw)
+	size_t size=0
+	char* ret1=MagickGetImageBlob(mw,&size)
+	ret=ret1.blob_dup(size)
+	ret1.MagickRelinquishMemory()
+	mw.DestroyMagickWand()
+	MagickWandTerminus();
+	return ret
+}
+
+char* magick

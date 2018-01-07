@@ -330,7 +330,7 @@ map* auto_types(map* toks,char* context=:c,int is_script=0,map* env={},map* fns=
 		return toks					
 	return toks
 }
-map* file_callmap(char* filename) => return filename.file_funcs(1).func_depends()
+map* file_callmap(char* filename) => return filename.file_funcs(1).func_depends(filename)
 map* func_depend(map* mp,map* ret={}){
 	for int i=0; i<mp.map_len(); i+=2
 		if mp[i+1].is_map() => mp[i+1].func_depend(ret); continue
@@ -338,10 +338,28 @@ map* func_depend(map* mp,map* ret={}){
 		if name => ret[name]=funcs()[name].file
 	return ret
 }
-map* func_depends(map* mp){
+map* file_depends(char* filename, char* ...){
+	files={}
+	files[filename]=filename.file_funcs(1)
+	filenames=[]
+	va_list args
+	args.va_start(filename)
+	while 1
+		void* val=args.va_arg(void*)
+		if val==End => break
+		filenames[]=val
+	args.va_end()
+	filenames.each name
+		files[name]=name.file_funcs(1)
+	funcs={}
+	files[filename].each ,name
+		name.func_depend_recursive(filename,funcs,files)
+	return funcs
+}
+map* func_depends(map* mp,char* filename){
 	ret={}
 	mp.each fn,name
-		fn.body.func_depend().each val,key => "$name $key $val".px()
+		fn.body.func_depend().each val,key => "$filename $name $key $val".px()
 	return ret
 }
 int utests(char* test=NULL,char* file="utests.map"){
@@ -711,3 +729,21 @@ void* call_func(map* params,char* name,map* env=NULL){
 	return ret
 }
 map* ping_map(map* in) => return in
+map* func_depend_recursive(char* func, char* file, map* funcs, map* files){
+	if funcs[func] => return funcs
+	funcs[func]=file
+	if !file
+		"-- $func -- --".px()
+		return funcs
+	if !files[file] => files[file]=file.file_funcs(1)
+	mp=files[file]
+	mp=mp[func].body.func_depend()
+	mp.each ffile, fname
+		if funcs[fname] => continue
+		if !ffile
+			files.each fncs, fs
+				if fncs[fname] => ffile=fs; break
+		"$file $func $fname $ffile".px()
+		fname.func_depend_recursive(ffile, funcs, files)
+	return funcs
+}
