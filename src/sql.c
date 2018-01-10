@@ -806,8 +806,7 @@ map* pre_tables(){
 				"id4=code",NULL,
 				"tbl=code",NULL,
 				"body=text",NULL, End), End)
-	
-		, End);
+	, End);
 };
 map* db_table(char* db,char* tbl){
 	return cols_table(db_cols(db,tbl),tbl,db);

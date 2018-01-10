@@ -1,0 +1,10 @@
+#include <fox.h>
+
+run(){
+	args[1].px()
+	args[1].str_double().double_str().px()
+	ret=args[1].str_double()
+	sscanf(args[1],"%lf",&ret)
+	printf("%f\n",args[1].str_double())
+	return ret
+}

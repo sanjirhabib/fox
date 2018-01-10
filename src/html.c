@@ -281,6 +281,8 @@ map* http_req(){
 	map* ret=new_map();
 	map* env=env_vars();
 	sess_init();
+	add(_globals,"css",new_map());
+	add(_globals,"js",new_map());
 	if(!map_val(env,"REQUEST_METHOD")){
 		void* path=map_id(map_val(_globals,"args"),1);
 		char* home=xstr("https://sanjir.com",sub_str(cwd(),char_at((cwd()+1),"/")+1,-2147483648),"/", End);

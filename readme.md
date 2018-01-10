@@ -262,7 +262,7 @@ Add the following to your .htaccess file in your web document folder
 RewriteEngine On
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule ^(.+)$ index [L,QSA]
+RewriteRule ^(.+)$ index.cgi [L,QSA]
 <FilesMatch "\.(db|txt|sql|fox)$">
 Order allow,deny
 Deny from all

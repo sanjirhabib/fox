@@ -29,7 +29,7 @@ int mem_free(){
 	each_mem(pg,mem_i){ ret+=pg->free*pg->block_size; };
 	return ret;
 };
-void fox_signal_handler(int sig){ fox_stack_dump(); };
+static void fox_signal_handler(int sig){ fox_stack_dump(); };
 void stack_dump_direct(){
 	void *array[400];
 	size_t size=backtrace(array,400);
@@ -139,7 +139,7 @@ char* cat(char* str1,char* str2,size_t len){
 	assert(!str1[str_len(str1)]);
 	return str1;
 };
-char* vec_json(map* mp,int indent){
+static char* vec_json(map* mp,int indent){
 	if(!mp){ return "[]"; };
 	if(!is_vec(mp)){ return json(mp,indent); };
 	char* ret=NULL;
@@ -237,8 +237,6 @@ char* int_str(long long value){
 	return str_dup(string);
 };
 int str_eq(char* str,char* str1){
-//	if str && !str.is_str() => return 0
-//	if str1 && !str1.is_str() => return 0
 	int len1=str_len(str);
 	int len2=str_len(str1);
 	if(!len1 && !len2){ return 1; };
@@ -448,7 +446,7 @@ mempage* ptr_page(void* ptr){
 			lo=mid; }; };
 	return NULL;
 };
-void* block_ptr(int block,mempage* pg){ return pg->page+pg->block_size*block; };
+static void* block_ptr(int block,mempage* pg){ return pg->page+pg->block_size*block; };
 int ptr_block(void* ptr,mempage* pg){ return ((char*)ptr-pg->page)/pg->block_size; };
 int ptr_type(void* ptr){
 	if(!ptr){ return Null; };
@@ -456,23 +454,22 @@ int ptr_type(void* ptr){
 	if(is_f(ptr)){ return Double; };
 	mempage* pg=ptr_page(ptr);
 	if(!pg){ return String; };
-//	if pg->type => return pg->type
 	return pg->types[ptr_block(ptr,pg)] & 31;
 };
-int cell2_mark(Mapcell* pairs,int size){
+static int cell2_mark(Mapcell* pairs,int size){
 	for(int i=0;i<size;i++){
 		if(!is_num(pairs[i].id)){ gc_mark(pairs[i].id); };
 		gc_mark(pairs[i].val);
 	};
 	return 0;
 };
-int cell_mark(void** pairs,int size){
+static int cell_mark(void** pairs,int size){
 	for(int i=0;i<size;i++){
 		gc_mark(pairs[i]);
 	};
 	return 0;
 };
-int gc_mark(void* ptr){
+static int gc_mark(void* ptr){
 	if(!ptr){ return 0; };
 	mempage* pg=ptr_page(ptr);
 	if(!pg){ return 0; };
@@ -489,7 +486,7 @@ int gc_mark(void* ptr){
 	else if(type==Index||type==Keys){ assert(0); };
 	return 1;
 };
-int sweep_page(mempage* pg){
+static int sweep_page(mempage* pg){
 	int ret=0;
 	pg->free=0;
 	for(int i=0;i<pg->blocks;i++){
@@ -504,22 +501,22 @@ int sweep_page(mempage* pg){
 			pg->types[i] &= ~(1<<7); }; };
 	return ret*pg->block_size;
 };
-void* data_delete(void* data,int idx,int size,int len){ return data_shift(data,idx+1,-1,size,len); };
-void* data_insert(void* data,int idx,int size,int len){
+static void* data_delete(void* data,int idx,int size,int len){ return data_shift(data,idx+1,-1,size,len); };
+static void* data_insert(void* data,int idx,int size,int len){
 	data_shift(data,idx,1,size,len);
 	memset((char*)data+idx*size,0,size);
 	return data;
 };
-void* data_shift(void* data,int idx,int shift,int size,int len){
+static void* data_shift(void* data,int idx,int shift,int size,int len){
 	if(idx>=len){ return data; };
 	memmove((char*)data+(idx+shift)*size,(char*)data+idx*size,(len-idx)*size);
 	return data;
 };
-int cmp_page(const void* pg1,const void* pg2){
+static int cmp_page(const void* pg1,const void* pg2){
 	if(((mempage*)pg1)->page<((mempage*)pg2)->page){ return -1; };
 	return 1;
 };
-void reindex_pages(){
+static void reindex_pages(){
 	char* lastpage=NULL;
 	qsort(_gcdata.pages,_gcdata.total_pages,sizeof(mempage),cmp_page);
 	each_mem(pg,mem_i){
@@ -528,12 +525,12 @@ void reindex_pages(){
 		lastpage=pg->page;
 	};
 };
-mempage* no_page(int no){
+static mempage* no_page(int no){
 	each_mem(pg,idx){ if(pg->no==no){ return pg; }; };
 	assert(0);
 	return NULL;
 };
-struct mempage* new_page(int block_size,int blocks){
+static struct mempage* new_page(int block_size,int blocks){
 //	printf("\nGC Page: %d * %d = %d\n",block_size,blocks,block_size*blocks)
 	int size=block_size*blocks;
 	char* page=malloc((size+blocks));
@@ -556,7 +553,7 @@ struct mempage* new_page(int block_size,int blocks){
 	_gcdata.max_mem=max(_gcdata.max_mem,_gcdata.curr_mem);
 	return ret;
 };
-int comp_iptr(const void* sp1,const void* sp2){
+static int comp_iptr(const void* sp1,const void* sp2){
 	// -1: move sp1 left, +1: move right
 	int* i1=*(int**)sp1;
 	int* i2=*(int**)sp2;
@@ -566,7 +563,7 @@ int comp_iptr(const void* sp1,const void* sp2){
 	if(i1 < i2){ return -1; };
 	return 0;
 };
-mempage* index_free_space(mempage* pg){
+static mempage* index_free_space(mempage* pg){
 	if(pg->blocks==1){ return pg; };
 	int free_len=0;
 	int maxchain=max(pg->blocks/20,1);
@@ -593,7 +590,7 @@ mempage* index_free_space(mempage* pg){
 	pg->chains.vars=(void**)chains;
 	return pg;
 };
-void* chain_alloc(mempage* pg, int size, int type, char* ptr){
+static void* chain_alloc(mempage* pg, int size, int type, char* ptr){
 	int blocks=size_blocks(size,pg);
 	int chainid=-1;
 	int lo=-1;
@@ -657,7 +654,27 @@ void* chain_alloc(mempage* pg, int size, int type, char* ptr){
 	memset(ptr,0,blocks*pg->block_size);
 	return ptr;
 };
-void* page_alloc(mempage* pg,int size,int type,int* full){
+static int copy_page(mempage* from,mempage* to){
+	for(int i1=0;i1<from->blocks;i1++){
+		char type1=from->types[i1];
+		type1 &= (31);
+		if(!type1){ continue; };
+		int len=1;
+		while(from->types[i1+len] & (1<<6)) {len++;};
+		int size=len*from->block_size;
+		void* ptr=from->page+i1*from->block_size;
+		void* ret=page_alloc(to,size,type1,NULL);
+		assert(ret);
+		memcpy(ret,ptr,size);
+		*(void**)ptr=ret;
+		assert(ptr_type(ret)==type1 && mem_size(ret)>=size);
+		i1+=len-1;
+	};
+	rewrite_ptrs(from);
+	printf("End copy mempage");
+	return 0;
+};
+static void* page_alloc(mempage* pg,int size,int type,int* full){
 	if(pg->blocks==1){
 		if(!pg->free || size>pg->block_size || size<pg->block_size*.4){ return NULL; };
 		pg->types[0]=type;
@@ -682,7 +699,7 @@ void* page_alloc(mempage* pg,int size,int type,int* full){
 	if(full && (block_size==16 || size>=block_size) && (block_size==1024*4||blocks<16) && blocks<0.4*pg->blocks){ (*full)++; };
 	return chain_alloc(pg,size,type,NULL);
 };
-int gc_sweep(){
+static int gc_sweep(){
 	_gcdata.curr_used=0;
 	int ret=0;
 	each_mem(pg,mem_i){
@@ -712,7 +729,7 @@ map* root_ptrs(){
 	ret.type=Vector;
 	return &ret;
 };
-int fox_gc(){
+static int fox_gc(){
 	int pre_usage=mem_used(0,0);
 	// commenting off setjmp() doesn't make any diff even in -O3
 	jmp_buf regs={0};
@@ -738,7 +755,7 @@ int gc_end(){
 	memset(&_gcdata,0,sizeof(_gcdata));
 	return 0;
 };
-mempage* free_page(mempage* pg){
+static mempage* free_page(mempage* pg){
 	int idx=pg->idx;
 	free(pg->page);
 	_gcdata.pages=data_delete(_gcdata.pages,pg->idx,sizeof(mempage),_gcdata.total_pages);
@@ -784,7 +801,7 @@ void* expand_inplace(char* ptr,char type,int size,int extra){
 	pg->types[ptr_block(ret,pg)]=type|(1<<6);
 	return ptr;
 };
-int size_blocks(size_t size,mempage* pg){ return (size + pg->block_size - 1) / pg->block_size; };
+static int size_blocks(size_t size,mempage* pg){ return (size + pg->block_size - 1) / pg->block_size; };
 void* fox_realloc(void* ptr,size_t size,int type){
 	assert(size);
 	assert(size<MAXMEM);
@@ -821,12 +838,12 @@ void* fox_alloc(size_t size,int type){
 	_gcdata.inalloc=0;
 	return ret;
 };
-void* new_alloc(size_t size,int type){
+static void* new_alloc(size_t size,int type){
 	int bsize=block_size(size);
 	if(!bsize){ return page_alloc(new_page(size,1),size,type,NULL); };
 	return page_alloc(new_page(bsize,max(ceil_pow2((mem_used(bsize,type)+size*2))/bsize,64*1024/bsize)),size,type,NULL);
 };
-void* _xalloc(size_t size,int type){
+static void* _xalloc(size_t size,int type){
 	if(!_gcdata.pages){ return new_alloc(size,type); };
 	if(size>256*256*16){ return new_alloc(size,type); };
 	char* ret=NULL;
@@ -840,7 +857,7 @@ void* _xalloc(size_t size,int type){
 	each_mem(pg,mem_i2) {if((ret=page_alloc(pg,size,type,NULL))) {return ret;};};
 	return new_alloc(size,type);
 };
-int block_size(int size){
+static int block_size(int size){
 	if(size <= 256){ return 16; };
 	if(size <= 256*16){ return 256; };
 	if(size <= 256*256){ return 256*16; };
@@ -850,7 +867,7 @@ void start_time(){ _gcdata.time=microtime(); };
 void end_time(){ _total_time+=elapsed(_gcdata.time); };
 int run_time(){ return elapsed(_gcdata.run_time)/1000; };
 int total_time(){ return _total_time/1000; };
-void time_max(){
+static void time_max(){
 	int curr=elapsed(_gcdata.time);
 	_total_time=max(_total_time,curr);
 };
@@ -859,7 +876,7 @@ struct timeval microtime(){
 	gettimeofday(&ret,NULL);
 	return ret;
 };
-int elapsed(struct timeval from){
+static int elapsed(struct timeval from){
 	struct timeval upto=microtime();
 	return (upto.tv_sec-from.tv_sec)*1000000+(upto.tv_usec-from.tv_usec);
 };
@@ -867,7 +884,7 @@ int map_size(map* mp){
 	if(!mp){ return 0; };
 	return ceil_pow2(mp->len);
 };
-int ceil_pow2(int i){
+static int ceil_pow2(int i){
 	if(!i){ return 0; };
 	i--;
 	int ret=2;
@@ -907,7 +924,7 @@ map* map_add(map* mp,char* key,void* v){
 	reindex ? map_reindex(mp) : map_index(mp,mp->len-1);
 	return mp;
 };
-int map_nextno(map* mp){
+static int map_nextno(map* mp){
 	for(int i=mp->len-1; i>=0; i--){
 		if(is_i(mp->pairs[i].id)){ return is_int(mp->pairs[i].id); }; };
 	return 0;
@@ -959,12 +976,12 @@ int exec(char* cmd,char** output){
 	if(output){ *output=ret; };
 	return status;
 };
-size_t clock_cycles(){
+static size_t clock_cycles(){
 	unsigned int lo,hi;
 	asm volatile ("rdtsc" : "=a" (lo), "=d" (hi));
 	return ((size_t)hi << 32) | lo;
 };
-void* ptr_head(void* ptr){
+static void* ptr_head(void* ptr){
 	mempage* pg=ptr_page(ptr);
 	if(!pg){ return NULL; };
 	return block_ptr(block_head(ptr_block(ptr,pg),pg),pg);
@@ -1026,3 +1043,4 @@ char* str_has(char* str,char* sub){
 	if(!str||!sub||!is_str(str)){ return NULL; };
 	return strstr(str,sub);
 };
+char* exec_str(char* in){ char* ret=NULL; exec(in,&ret); return ret; };

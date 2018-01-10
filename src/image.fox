@@ -1,17 +1,26 @@
-#include <MagickWand/MagickWand.h>
-#include "draw.h"
-run(){
-//	args[3].px()
-//	args[3].to_double().double_str().px()
-//	return 0
-	args[1].file_read(0).img_resize(args[3].to_double(),args[4].to_int(),args[5].to_int()).write_file(args[2])
-	return 0
+#include <wand/MagickWand.h>
+#include <fox.h>
+
+char* wand_img(void* mw){
+	MagickSetImageCompressionQuality(mw,95)
+	MagickResetIterator(mw)
+	size_t size=0
+	char* ret1=MagickGetImageBlob(mw,&size)
+	ret=ret1.blob_dup(size)
+	ret1.MagickRelinquishMemory()
+	mw.DestroyMagickWand()
+	MagickWandTerminus();
+	return ret
 }
-char* img_resize(char* img, double enlarge=0, int width=0,int height=0){
-	MagickWand *mw = NULL
+void* img_wand(char* img){
+	MagickWand* mw=NULL
 	MagickWandGenesis()
 	mw=NewMagickWand()
 	MagickReadImageBlob(mw,img,img.str_len())
+	return mw
+}
+char* img_resize(char* img, double enlarge=0, int width=0,int height=0){
+	MagickWand* mw=img.img_wand()
 
 	int iwidth = MagickGetImageWidth(mw)
 	int iheight = MagickGetImageHeight(mw)
@@ -33,25 +42,11 @@ char* img_resize(char* img, double enlarge=0, int width=0,int height=0){
 			nheight=height*1.0/width*iwidth
 			nwidth=iwidth
 			if nheight<iheight
-				:here.px()
-				iheight.dx(:IHEIGHT)
-				iwidth.dx(:IWIDTH)
-				nheight.dx(:NHEIGHT)
-				nwidth.dx(:NWIDTH)
 				MagickCropImage(mw,nwidth,nheight,0,(iheight-nheight)/2)
 			else
 				nheight=iheight
 				nwidth=width*1.0/height*iheight
 				MagickCropImage(mw,nwidth,nheight,(iwidth-nwidth)/2,0)
-			MagickSetImageCompressionQuality(mw,95)
-			MagickResetIterator(mw)
-			size_t size=0
-			char* ret1=MagickGetImageBlob(mw,&size)
-			ret=ret1.blob_dup(size)
-			ret1.MagickRelinquishMemory()
-			mw.DestroyMagickWand()
-			MagickWandTerminus();
-			return ret
 			
 	if enlarge==1 && width && !height && iwidth>width => width=iwidth
 	if enlarge==1 && height && !width && iheight>height => height=iheight
@@ -68,17 +63,9 @@ char* img_resize(char* img, double enlarge=0, int width=0,int height=0){
 		
 
 	if width && height
+		//MagickResizeImage(mw,width,height,LanczosFilter,1)
 		MagickResizeImage(mw,width,height,LanczosFilter)
 
-	MagickSetImageCompressionQuality(mw,95)
-	MagickResetIterator(mw)
-	size_t size=0
-	char* ret1=MagickGetImageBlob(mw,&size)
-	ret=ret1.blob_dup(size)
-	ret1.MagickRelinquishMemory()
-	mw.DestroyMagickWand()
-	MagickWandTerminus();
-	return ret
+	return mw.wand_img()
 }
 
-char* magick

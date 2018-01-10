@@ -281,6 +281,8 @@ map* http_req(){
 	ret={}
 	env=env_vars()
 	sess_init()
+	_globals.css={}
+	_globals.js={}
 	if !env.REQUEST_METHOD
 		path=_globals.args[1]
 		char* home="https://sanjir.com"..cwd().sub_str((cwd()+1).char_at("/")+1).."/"

@@ -18,18 +18,6 @@ str/5
 \"hello \" world"
 hello " world
 
-str_xstr/6
-\"\"hello\"".str_xstr()
-\"hello"
-
-str_xstr/7
-\"\"$$hello\"".str_xstr()
-hello
-
-str_xstr/8
-\"\"$$(hello)\"".str_xstr()
-hello
-
 x_c/9
 \"x()".x_c()
 x();
@@ -2015,78 +2003,6 @@ args_map/238
 		px(xmap("name",name, End),1);
 	};
 ---
-
-mstr/239
-\"hello".str_mstr()
-hello
-
-
-mstr/240
-\"hello %".str_mstr()
-hello %
-
-
-mstr/241
----
-	---
-	"hello %{a}"
-	---.str_mstr()
----
-mstr("hello %s", a, End)
-
-
-mstr/242
----
-	---
-	"hello %{a} %{b +c}"
-	---.str_mstr()
----
-mstr("hello %s %s", a, b +c, End)
-
-
-mstr/243
----
-	---
-	"hello %{a} %d{b +c}"
-	---.str_mstr()
----
-mstr("hello %s %d", a, b +c, End)
-
-
-mstr/244
----
-	---
-	"hello %f{a} %d{b +c}"
-	---.str_mstr()
----
-mstr("hello %f %d", a, b +c, End)
-
-
-mstr/245
----
-	---
-	"hello %f{a} % %d{b +c}"
-	---.str_mstr()
----
-mstr("hello %f % %d", a, b +c, End)
-
-
-mstr/246
----
-	---
-	"hello %f{a} %% %d{b +c}"
-	---.str_mstr()
----
-mstr("hello %f % %d", a, b +c, End)
-
-
-mstr/247
----
-	---
-	"hello %f{a} %%% %d{b +c}"
-	---.str_mstr()
----
-mstr("hello %f %% %d", a, b +c, End)
 
 
 vec_splice/249

@@ -1,5 +1,9 @@
 #include <fox.h>
 
+int is_file(char* filename){
+	struct stat buff={0};
+	return stat(filename,&buff)==0;
+};
 char* file_dir(char* file){
 	int len=str_len(file);
 	int i=0;
@@ -98,4 +102,19 @@ char* file_path(char* file){
 	for(i=str_len(file); i>0; i--){ if(file[i-1]=='/'){ break; }; };
 	if(!i){ return "./"; };
 	return sub_str(file,0,i);
+};
+char* file_nodir(char* filename){
+	int at=rchar_at(filename,"/");
+	return at<0 ? filename : sub_str(filename,at+1,-2147483648);
+};
+char* file_noext(char* filename){
+	char* ext=file_ext(filename,NULL);
+	if(!ext){ return filename; };
+	return sub_str(filename,0,-str_len(ext)-1);
+};
+char* file_ext(char* filename,char* def){
+	int idx=rchar_at(filename,"/.");
+	if(idx<0){ return def; };
+	if(filename[idx]=='/'){ return def; };
+	return sub_str(filename,idx+1,-2147483648);
 };

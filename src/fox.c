@@ -571,8 +571,8 @@ char* fork_exec(char* cmd,map* params){
 		int status=0;
 		pid_t ws=waitpid(pid,&status,WNOHANG);
 		if(ws == -1){ return xstr("Exec fox_error while running ", cmd, End); }
-		else if(WIFEXITED(status)){ return WEXITSTATUS(status) ? mstr("command %s failed",cmd, End) : NULL; }
-		else if(WIFSIGNALED(status)){ mstr("command %s killed",cmd, End); }; };
+		else if(WIFEXITED(status)){ return WEXITSTATUS(status) ? xstr("command ", cmd, " failed", End) : NULL; }
+		else if(WIFSIGNALED(status)){ return xstr("command ", cmd, " killed", End); }; };
 	return NULL;
 };
 int fib(int i){

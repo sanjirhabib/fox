@@ -1,6 +1,7 @@
 CC=gcc
 INSTALL_DIR?=/usr/local
-CFLAGS=-m64 -Iinclude -std=gnu99 -Wno-logical-op-parentheses -Os -Wno-int-conversion -Llib -L/usr/local/lib -L/usr/lib64/ -fPIC -Wno-unused-command-line-argument -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lm -g -I/usr/local/include -I/usr/local/include/libxml2
+IMAGIC=$(shell pkg-config --cflags --libs MagickWand)
+CFLAGS=-m64 -Iinclude -std=gnu99 -Wno-logical-op-parentheses -Os -Wno-int-conversion -Llib -L/usr/local/lib -L/usr/lib64/ -fPIC -Wno-unused-command-line-argument -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lm -g -I/usr/local/include -I/usr/local/include/libxml2 $(IMAGIC) -I/usr/include/libxml2
 FOXFILES=$(wildcard src/*.fox)
 FOXS=$(notdir $(FOXFILES))
 CSRC=$(notdir $(wildcard src/*.c))

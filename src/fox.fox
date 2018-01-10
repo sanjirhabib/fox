@@ -571,8 +571,8 @@ char* fork_exec(char* cmd,map* params){
 		int status=0
 		pid_t ws=pid.waitpid(&status,WNOHANG)
 		if ws == -1 => return "Exec fox_error while running $cmd"
-		else if status.WIFEXITED() => return status.WEXITSTATUS() ? "command %s failed".mstr(cmd) : NULL
-		else if status.WIFSIGNALED() => "command %s killed".mstr(cmd)
+		else if status.WIFEXITED() => return status.WEXITSTATUS() ? "command $cmd failed" : NULL
+		else if status.WIFSIGNALED() => return "command $cmd killed"
 	return NULL
 }
 int fib(int i){

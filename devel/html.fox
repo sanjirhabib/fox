@@ -71,7 +71,7 @@ map* page_data(map* data){
 	_globals.jsfile.each v
 		head.="<script src='$v'></script>\n"
 	data.header=head..data.css
-		..(_globals.css and "<style>\n".._globals.css.map_join("\n").."</style>\n")
+		..(_globals.css.map_len() and "<style>\n".._globals.css.map_join("\n").."</style>\n")
 	data.desc||=data.meta.description
 	data.meta.description||=data.desc
 	data.meta.description||=data.title
@@ -86,7 +86,7 @@ map* page_data(map* data){
 	Heap: $(_gcdata.max_mem.int_kb()). Stack: $(_gcdata.max_roots.int_str()), Total: $(max_mem().int_kb()).
 	GC: $(gc_runs())runs. Queries: $(_queries.int_str()).
 	---
-	data.footer.=(_globals.js and "<script>\n".._globals.js.map_join("\n").."</script>")
+	data.footer.=(_globals.js.map_len() and "<script>\n".._globals.js.map_join("\n").."</script>")
 	tabs=''
 	lddata={"@context": "http://schema.org", "@type": "BreadcrumbList"}
 	i=1
@@ -634,15 +634,4 @@ char* url_filename(char* url){
 	slash=url.rchar_at("/")
 	if slash<0 => return url
 	return url.sub_str(slash+1)
-}
-char* file_noext(char* filename){
-	ext=filename.file_ext()
-	if !ext => return filename
-	return filename.sub_str(0,-ext.str_len()-1)
-}
-char* file_ext(char* filename,char* def=''){
-	idx=filename.rchar_at("/.")
-	if idx<0 => return def
-	if filename[idx]=='/' => return def
-	return filename.sub_str(idx+1)
 }
