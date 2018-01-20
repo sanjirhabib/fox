@@ -1,8 +1,14 @@
+#include <glob.h>
 #include <fox.h>
 
 int is_file(char* filename){
 	struct stat buff={0};
 	return stat(filename,&buff)==0;
+};
+int file_size(char* filename){
+	struct stat buff={0};
+	stat(filename,&buff);
+	return buff.st_size;
 };
 char* file_dir(char* file){
 	int len=str_len(file);
@@ -117,4 +123,18 @@ char* file_ext(char* filename,char* def){
 	if(idx<0){ return def; };
 	if(filename[idx]=='/'){ return def; };
 	return sub_str(filename,idx+1,-2147483648);
+};
+map* dir_glob(char* name){
+	map* ret=new_vec();
+	glob_t results;
+	if(glob(name,0, NULL, &results)){
+	for(int i=0; i<results.gl_pathc; i++){
+		vec_add(ret,str_dup(results.gl_pathv[i])); };
+	globfree(&results);
+	return ret;
+ };
+	for(int i=0; i<results.gl_pathc; i++){
+		vec_add(ret,str_dup(results.gl_pathv[i])); };
+	globfree(&results);
+	return ret;
 };

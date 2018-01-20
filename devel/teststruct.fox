@@ -1,0 +1,9 @@
+#include "teststruct.h"
+enum Mila {
+	Gilo,
+	Milo,
+	Dilo
+};
+run(){
+	return 0
+}

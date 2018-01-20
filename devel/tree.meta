@@ -1,0 +1,7 @@
+db
+	tree
+		cols
+			id - code
+			parent - code
+			mlft - int
+			mrgt - int

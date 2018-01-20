@@ -182,7 +182,7 @@ NIM_EXTERNC N_NOINLINE(void, fibInit000)(void) {
 	nimfr("fib", "fib.nim")
 	nimln(6, "fib.nim");
 	LOC1 = (NI)0;
-	LOC1 = fib_95003_1311139867(((NI) 32));
+	LOC1 = fib_95003_1311139867(((NI) 42));
 	LOC2 = (NimStringDesc*)0;
 	LOC2 = nimIntToStr(LOC1);
 	printf("%s\012", LOC2? (LOC2)->data:"nil");

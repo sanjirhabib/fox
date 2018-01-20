@@ -3,4 +3,4 @@ proc fib(n: int): int =
     return n
   else:
     return fib(n-1) + fib(n-2)
-echo fib(32)
+echo fib(42)

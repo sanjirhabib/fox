@@ -1,6 +1,8 @@
 /* This is a generated file. To change it, edit function foxh() in fox.c */
 #pragma once
+#ifndef _XOPEN_SOURCE
 #define _XOPEN_SOURCE
+#endif
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
@@ -315,6 +317,7 @@ char* db_meta_str(char* db); //dbmeta.fox
 char* data1_str(void* in); //dbmeta.fox
 char* data_str(map* in, int level); //dbmeta.fox
 int is_file(char* filename); //dir.fox
+int file_size(char* filename); //dir.fox
 char* file_dir(char* file); //dir.fox
 char* file_rename(char* file, char* dir, char* delext, char* addext, char* prefix, char* postfix); //dir.fox
 char* sane_dir(char* dir); //dir.fox
@@ -327,6 +330,7 @@ char* file_path(char* file); //dir.fox
 char* file_nodir(char* filename); //dir.fox
 char* file_noext(char* filename); //dir.fox
 char* file_ext(char* filename, char* def); //dir.fox
+map* dir_glob(char* name); //dir.fox
 void cache_blast(char* type); //fox.fox
 void* cache(void* key, char* type, void* out); //fox.fox
 void gotoxy(int x, int y); //fox.fox
@@ -363,7 +367,7 @@ static char* funcs_meta(map* funcs, map* macros, map* structs, char* prefix); //
 static char* gen_htaccess(char* outfile); //generator.fox
 static char* gen_cgi_makefile(char* name, char* outfile); //generator.fox
 static char* gen_fox_cgi(char* name, char* outfile); //generator.fox
-static int cgi_init(char* name); //generator.fox
+int init_cgi(char* name); //generator.fox
 char* c_h(char* infile, char* outfile); //generator.fox
 char* fox_h(char* infile, char* outfile); //generator.fox
 static map* x_map(char* in); //generator.fox
@@ -589,6 +593,55 @@ char* base_url(char* path); //html.fox
 char* home_url(char* path); //html.fox
 char* show_port(); //html.fox
 char* h(char* in); //html.fox
+char* page_html(map* data); //html.fox
+map* page_data(map* data); //html.fox
+void* not_found(char* path); //html.fox
+int show_page(map* data); //html.fox
+int is_post(); //html.fox
+map* post_data_multipart(); //html.fox
+char* name_tab(char* name); //html.fox
+map* get(char* path, map* names); //html.fox
+void show_body(char* body, map* page); //html.fox
+int days_in_feb(int year); //html.fox
+int days_in_month(int month, int year); //html.fox
+char* add_tab(char* path, char* name); //html.fox
+char* tz_dst(char* tz, char* date); //html.fox
+double tz_offset(char* tz, char* date); //html.fox
+char* tz_utc(char* tz, char* date); //html.fox
+char* offset_utc(double off); //html.fox
+char* date_ymd(char* in, int* year, int* month, int* day); //html.fox
+char* date_human(char* in); //html.fox
+char* tz_human(double tz); //html.fox
+map* tz_data(char* name, char* date); //html.fox
+char* fts5_create(char* db); //html.fox
+map* merge_soft(map* strong, map* soft); //html.fox
+char* param(map* change); //html.fox
+void save_caller(); //html.fox
+char* url_back(); //html.fox
+char* form_html(map* mp); //html.fox
+map* param_map(char* in); //html.fox
+map* post_data(); //html.fox
+map* form_posted(map* form); //html.fox
+char* ctrl_html(map* ctrl); //html.fox
+char* name_id(char* name); //html.fox
+map* form_gets(map* form); //html.fox
+int show_form(map* data); //html.fox
+int is_user(char* who); //html.fox
+void authorized(char* who); //html.fox
+char* col_align(map* col); //html.fox
+char* rows_data_html(map* in); //html.fox
+map* rows_data(map* rows, map* cols); //html.fox
+char* row_id(map* row, map* cols); //html.fox
+map* row_ids(map* row, map* cols); //html.fox
+void crud(char* sql, char* db); //html.fox
+map* del_keys(map* mp, map* keys); //html.fox
+char* str_bare(char* in, char* accept); //html.fox
+char* word_end(char* in, int len); //html.fox
+void go_back(char* msg); //html.fox
+int confirm(char* msg); //html.fox
+void retree(char* db); //html.fox
+char* html_text(char* in); //html.fox
+char* url_filename(char* url); //html.fox
 char* wand_img(void* mw); //image.fox
 void* img_wand(char* img); //image.fox
 char* img_resize(char* img, double enlarge, int width, int height); //image.fox

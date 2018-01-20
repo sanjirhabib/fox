@@ -1,7 +1,7 @@
 CC=gcc
 INSTALL_DIR?=/usr/local
 IMAGIC=$(shell pkg-config --cflags --libs MagickWand)
-CFLAGS=-m64 -Iinclude -std=gnu99 -Wno-logical-op-parentheses -Os -Wno-int-conversion -Llib -L/usr/local/lib -L/usr/lib64/ -fPIC -Wno-unused-command-line-argument -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lm -g -I/usr/local/include -I/usr/local/include/libxml2 $(IMAGIC) -I/usr/include/libxml2
+CFLAGS=-m64 -Iinclude -std=gnu99 -Wno-logical-op-parentheses -Os -Wno-int-conversion -Llib -L/usr/local/lib -L/usr/lib64/ -fPIC -Wno-unused-command-line-argument -I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib -lm -g -I/usr/local/include -I/usr/local/include/libxml2 $(IMAGIC) -I/usr/include/libxml2 -Wno-pointer-sign
 FOXFILES=$(wildcard src/*.fox)
 FOXS=$(notdir $(FOXFILES))
 CSRC=$(notdir $(wildcard src/*.c))
@@ -15,8 +15,6 @@ FILTER=cgi.o cmd.o main.o maincgi.o run.o
 OBJS=$(filter-out $(FILTER),$(notdir $(CFILES:.c=.o)))
 OBJ=$(patsubst %,obj/%,$(OBJS))
 OBJC=$(patsubst %,src/%,$(OBJS:.o=.c))
-
-
 
 obj/%.o: src/%.c
 	$(CC) -c -o $@ $< $(CFLAGS) $(LIBS)

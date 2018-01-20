@@ -1,0 +1,99 @@
+#include "tree.h"
+run(){
+	_globals.dbs.tree="tree.db"	
+	:tree.db_sync(2)
+	"delete from tree".sql_exec(:tree)
+	---
+	books
+	fiction books
+	nonfiction books
+	action fiction
+	romance fiction
+	life nonfiction
+	history nonfiction
+	spy action
+	war action
+	love romance
+	chickflik romance
+	business life
+	politics life
+	ww2 history
+	ww1 history
+	---.str_split("\n").each line
+		vals=line.str_split(" ")
+		{{
+			id =vals[0]
+			parent =vals[1]
+		}}.insert_tree(:tree,:tree).row_insert(:tree,:tree)
+	sign=''
+	"select * from tree".sql_rows(:tree).each row
+		sign.=row.map_join("\t").."\n"	
+	sign.px()
+	---
+	ww1 ww2
+	ww1 history
+	history politics
+	life fiction
+	life nonfiction
+	history nonfiction
+	nonfiction ww1
+	---.str_split("\n").each line
+		vals=line.str_split(" ")
+		vals[0].id_update(:tree,:tree,vals[0].update_tree({parent: vals[1]},:tree,:tree))
+	sign2=''
+	"select * from tree".sql_rows(:tree).each row
+		sign2.=row.map_join("\t").."\n"	
+	if sign!==sign2
+		:Error.px()
+		sign2.px()
+	return 0
+}
+map* insert_tree(map* row, char* table, char* db){
+	cols=table.tbl_cols(db)
+	if !cols.mlft => return row
+	pkey=cols.cols_pkeys()[0]
+	parent=row.parent
+	if !parent.str_len()
+		mrgt="select mrgt from $table order by mrgt desc limit 1".sql_value(db).str_int()
+		row.mlft=(mrgt+1).int_str()
+		row.mrgt=(mrgt+2).int_str()
+		return row
+	curr="select mrgt,mlft from $table where $pkey=:id".sql_row(table, {id: parent})
+	"update $table set mrgt=mrgt+2 where mrgt>=$(curr.mrgt)".sql_exec(table)
+	"update $table set mlft=mlft+2 where mlft>=$(curr.mrgt)".sql_exec(table)
+	row.mlft=(curr.mrgt.str_int()).int_str()
+	row.mrgt=(curr.mrgt.str_int()+1).int_str()
+	return row
+}
+map* update_tree(char* id, map* row, char* table, char* db){
+	if !row.map_has_key(:parent) => return row
+	cols=table.tbl_cols(db)
+	if !cols.mlft => return row
+	pkey=cols.cols_pkeys()[0]
+	curr="select mrgt,mlft,parent from $table where $pkey=:id".sql_row(table, {id: id})
+	if row.parent===curr.parent => return row
+	mrgt=curr.mrgt.str_int()
+	mlft=curr.mlft.str_int()
+	if row.parent.str_len()
+		nlimit="select mrgt,mlft from $table where $pkey=:id".sql_row(table, {id: row.parent})
+		if nlimit.mrgt.str_int()<=mrgt && nlimit.mlft.str_int()>=mlft
+			//moving to child, abort
+			row.parent=curr.parent
+			return row
+	diff=mrgt-mlft+1
+	"update $table set mrgt=-mrgt,mlft=-mlft where mrgt<=$(curr.mrgt) and mlft>=$(curr.mlft)".sql_exec(table)
+	"update $table set mrgt=mrgt-$diff where mrgt>$(curr.mrgt)".sql_exec(table)
+	"update $table set mlft=mlft-$diff where mlft>$(curr.mrgt)".sql_exec(table)
+	add=0
+	if !row.parent.str_len()
+		add="select mrgt from $table order by mrgt desc limit 1".sql_value(db).str_int()-mlft+1
+	else
+		right="select mrgt from $table where $pkey=:id".sql_value(table, {id: row.parent})
+		add=right.str_int()-mlft
+		"update $table set mrgt=mrgt+$diff where mrgt>=$right".sql_exec(table)
+		"update $table set mlft=mlft+$diff where mlft>=$right".sql_exec(table)
+	if add
+		"update $table set mrgt=-mrgt+$add, mlft=-mlft+$add where mrgt<0 and mlft<0".sql_exec(table)
+	row.map_del_key(:mrgt).map_del_key(:mlft)		
+	return row
+}

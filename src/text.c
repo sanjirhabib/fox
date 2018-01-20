@@ -315,7 +315,6 @@ map* bangla_english(char* in){
 		"৮", "8",
 		"৯", "9",
 		"০", "0"
-
 	, End);
 	char letter[4];
 	char* ret=NULL;

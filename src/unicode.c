@@ -1,6 +1,7 @@
 #include <fox.h>
 
 char* utf_letter(char* in, char* out){
+	if(!in){ return NULL; };
 	int len=utf_len(in);
 	if(!len){ return NULL; };
 	out[len]=0;
@@ -56,6 +57,7 @@ char* unicode_utf(int ucs2,char* ret){
 	return ret;
 };
 int utf_len(char* in){
+	if(!in){ return 0; };
 	unsigned char* input=(unsigned char*) in;
 	if(!input[0]){ return 0; };
 	if(input[0] < 0x80){ return 1; };

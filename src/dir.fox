@@ -1,8 +1,14 @@
+#include <glob.h>
 #include <fox.h>
 
 int is_file(char* filename){
 	struct stat buff={0}
 	return filename.stat(&buff)==0
+}
+int file_size(char* filename){
+	struct stat buff={0}
+	filename.stat(&buff)
+	return buff.st_size
 }
 char* file_dir(char* file){
 	len=file.str_len()
@@ -117,4 +123,13 @@ char* file_ext(char* filename,char* def=''){
 	if idx<0 => return def
 	if filename[idx]=='/' => return def
 	return filename.sub_str(idx+1)
+}
+map* dir_glob(char* name){
+	ret=[]
+	glob_t results
+	if name.glob(0, NULL, &results)
+	for i=0; i<results.gl_pathc; i++
+		ret[]=results.gl_pathv[i].str_dup()
+	globfree(&results)
+	return ret
 }

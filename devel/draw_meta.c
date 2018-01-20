@@ -17,7 +17,8 @@ map* draw_reflect(){
 	, End);
 };
 extern int _iscmd;
-int exec_cmdline(map* args){
+int cmdline(){
+	void* args=map_val(_globals,"args");
 	if(!is_code(map_id(args,1))){ return 0; };
 	_iscmd=1;
 	ret_print(user_invoke(cmdline_params(args,user_funcs()),map_id(args,1)));

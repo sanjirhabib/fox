@@ -60,12 +60,14 @@ char* img_resize(char* img, double enlarge, int width,int height){
 	if(!width){ width=height*1.0/iheight*iwidth; };
 	if(!height){ height=width*1.0/iwidth*iheight; };
 
-		
-
+#ifdef __linux__
 	if(width && height){
-		//MagickResizeImage(mw,width,height,LanczosFilter,1)
-		MagickResizeImage(mw,width,height,LanczosFilter);
-	};
+		MagickResizeImage(mw,width,height,LanczosFilter,1); };
+#else
+	if(width && height){
+		MagickResizeImage(mw,width,height,LanczosFilter); };
+#endif
+
 	return wand_img(mw);
 };
 

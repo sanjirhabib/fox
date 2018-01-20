@@ -36,6 +36,9 @@ static char* fox_meta(char* infile, char* name,char* outfile){
 };
 static char* fox_cs(char* name,map* depends){
 	char* fox=xstr(name,".fox", End);
+//	structs=fox.file_read().c_structs()
+//	structs.px()
+//	sstructs=''
 	map* func=file_funcs(fox,0);
 	map_merge(func,x_funcs(meta_h(name),stoi(xstr(name,"_meta.c", End)),NULL));
 	map_merge(map_val(map_val(map_val(_globals,"cache"),"reflect"),"funcs"),func);
@@ -51,7 +54,8 @@ static char* fox_cs(char* name,map* depends){
 			meta=xcat(meta,meta_h(file), End); };
 		meta=xcat(meta,xstr("", 
 		"extern int _iscmd;\n", 
-		"int exec_cmdline(map* args){\n", 
+		"int cmdline(){\n", 
+		"	args=_globals.args\n", 
 		"	if !args[1].is_code() => return 0\n", 
 		"	_iscmd=1\n", 
 		"	args.cmdline_params(user_funcs()).user_invoke(args[1]).ret_print()\n", 
@@ -457,6 +461,7 @@ static char* meta_h(char* prefix){
 	"char* ", prefix, "version();\n", 
 	"void* ", prefix, "invoke(map* v,char* name);\n", 
 	"map* ", prefix, "reflect();\n", 
+	"int cmdline();\n", 
 	"int exec_cmdline(map* args);\n", 
 	"void* user_invoke(map* params, char* name);\n", 
 	"map* user_funcs();\n", 
@@ -519,8 +524,10 @@ static char* gen_fox_cgi(char* name,char* outfile){
 	"#line 2 \"", name, ".fox\"\n", 
 	"#include \"", name, ".h\"\n", 
 	"\n", 
-	"int run(map* req){\n", 
+	"run(){\n", 
 	"\t_globals.dbs.", name, "=\"", name, ".db\"\n", 
+	"	if cmdline() => return 0\n", 
+	"\n", 
 	"	path=_globals.paths\n", 
 	"\n", 
 	"	if \"/\".get().end\n", 
@@ -534,7 +541,7 @@ static char* gen_fox_cgi(char* name,char* outfile){
 	"", 
 	"", End),outfile,0,1);
 };
-static int cgi_init(char* name){
+int init_cgi(char* name){
 	if(!is_file((xstr(name,".fox", End)))){ gen_fox_cgi(name,xstr(name,".fox", End)); };
 	if(!is_file(".htaccess")){ gen_htaccess(".htaccess"); };
 	if(!is_file("Makefile")){ gen_cgi_makefile(name,"Makefile"); };
@@ -589,7 +596,9 @@ static char* foxh(){
 	return ""
 	"/* This is a generated file. To change it, edit function foxh() in fox.c */\n"
 	"#pragma once\n"
+	"#ifndef _XOPEN_SOURCE\n"
 	"#define _XOPEN_SOURCE\n"
+	"#endif\n"
 	"#ifndef _GNU_SOURCE\n"
 	"#define _GNU_SOURCE\n"
 	"#endif\n"

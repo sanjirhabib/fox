@@ -36,6 +36,9 @@ static char* fox_meta(char* infile, char* name,char* outfile=''){
 }
 static char* fox_cs(char* name,map* depends=NULL){
 	fox=name..".fox"
+//	structs=fox.file_read().c_structs()
+//	structs.px()
+//	sstructs=''
 	func=fox.file_funcs()
 	func.map_merge(name.meta_h().x_funcs(name.."_meta.c"))
 	_globals.cache.reflect.funcs.map_merge(func)
@@ -51,7 +54,8 @@ static char* fox_cs(char* name,map* depends=NULL){
 			meta.=file.meta_h()
 		meta.=---
 		extern int _iscmd;
-		int exec_cmdline(map* args){
+		int cmdline(){
+			args=_globals.args
 			if !args[1].is_code() => return 0
 			_iscmd=1
 			args.cmdline_params(user_funcs()).user_invoke(args[1]).ret_print()
@@ -457,6 +461,7 @@ static char* meta_h(char* prefix=''){
 	char* $(prefix)version();
 	void* $(prefix)invoke(map* v,char* name);
 	map* $(prefix)reflect();
+	int cmdline();
 	int exec_cmdline(map* args);
 	void* user_invoke(map* params, char* name);
 	map* user_funcs();
@@ -519,8 +524,10 @@ static char* gen_fox_cgi(char* name,char* outfile=NULL){
 	#line 2 "$name.fox"
 	#include "$name.h"
 
-	int run(map* req){
+	run(){
 		_globals.dbs.$name="$name.db"
+		if cmdline() => return 0
+
 		path=_globals.paths
 
 		if "/".get().end
@@ -534,7 +541,7 @@ static char* gen_fox_cgi(char* name,char* outfile=NULL){
 
 	---.write_file(outfile)
 }
-static int cgi_init(char* name){
+int init_cgi(char* name){
 	if !(name..".fox").is_file() => name.gen_fox_cgi(name..".fox")
 	if !".htaccess".is_file() => ".htaccess".gen_htaccess()
 	if !:Makefile.is_file() => name.gen_cgi_makefile(:Makefile)
@@ -589,7 +596,9 @@ static char* foxh(){
 	return '---
 	/* This is a generated file. To change it, edit function foxh() in fox.c */
 	#pragma once
+	#ifndef _XOPEN_SOURCE
 	#define _XOPEN_SOURCE
+	#endif
 	#ifndef _GNU_SOURCE
 	#define _GNU_SOURCE
 	#endif
