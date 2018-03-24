@@ -19,6 +19,9 @@ void* img_wand(char* img){
 	MagickReadImageBlob(mw,img,str_len(img));
 	return mw;
 };
+char* file_resize(char* infile, char* outfile, double enlarge, int width, int height){
+	return write_file(img_resize(file_read(infile,0,1),enlarge,width,height),outfile,0,1);
+};
 char* img_resize(char* img, double enlarge, int width,int height){
 	MagickWand* mw=img_wand(img);
 

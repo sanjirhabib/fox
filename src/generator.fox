@@ -1,7 +1,7 @@
 #line 2 "/web/fox/generator.fox"
 #include <fox.h>
 
-#define MAXMEM 10*1024*1024
+#define MAXMEM 40*1024*1024
 #define MIN_CHAIN 1
 int _iscmd=0;
 
@@ -469,6 +469,10 @@ static char* meta_h(char* prefix=''){
 	---;
 }
 static char* funcs_meta(map* funcs, map* macros, map* structs, char* prefix=''){
+	depends={}
+	funcs.each val,name
+		depends[name]=val.body.func_depend()
+		val.map_del_key(:body)
 	prefix&&=prefix.."_"
 	return ---
 	/* This is a generated file. To change it, edit function funcs_meta() in generator.fox */
@@ -487,6 +491,7 @@ static char* funcs_meta(map* funcs, map* macros, map* structs, char* prefix=''){
 			funcs: $(funcs.map_ccode()),
 			macros: $(macros.map_ccode()),
 			structs: $(structs.map_ccode())
+			depends: $(depends.map_ccode())
 		}
 	}
 
@@ -540,6 +545,38 @@ static char* gen_fox_cgi(char* name,char* outfile=NULL){
 	}
 
 	---.write_file(outfile)
+}
+int init_html(char* name){
+	{{
+		title =name.str_title()
+		body =name
+		tabs
+			../ Home
+	}}.page_data().page_html().write_file(name..".html")
+	return 0
+}
+int init_fox(char* name){
+	if !:Makefile.is_file()
+		---
+		all:
+			fox cc $name.fox
+		fox:
+			cd /web/fox && make install && cd -
+		
+		---.write_file(:Makefile)
+	filename="$name.fox"
+	if !filename.is_file()
+		---
+		#line 2 "$name.fox"
+		#include "$name.h"
+
+		run(){
+
+			return 0
+		}
+
+		---.write_file(filename)
+	return 0
 }
 int init_cgi(char* name){
 	if !(name..".fox").is_file() => name.gen_fox_cgi(name..".fox")
@@ -635,7 +672,7 @@ static char* foxh(){
 		Null,Int,Double,String,Blob,Map,Vector,Index,Keys,Cell,Cell2,Tail
 	};
 	typedef struct Mapcell {
-		short nextid;
+		int nextid;
 		int hkey;
 		char* id;
 		void* val;
@@ -755,7 +792,11 @@ map* map_add_pair(map* mp,void* name,void* value,int type){
 			value={type: thealpha,name: name}.map_merge(xjson_map(str+1,Index))
 
 	if value===:null => value=NULL
-	else if value.is_numeric() => value=value.to_int().int_var()
+	else if value.is_numeric()
+		if value.str_chr('.')
+			value=value.str_double().double_var()
+		else
+			value=value.to_int().int_var()
 	else value=value.str_unquote()
 
 	if type==Vector => return mp[]=value
@@ -1978,7 +2019,9 @@ static map* source_funcs(map* infiles=NULL){
 	if !infiles => return _globals.cache.funcs
 	map* mp={}	
 	infiles.each v,,i
-		mp3=v.file_funcs()
+		map* mp3=''
+		if v.str_end(".fox") => mp3=v.file_funcs(1)
+		else mp3=v.file_funcs()
 		mp.map_merge(mp3)
 	_globals.cache.funcs=mp
 	return _globals.cache.funcs
@@ -2618,7 +2661,11 @@ static char* head_type(map* toks, int idx, int upto, map* env,map* fs){
 	head=toks.expr_head(idx)
 	return toks.expr_type(head, upto, env, fs)
 }
-char* help() => return funcs().funcs_cdecl()
+char* help(char* func=''){
+	if func
+		return funcs()[func].func_cdecl()
+	return funcs().funcs_cdecl()
+}
 char* expr_type(map* toks,int idx=0,int upto=0,map* env={:_globals : "map*"},map* fs=NULL){
 	void* v=toks[idx+1]
 	if v.is_map() => return v.expr_type(0,upto,env,fs)
@@ -2830,6 +2877,19 @@ static map* func_depend(map* mp,map* ret={}){
 		if mp[i+1].is_map() => mp[i+1].func_depend(ret); continue
 		name=mp.syn_is_call(i)
 		if name => ret[name]=funcs()[name].file
+	return ret
+}
+map* depends(char* filename){
+	ret={}
+	map* ref=reflect()	
+	ref.depends.each funcs, name
+//		funcs.px()
+		if ref.funcs[name].file===filename
+			continue
+		funcs.each file, name1
+			if file!==filename => continue
+			"$(ref.funcs[name].file) $name $name1 $filename".px()
+			ret[ref.funcs[name].file]=ref.funcs[name].file
 	return ret
 }
 map* file_depends(char* filename, char* ...){

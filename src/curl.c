@@ -15,6 +15,7 @@ char* url_fetch(char* url){
 	curl_easy_setopt(curl_handle,CURLOPT_USERAGENT, "Mozilla/5.0 (compatible; habibur/1; +http://news.habibur.com/)");
 	curl_easy_setopt(curl_handle,CURLOPT_FOLLOWLOCATION,1);
 	curl_easy_setopt(curl_handle,CURLOPT_ENCODING,0);
+	curl_easy_setopt(curl_handle,CURLOPT_ACCEPT_ENCODING,"");
 	int res = curl_easy_perform(curl_handle);
 	curl_easy_cleanup(curl_handle);
 	return res ? NULL : ret;

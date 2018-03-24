@@ -39,7 +39,7 @@ enum Types {
 	Null,Int,Double,String,Blob,Map,Vector,Index,Keys,Cell,Cell2,Tail
 };
 typedef struct Mapcell {
-	short nextid;
+	int nextid;
 	int hkey;
 	char* id;
 	void* val;
@@ -367,6 +367,8 @@ static char* funcs_meta(map* funcs, map* macros, map* structs, char* prefix); //
 static char* gen_htaccess(char* outfile); //generator.fox
 static char* gen_cgi_makefile(char* name, char* outfile); //generator.fox
 static char* gen_fox_cgi(char* name, char* outfile); //generator.fox
+int init_html(char* name); //generator.fox
+int init_fox(char* name); //generator.fox
 int init_cgi(char* name); //generator.fox
 char* c_h(char* infile, char* outfile); //generator.fox
 char* fox_h(char* infile, char* outfile); //generator.fox
@@ -517,12 +519,13 @@ char* x_c(char* in); //generator.fox
 static map* type_convert(map* tok, char* outtype, map* env, map* fs, map* fn); //generator.fox
 static map* param_c(map* params, map* env, map* fs, map* fn); //generator.fox
 static char* head_type(map* toks, int idx, int upto, map* env, map* fs); //generator.fox
-char* help(); //generator.fox
+char* help(char* func); //generator.fox
 char* expr_type(map* toks, int idx, int upto, map* env, map* fs); //generator.fox
 map* x_toks(char* in, int is_script); //generator.fox
 static map* auto_types(map* toks, char* context, int is_script, map* env, map* fns, map* func, int idx); //generator.fox
 map* file_callmap(char* filename); //generator.fox
 static map* func_depend(map* mp, map* ret); //generator.fox
+map* depends(char* filename); //generator.fox
 map* file_depends(char* filename, ...); //generator.fox
 static map* func_depends(map* mp, char* filename); //generator.fox
 int utests(char* test, char* file); //generator.fox
@@ -644,6 +647,7 @@ char* html_text(char* in); //html.fox
 char* url_filename(char* url); //html.fox
 char* wand_img(void* mw); //image.fox
 void* img_wand(char* img); //image.fox
+char* file_resize(char* infile, char* outfile, double enlarge, int width, int height); //image.fox
 char* img_resize(char* img, double enlarge, int width, int height); //image.fox
 int run(map* args); //run.fox
 map* xadd(map* mp, ...); //map.fox

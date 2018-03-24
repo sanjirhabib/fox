@@ -2,7 +2,7 @@
 //#define NDEBUG
 #include <fox.h>
 
-#define MAXMEM 10*1024*1024
+#define MAXMEM 40*1024*1024
 #define MIN_CHAIN 1
 
 struct gcdata _gcdata={0};
@@ -313,7 +313,8 @@ int map_has_key(map* mp,char* id){
 	while idx>0
 		if mp.key_eq(idx-1,id) => return idx
 		idx=mp->pairs[idx-1].nextid
-	
+//		"loop ".px(0)
+//		idx.px()
 	return 0
 }
 map* vec_realloc(map* mp,int extra){
@@ -730,6 +731,7 @@ map* root_ptrs(){
 	return &ret
 }
 static int fox_gc(){
+//	puts("in gc")
 	pre_usage=mem_used()
 	// commenting off setjmp() doesn't make any diff even in -O3
 	jmp_buf regs={0}
@@ -741,6 +743,7 @@ static int fox_gc(){
 	_gcdata.gcruns++
 	percent=pre_usage ? freed*100/pre_usage : 100
 	if percent <=5 => _gcdata.gcwaste++
+//	puts("out gc")
 	return percent
 }
 int gc_runs() => return _gcdata.gcruns

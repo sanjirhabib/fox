@@ -19,6 +19,9 @@ void* img_wand(char* img){
 	MagickReadImageBlob(mw,img,img.str_len())
 	return mw
 }
+char* file_resize(char* infile, char* outfile, double enlarge=0, int width=0, int height=0){
+	return infile.file_read(0).img_resize(enlarge,width,height).write_file(outfile)
+}
 char* img_resize(char* img, double enlarge=0, int width=0,int height=0){
 	MagickWand* mw=img.img_wand()
 

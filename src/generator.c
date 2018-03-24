@@ -1,7 +1,7 @@
 #line 2 "/web/fox/generator.fox"
 #include <fox.h>
 
-#define MAXMEM 10*1024*1024
+#define MAXMEM 40*1024*1024
 #define MIN_CHAIN 1
 int _iscmd=0;
 
@@ -469,6 +469,10 @@ static char* meta_h(char* prefix){
 	"", End);
 };
 static char* funcs_meta(map* funcs, map* macros, map* structs, char* prefix){
+	map* depends=new_map();
+	for(int next1=next(funcs,-1,NULL,NULL); has_id(funcs,next1); next1++){ void* val=map_id(funcs,next1); char* name=map_key(funcs, next1);
+		add(depends,name,func_depend(map_val(val,"body"),new_map()));
+		map_del_key(val,"body"); };
 	if(prefix){prefix=xstr(prefix,"_", End);};
 	return x_c(xstr("", 
 	"/* This is a generated file. To change it, edit function funcs_meta() in generator.fox */\n", 
@@ -487,6 +491,7 @@ static char* funcs_meta(map* funcs, map* macros, map* structs, char* prefix){
 	"\t\tfuncs: ", map_ccode(funcs), ",\n", 
 	"\t\tmacros: ", map_ccode(macros), ",\n", 
 	"\t\tstructs: ", map_ccode(structs), "\n", 
+	"\t\tdepends: ", map_ccode(depends), "\n", 
 	"	}\n", 
 	"}\n", 
 	"", 
@@ -540,6 +545,38 @@ static char* gen_fox_cgi(char* name,char* outfile){
 	"}\n", 
 	"", 
 	"", End),outfile,0,1);
+};
+int init_html(char* name){
+	write_file(page_html(page_data(xmap(
+		"title", str_title(name),
+		"body", name,
+		"tabs",xmap(
+			"../", "Home", End)
+	, End))),xstr(name,".html", End),0,1);
+	return 0;
+};
+int init_fox(char* name){
+	if(!is_file("Makefile")){
+		write_file(xstr("", 
+		"all:\n", 
+		"\tfox cc ", name, ".fox\n", 
+		"fox:\n", 
+		"	cd /web/fox && make install && cd -\n", 
+		"", 
+		"", End),"Makefile",0,1); };
+	char* filename=xstr(name, ".fox", End);
+	if(!is_file(filename)){
+		write_file(xstr("", 
+		"#line 2 \"", name, ".fox\"\n", 
+		"#include \"", name, ".h\"\n", 
+		"\n", 
+		"run(){\n", 
+		"\n", 
+		"	return 0\n", 
+		"}\n", 
+		"", 
+		"", End),filename,0,1); };
+	return 0;
 };
 int init_cgi(char* name){
 	if(!is_file((xstr(name,".fox", End)))){ gen_fox_cgi(name,xstr(name,".fox", End)); };
@@ -635,7 +672,7 @@ static char* foxh(){
 	"	Null,Int,Double,String,Blob,Map,Vector,Index,Keys,Cell,Cell2,Tail\n"
 	"};\n"
 	"typedef struct Mapcell {\n"
-	"	short nextid;\n"
+	"	int nextid;\n"
 	"	int hkey;\n"
 	"	char* id;\n"
 	"	void* val;\n"
@@ -755,8 +792,12 @@ map* map_add_pair(map* mp,void* name,void* value,int type){
 			value=map_merge(xmap("type", thealpha,"name", name, End),xjson_map(str+1,Index)); };
 	};
 	if(str_eq(value,"null")){ value=NULL; }
-	else if(is_numeric(value)){ value=int_var(to_int(value)); }
-	else {value=str_unquote(value);};
+	else if(is_numeric(value)){
+		if(str_chr(value,'.')){
+			value=double_var(str_double(value));
+		}else{
+			value=int_var(to_int(value)); };
+	}else {value=str_unquote(value);};
 
 	if(type==Vector){ return vec_add(mp,value); };
 	return add(mp,name,value);
@@ -1978,7 +2019,9 @@ static map* source_funcs(map* infiles){
 	if(!infiles){ return map_val(map_val(_globals,"cache"),"funcs"); };
 	map* mp=new_map();	
 	for(int i=next(infiles,-1,NULL,NULL); has_id(infiles,i); i++){ void* v=map_id(infiles,i);
-		map* mp3=file_funcs(v,0);
+		map* mp3=NULL;
+		if(str_end(v,".fox")){ mp3=file_funcs(v,1); }
+		else {mp3=file_funcs(v,0);};
 		map_merge(mp,mp3); };
 	add(add_key(_globals,"cache",Map),"funcs",mp);
 	return map_val(map_val(_globals,"cache"),"funcs");
@@ -2618,7 +2661,11 @@ static char* head_type(map* toks, int idx, int upto, map* env,map* fs){
 	int head=expr_head(toks,idx,".");
 	return expr_type(toks,head, upto, env, fs);
 };
-char* help(){ return funcs_cdecl(funcs(),1); };
+char* help(char* func){
+	if(func){
+		return func_cdecl(map_val(funcs(),func),1); };
+	return funcs_cdecl(funcs(),1);
+};
 char* expr_type(map* toks,int idx,int upto,map* env,map* fs){
 	void* v=map_id(toks,idx+1);
 	if(is_map(v)){ return expr_type(v,0,upto,env,fs); };
@@ -2830,6 +2877,19 @@ static map* func_depend(map* mp,map* ret){
 		if(is_map(map_id(mp,i+1))){ func_depend(map_id(mp,i+1),ret); continue; };
 		char* name=syn_is_call(mp,i);
 		if(name){ add(ret,name,map_val(map_val(funcs(),name),"file")); }; };
+	return ret;
+};
+map* depends(char* filename){
+	map* ret=new_map();
+	map* ref=reflect();	
+	map* map_1=map_val(ref,"depends"); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* funcs=map_id(map_1,next1); char*  name=map_key(map_1, next1);
+//		funcs.px()
+		if(str_eq(map_val(map_val(map_val(ref,"funcs"),name),"file"),filename)){
+			continue; };
+		for(int next1=next(funcs,-1,NULL,NULL); has_id(funcs,next1); next1++){ void* file=map_id(funcs,next1); char*  name1=map_key(funcs, next1);
+			if(!str_eq(file,filename)){ continue; };
+			px(xstr(map_val(map_val(map_val(ref,"funcs"),name),"file"), " ", name, " ", name1, " ", filename, End),1);
+			add(ret,map_val(map_val(map_val(ref,"funcs"),name),"file"),map_val(map_val(map_val(ref,"funcs"),name),"file")); }; };
 	return ret;
 };
 map* file_depends(char* filename,...){
