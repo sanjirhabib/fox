@@ -1,17 +1,35 @@
-#line 2 "/web/fox/generator.fox"
-#include <fox.h>
+#line 2 "src/generator.fox"
+#include <core.h>
+#include <generator.h>
+#include <foxtime.h>
+#include <playground.h>
+#include <cmd.h>
+#include <dir.h>
+#include <tsv.h>
+#include <map.h>
+#include <foxparser.h>
+#include <cmdline.h>
+
+extern void* (*invoke)(map* v,char* name);
+extern map* (*reflect)();
+void* (*invoke)(map* v,char* name)=NULL;
+map* (*reflect)()=NULL;
 
 #define MAXMEM 40*1024*1024
 #define MIN_CHAIN 1
 int _iscmd=0;
 
-int cgi(char* infile="index.fox", char* xfiles='', char* profile=:cgi, char* outfile="index.cgi",char* opts=NULL,int keepfiles=1){
+int cgi(char* infile="index.fox", char* xfiles='', char* profile=:release, char* outfile="index.cgi",char* opts=NULL,int keepfiles=1){
 	return infile.cc(xfiles, profile, outfile, opts, keepfiles)
 }
-static char* fox_meta(char* infile, char* name,char* outfile=''){
+static char* fox_meta(char* infile, char* name, map* depends, char* outfile=''){
 	funcs=infile.file_funcs().funcs_nonstatic()
 	macros=infile.c_macros()
 	structs=infile.c_structs()
+	depends.each file
+		funcs=(file..".fox").file_funcs().funcs_nonstatic().map_merge(funcs)
+		macros=(file..".fox").c_macros().map_merge(macros)
+		structs=(file..".fox").c_structs().map_merge(structs)
 
 	prefix=name.."_"
 	return ---
@@ -34,136 +52,76 @@ static char* fox_meta(char* infile, char* name,char* outfile=''){
 
 	---.x_c().write_file(outfile)
 }
-static char* fox_cs(char* name,map* depends=NULL){
-	fox=name..".fox"
-//	structs=fox.file_read().c_structs()
-//	structs.px()
-//	sstructs=''
-	func=fox.file_funcs()
-	func.map_merge(name.meta_h().x_funcs(name.."_meta.c"))
-	_globals.cache.reflect.funcs.map_merge(func)
-	fox.fox_c(name..".c")
-	(---
-	#include <fox.h>
-	#pragma once
-
-	---..func.funcs_cdecl(0)).write_file(name..".h")
-	meta=''
-	if depends
-		depends.each file
-			meta.=file.meta_h()
-		meta.=---
-		extern int _iscmd;
-		int cmdline(){
-			args=_globals.args
-			if !args[1].is_code() => return 0
-			_iscmd=1
-			args.cmdline_params(user_funcs()).user_invoke(args[1]).ret_print()
-			return 1
-		}
-		void* user_invoke(map* params, char* name){
-			void* ret=''
-			if (ret=params.$(name)_invoke(name))!=End => return ret
-
-		---;
-		depends.each file
-			meta.=---
-				if (ret=params.$(file)_invoke(name))!=End => return ret
-
-			---;
-		meta.=---
-			return params.invoke(name)
-		}
-		map* user_funcs(){
-			//if _globals.cache.reflect => return _globals.cache.reflect
-			ret=funcs()
-			ret.map_merge($(name)_reflect().funcs)
-
-		---;
-		depends.each file
-			meta.=---
-				ret.map_merge($(file)_reflect().funcs)
-
-			---;
-		meta.=---
-			//_globals.cache.reflect=ret
-			return ret
-		}
-
-		---;
-		meta=meta.x_c()
-	(fox.fox_meta(name)..meta).write_file(name.."_meta.c")
-	return name
+map* file_deps(char* filename, map* deps={}){
+	map* pragmas=_globals.reflect.pragmas
+	filename.fox_includes().each f
+		deps=deps.map_merge(pragmas[f])
+	val=filename.fox_pragma()
+	if val => deps[val]=val
+	return deps //.map_vec().vec_reverse()
 }
-int cc(char* infile, char* xfiles='', char* profile="debug", char* outfile=NULL, char* opts=NULL, int keepfiles=0){
+int vec_has(map* in, char* key){
+	in.each val
+		if val===key => return 1
+	return 0
+}
+int cc(char* infile, char* xfiles='', char* profile="release", char* outfile=NULL, char* opts=NULL, int keepfiles=0){
+	libs={}
 	names=[]
 	xfiles.str_split(",").each file
 		names[]=file.file_rename(,".fox").fox_cs()
-	name=infile.file_rename(,".fox").fox_cs(names)
+		libs=file.file_deps(libs)
+	name=infile.file_rename(,".fox")
+	hasmeta=infile.fox_includes().vec_has(name.."_meta")
+	name.fox_cs(names, hasmeta)
+	libs=infile.file_deps(libs)
+	xlibs=libs.map_join(" ")
 	if !outfile => outfile=name
-	magic=''
-	"pkg-config --cflags --libs MagickWand".exec(&magic)
-	magic=magic.str_trim()
-	cflags="-m64 -std=gnu99 -Wno-unused-command-line-argument -g $magic"
-	xlibs="-lmarkdown -lcurl -lsqlite3 -lstemmer -lfoxastro -lxml2"
-	// -fdata-sections -ffunction-sections -Wl,-dead_strip -Wl,-emain
+	// -lfoxstatic
+	cflags="-m64 -std=gnu99 -Werror=implicit-function-declaration -L/usr/local/lib -lm -I/usr/local/include"
 	switches={
-		debug: "-g -O0 -lfox $cflags $xlibs -lfoxmain"
-		speed: "-O3 -lfox $cflags $xlibs -lfoxmain"
-		size: "-Os -lfox $cflags -lfoxmain"
-		static: "-Os -lfoxstatic -lfoxcmdstatic $cflags -fdata-sections -ffunction-sections -Wl,-dead_strip -lfoxmain"
-		cgi: "-Os -lfoxstatic -lfoxcgistatic $cflags $xlibs -lfoxmaincgi"
-		scgi: "-Os -lfoxstatic -lfoxcgistatic $cflags $xlibs -lfoxmaincgi -fdata-sections -ffunction-sections -Wl,-dead_strip "
+		debug: "-g -lfoxcmdstatic"
+		release: "-O2 -lfoxcmdstatic"
+		cgi: "-O2 -lfcgi"
+		cgidebug: "-g -lfcgi"
 	}
-	profile = switches[profile] or switches[:debug]
+	profile = switches[profile] or switches.debug
 	extras=''
-	if names.map_len() => extras=names.map_join(".c ")..".c "..names.map_join("_meta.c ").."_meta.c"
-	ret="gcc $name.c $(name)_meta.c $extras -o $outfile -L/usr/local/lib $profile $opts -std=gnu99 -Wno-logical-op-parentheses -lm 2>&1"
+	if names.map_len() => extras=names.map_join(".c ")..".c"
+	if hasmeta => extras.=" $(name)_meta.c"
+	ret="gcc $name.c $extras -o $outfile $opts $cflags $xlibs $profile"
 		.px()
 		.exec()
-//	if !keepfiles
-//		(infile..".c").remove()	
-//		(infile..".h").remove()	
 	return ret
 }
-static char* write_configm4(char* name=:fox, char* outfile=NULL){
-	NAME=name.str_dup().str_upper()
-	return ---
-	PHP_ARG_WITH($name, for $name support,
-	Make sure that the comment is aligned:
-	[  --with-$name             Include $name support])
-	if test "$$PHP_$NAME" != "no"; then
+char* write_user_meta(char* name, map* depends=NULL){
+	_globals.reflect.funcs.map_merge(name.meta_h().x_funcs(name.."_meta.c"))
+	name.meta_h().write_file(name.."_meta.h")
+	meta=''
+	meta.=---
+	extern int _iscmd;
+	int cmdline(){
+		args=_globals.args
+		if !args[1].is_code() => return 0
+		_iscmd=1
+		reflect=$(name)_reflect
+		invoke=$(name)_invoke
+		args.cmdline_params($(name)_reflect().funcs).$(name)_invoke(args[1]).ret_print()
+		return 1
+	}
 
-	$(NAME)_DIR="/usr/local"
-
-	if test -z "$("$"..NAME)_DIR"; then
-	  AC_MSG_RESULT([not found])
-	  AC_MSG_ERROR([Please reinstall the $name distribution])
-	fi
-
-	# --with-$name -> add include path
-	PHP_ADD_INCLUDE($("$"..NAME)_DIR/include)
-
-	# --with-$name -> check for lib and symbol presence
-	LIBNAME=fox # you may want to change this
-	LIBSYMBOL=init_gc # you most likely want to change this 
-
-	PHP_CHECK_LIBRARY($$LIBNAME,$$LIBSYMBOL,
-	[
-	  PHP_ADD_LIBRARY_WITH_PATH($$LIBNAME, $("$"..NAME)_DIR/lib, $(NAME)_SHARED_LIBADD)
-	  AC_DEFINE(HAVE_$(NAME)LIB,1,[ ])
-	],[
-	  AC_MSG_ERROR([wrong fox lib version or lib not found])
-	],[
-	  -L$("$"..NAME)_DIR/$$PHP_LIBDIR -lm
-	])
-
-	PHP_SUBST($(NAME)_SHARED_LIBADD)
-
-	  PHP_NEW_EXTENSION($name, $name.c $(name)php.c, $$ext_shared,, -DZEND_ENABLE_STATIC_TSRMLS_CACHE=1)
-	fi
-
-	---.write_file(outfile)
+	---;
+	meta=meta.x_c()
+	((name..".fox").fox_meta(name,depends)..meta).write_file(name.."_meta.c")
+}
+static char* fox_cs(char* name,map* depends=NULL,int addmeta=0){
+	fox=name..".fox"
+	func=fox.file_funcs()
+	_globals.reflect.funcs.map_merge(func)
+	if addmeta => name.write_user_meta(depends)
+	fox.fox_c().exclude_defines().write_file(name..".c")
+	fox.fox_h(name..".h")
+	return name
 }
 void write_source(char* infile, char* ...){
 	files=[infile]
@@ -174,19 +132,127 @@ void write_source(char* infile, char* ...){
 		if name==End => break
 		files[]=name
 	args.va_end()
-//	("Compiling "..files.map_join(", ")).px()
-//	files=["src/astrostr.fox", "src/cgi.fox", "src/cmd.fox", "src/core.fox", "src/fox.fox", "src/generator.fox", "src/main.fox", "src/maincgi.fox", "src/run.fox", "src/sql.fox", "src/text.fox", "astro/astro.h", "src/eval.fox", "src/dbmeta.fox"]
 	files.source_funcs()
-	"fox.h".file_rename(:include).write_foxh()
+	includes=''
 	files.each infile
+		includes.="#include <"..infile.file_noext().file_nodir()..".h>\n"
 		if infile.str_end(".h") => continue
-		infile.fox_c(infile.file_rename(:src,".fox")..".c")
-		//infile.fox_h(infile.file_rename(:include,".fox")..".h")
-	("#include <fox.h>\n\n"..source_funcs().funcs_nonstatic().funcs_meta(source_macros(), source_structs())).write_file("meta.c".file_rename(:src))
+		infile.fox_c().exclude_defines().write_file(infile.file_rename(:src,".fox")..".c")
+		infile.fox_h(infile.file_rename(:include,".fox")..".h")
+	data={}
+	data.funcs=source_funcs().funcs_nonstatic()
+	data.macros=files.files_section("#define").c_macros()
+	data.structs=files.files_section("typedef struct union class enum").c_structs()
+	data.pragmas=files.source_pragmas()
+	data.funcs.each val,name
+		data.depends[name]=val.body.func_depend()
+		val.map_del_key(:body)
+	data.version.build=increase_version()
+	data.version.date=time_str(0)
+	("#include <meta.h>\n"..includes..data.funcs_meta("fox")).write_file("meta.c".file_rename(:src))
+	---
+	#pragma once
+	#include <core.h>
+	void* fox_invoke(map* v,char* name);
+	map* fox_reflect();
+
+	---.write_file("include/fox_meta.h");
 	mem_usage().px()
 }
-static char* write_foxh(char* outfile="fox.h"){
-	return (foxh()..source_funcs().funcs_cdecl(0)).write_file(outfile)
+map* source_pragmas(map* infiles, map* ret={}){
+	deps={}
+	ret={}
+	modules={}
+	infiles.each file
+		if file.file_ext()!==:fox => continue
+		module=file.file_noext().file_nodir()
+		ret[module]["-lfox$(module)static"]="-lfox$(module)static"
+		val=file.fox_pragma()
+		if val => ret[module][val]=val
+		deps[module]=file.fox_includes()
+	found=1
+	while found
+		found=0
+		deps.each ds, module
+			ds.each mod
+				ret[mod].each cmd	
+					if !ret[module][cmd]
+						ret[module][cmd]=cmd
+						found++
+	return ret
+}
+map* fox_includes(char* infile){
+	ret=[]
+	toks=infile.file_read().str_ltrim("\n").str_tokenize("\n")
+	toks.each tok,,i=0 step 2
+		if !tok.str_start("#include")
+			continue
+		words=tok.str_tokenize(" \t")
+		ret[]=words[2].sub_str(1,-1).file_noext().file_nodir()
+	return ret
+}
+char* fox_pragma(char* infile){
+	toks=[infile].files_section("#pragma").str_split("\n")
+	toks.each tok
+		words=tok.str_tokenize(" \t")
+		if words[2]!==:fox
+			continue
+		if words[4]!==:cc
+			continue
+		return words.vec_sub(6).map_join()
+	return NULL
+}
+char* source_defines(map* infiles){
+	ret=''
+	infiles.each v,,i
+		ret.=v.fox_defines()
+	return ret
+}
+char* exclude_defines(char* in){
+	if !in => return NULL
+	toks=in.str_tokenize("\n")
+	start=0
+	ret=''
+	if toks[0].str_chr('\n')
+		start++
+		ret.=toks[0]
+	toks.each tok,,i=start step 2
+		if tok.tok_isdefine()
+			ret.="//"..tok.str_replace("\n","\n//")
+		else
+			ret.=tok
+		ret.=toks[i+1]
+	return ret
+}
+int tok_isdefine(char* in){
+	type=in.next_word(" \t\n")
+	if !type.is_word("typedef struct enum union class extern")
+		return 0
+	if type==="struct"
+		words=in.str_tokenize(" \t{}")
+		if !words[3].str_chr('{') => return 0
+	return 1
+}
+char* fox_defines(char* infile){
+	toks=infile.file_read().str_ltrim("\n").str_tokenize("\n")
+	basename=infile.file_nodir().file_noext()
+	ret=''
+	toks.each tok,,i=0 step 2
+		type=tok.next_word(" \t\n")
+		if !type.is_word("typedef struct enum union class #include #pragma extern #define #if #ifdef #undef #else #endif #ifndef")
+			continue
+		if type==="struct"
+			words=tok.str_tokenize(" \t{}")
+			if !words[3].str_chr('{')
+				continue
+		if type==="#include"
+			words=tok.str_tokenize(" \t<>")
+			filename=words[2].file_nodir().file_noext()
+			if filename===basename
+				ret.="#pragma fox module $filename\n"
+				continue
+		ret.=tok.."\n"
+	return ret
 }
 static map* funcs_nonstatic(map* funcs){
 	ret={}
@@ -195,270 +261,10 @@ static map* funcs_nonstatic(map* funcs){
 		ret[key]=val
 	return ret
 }
-static char* fox_phpc(char* infile=NULL,char* outfile=NULL){
-	fns=infile ? infile.file_funcs() : source_funcs()
-	temp=infile.str_split("/")
-	temp=temp[temp.map_len()-1].str_split(".")
-	name=temp[0]
-	ret=---
-	#ifdef HAVE_CONFIG_H
-	#include "config.h"
-	#endif
-	#include <php.h>
-	#include <fox.h>
-	#include "$(name).h"
-
-	void* zval_var(zval* z);
-	zval var_zval(void* v);
-	zval map_zval(map* mp);
-	map* zval_map(zval* z);
-	void* call_php(map* params,char* func);
-
-	---
-	reg=''
-	fns.each v,,i
-		if !v.type.is_word("void* map* int char*") => continue
-		if v.name.is_word("main") => continue
-		decls=""
-		format=""
-		post=""
-		pointers=""
-		call=""
-		hasdefault=0
-		skip=0
-		foxname=v.name
-		if !infile && !foxname.str_start(:fox_) => foxname="fox_$(v.name)"
-		v.params.each ,name,i2
-			if name==="..." => skip=1; break
-			map* v2=v.params[name]
-			if !hasdefault && v2.default
-				hasdefault=1
-				format=format.xcat("|")
-			if v2.type==="char*"
-				decls=decls.xcat("\tchar* ",:in_,name,"=NULL;\n")
-				decls=decls.xcat("\tsize_t ",:in_,name,"_len=-1;\n")
-				pointers=pointers.xcat(", &in_",name,", &in_",name,:_len)
-				format=format.xcat(:s)
-				if v2.default
-					post=post.xcat("\tif(in_$(name)_len==-1) in_$(name)=$(v2.default.x_c())\n")
-					post=post.xcat("\telse in_$(name)=str_dup(in_$(name));\n")
-//				else => post=post.xcat("\tin_$(name)=str_dup(in_$(name));\n")
-			else if v2.type===:int
-				decls=decls.xcat("\tlong ",:in_,name,"=(1ll<<62);\n")
-				pointers=pointers.xcat(", &in_",name)
-				format=format.xcat(:l)
-				if v2.default => post=post.xcat("\tif(in_$(name)==(1ll<<62)) in_$(name)=$(v2.default.x_c())\n")
-			else if v2.type==="void*"
-				decls=decls.xcat("\tzval* ",:in_,name,"_zval=NULL;\n")
-				pointers=pointers.xcat(", &in_",name,:_zval)
-				format=format.xcat(:z)
-				if v2.default
-					post=post.xcat("\tvoid* ",:in_,name,"=NULL;\n")
-					post=post.xcat("\tif(!in_$(name)_zval) in_$(name)=$(v2.default.x_c())\n")
-					post=post.xcat("\telse in_",name,"=zval_var(in_$(name)_zval);\n")
-				else => post=post.xcat("\tvoid* ",:in_,name,"=zval_var(in_$(name)_zval);\n")
-			else if v2.type==="map*"
-				decls=decls.xcat("\tzval* ",:in_,name,"_zval=NULL;\n")
-				pointers=pointers.xcat(", &in_",name,:_zval)
-				format=format.xcat(:z)
-				if v2.default
-					post=post.xcat("\tvoid* ",:in_,name,"=NULL;\n")
-					post=post.xcat("\tif(!in_$(name)_zval) in_$(name)=$(v2.default.x_c())\n")
-					post=post.xcat("\telse in_",name,"=zval_var(in_$(name)_zval);\n")
-				else => post=post.xcat("\tmap* ",:in_,name,"=zval_var(in_$(name)_zval);\n")
-			else => skip=1; break
-			call=call.xcat("in_$(name),")
-
-		if skip => continue
-		reg=reg.xcat("\tPHP_FE($foxname, NULL)\n")
-		call=call.sub_str(0,-1)
-		ret.="\nPHP_FUNCTION($foxname){\n"
-		if v.params.map_len()
-			ret=ret..---
-			$decls	if(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,"$format"$pointers)==FAILURE){ RETURN_NULL(); }
-			$post
-
-			---
-		if v.type===:void
-			ret.="\t$(v.name)($call);\n"
-			ret.="\tRETURN_NULL();\n"
-		else
-			ret.="\t$(v.type) ret=$(v.name)($call);\n"
-			if v.type===:int => ret.="\tRETURN_LONG(ret);\n"
-			else if v.type==="char*"
-				ret.="\tif(!ret) RETURN_NULL();\n"
-				ret.="\tRETVAL_STRING(ret);\n"
-			else if v.type==="map*"
-				ret.=---
-					zval zret;
-					if(!ret){
-						array_init(&zret);
-					}
-					else zret=var_zval(ret);
-					RETURN_ZVAL(&zret,0,0);
-
-				---
-			else if v.type==="void*"
-				ret.="\tzval zret=var_zval(ret);\n"
-				ret.="\tRETURN_ZVAL(&zret,0,0);\n"
-		ret.="}\n"
-
-	ret.=---
-
-	static zend_function_entry $(name)_functions[] = {
-	$(reg)	{NULL, NULL, NULL}
-	};
-
-	---;
-	ret.=---
-	PHP_RINIT_FUNCTION($(name)){
-		gc_start();
-		return SUCCESS;
-	}
-	PHP_RSHUTDOWN_FUNCTION($(name)){
-		gc_end();	
-		return SUCCESS;
-	}
-
-	zend_module_entry $(name)_module_entry = {
-	#if ZEND_MODULE_API_NO >= 20010901
-		STANDARD_MODULE_HEADER,
-	#endif
-		"$(name)",
-		$(name)_functions,
-		NULL,
-		NULL,
-		PHP_RINIT($(name)),
-		PHP_RSHUTDOWN($(name)),
-		NULL,
-	#if ZEND_MODULE_API_NO >= 20010901
-		"0.70", //Version Number
-	#endif
-		STANDARD_MODULE_PROPERTIES
-	};
-
-	#ifdef COMPILE_DL_$(name.str_dup().str_upper())
-	ZEND_GET_MODULE($(name))
-	#endif
-
-	void xexit(int val){
-		zend_error(E_ERROR,"%s","Exiting Abnormally");
-	}
-	void* fox_error(char* msg,int dump){
-		if(dump) php_printf("<pre>%s</pre>",stack_str());
-		zend_error(E_ERROR,"%s",msg);
-		return msg;
-	}
-	void* px(void* str,int newline){
-		php_printf("%s",str);
-		return str;
-	}
-	void* zval_var(zval* z){
-		if(!z) return NULL;
-		int type=Z_TYPE_P(z);
-		if(type==IS_NULL) return NULL;
-		else if(type==IS_ARRAY) return zval_map(z);
-		else if(type==IS_STRING) return str_dup(Z_STRVAL_P(z));
-		else if(type==IS_TRUE||type==IS_FALSE||type==IS_LONG) return int_var(Z_LVAL_P(z));
-		else if(type==IS_DOUBLE) return int_var((int)Z_DVAL_P(z));
-		else if(type==IS_RESOURCE) return "<RES>";
-		else if(type==IS_OBJECT) return "<OBJ>";
-		else if(type==IS_REFERENCE) return "<REF>";
-		else if(type==IS_UNDEF) return NULL;
-		else if(type==IS_CONSTANT) return "<CONST>";
-		else if(type==IS_CONSTANT_AST) return "<AST>";
-		else if(type==IS_INDIRECT) return "<INDIRECT>";
-		else if(type==IS_PTR) return "<PTR>";
-		printf("utype=%d\n",type);
-		return "<UNKNOWN>";
-	}
-	zval var_zval(void* v){
-		zval ret={0};
-		if(!v) { ZVAL_NULL(&ret); }
-		else if(is_map(v)) return map_zval(v);
-		else if(is_str(v) && v){ ZVAL_STRING(&ret,v); }
-		else if(is_i(v)){ ZVAL_LONG(&ret,is_int(v)); }
-		else if(is_f(v)){ ZVAL_DOUBLE(&ret,is_double(v)); }
-		return ret;
-	}
-	zval map_zval(map* mp){
-		zval ret={0};
-		array_init(&ret);
-		for(int i=next(mp,-1,NULL,NULL);has_id(mp,i);i++){
-			char* k=map_key(mp,i);
-			zval z=var_zval(map_id(mp,i));
-			if(is_i(k)) add_index_zval(&ret,is_int(k)-1,&z);
-			else add_assoc_zval(&ret,k,&z);
-		}
-		return ret;
-	}
-	map* zval_map(zval* z){
-		if(!z) return NULL;
-		map* mp=new_map();
-		zval *arr, *data;
-		HashTable *arr_hash=Z_ARRVAL_P(z);
-		HashPosition pointer;
-		for(zend_hash_internal_pointer_reset_ex(arr_hash, &pointer); (data=zend_hash_get_current_data_ex(arr_hash, &pointer)); zend_hash_move_forward_ex(arr_hash, &pointer)){
-			zend_string *zkey;
-			zend_ulong index;
-			char* key;
-			if(zend_hash_get_current_key_ex(arr_hash,&zkey,&index,&pointer)==HASH_KEY_IS_LONG) key=int_var(index+1);
-			else key=ZSTR_VAL(zkey);
-			map_add(mp,key,zval_var(data));
-		}
-		return mp;
-	}
-	void* php_global(char* name){
-		zend_string* key=zend_string_init(name,strlen(name),0);
-		zval* zret=zend_hash_find(&EG(symbol_table), key);
-		zend_string_release(key);
-		if(!zret) return NULL;
-		if(Z_TYPE_P(zret)==IS_INDIRECT) zret = Z_INDIRECT_P(zret);
-		if(Z_TYPE_P(zret)==IS_REFERENCE) ZVAL_DEREF(zret);
-		return zval_var(zret);
-	}
-	void* call_php(map* params,char* func){
-		zval z={0};
-		zval php_func={0};
-		ZVAL_STRING(&php_func,func);
-		int no=params && params->len ? params->len : 0;
-		zval* php_args=NULL;
-		void* ret={0};
-		if(no){
-			php_args=emalloc(sizeof(zval)*no);
-			for(int i=0;i<no;i++) php_args[i]=var_zval(map_id(params,i));
-		}
-		if(call_user_function(CG(function_table),NULL,&php_func,&z,no,php_args)!=SUCCESS){
-			zend_error(E_ERROR,"Call to %s failed\n",func);
-		}
-		else ret=zval_var(&z);
-		if(no){
-			for(int i=0;i<no;i++) zval_dtor(&php_args[i]);
-			efree(php_args);
-		}
-		zval_dtor(&z);
-		return ret;
-	}
-
-	---;
-	return ret.write_file(outfile)
-}
-static char* write_phpconfig(){
-	return '---
-	PHP_ARG_ENABLE(foxphp, whether to enable FoxPHP library support,
-	[ --enable-foxphp   Enable FoxPHP library support])
-	if test "$PHP_FOXPHP" = "yes"; then
-	  PHP_SUBST(CFLAGS)
-	  AC_DEFINE(HAVE_FOXPHP, 1, [Whether you have FoxPHP Library])
-	  PHP_NEW_EXTENSION(foxphp, foxphp.c fox.c sql.c extern.c callfunc.c, $ext_shared,,-Wno-logical-op-parentheses -DPHP_MOD)
-	fi
-
-	---'.write_file("config.m4")
-}
 static char* meta_h(char* prefix=''){
 	prefix&&=prefix.."_"
 	return ---
-	char* $(prefix)version();
+	#pragma once
 	void* $(prefix)invoke(map* v,char* name);
 	map* $(prefix)reflect();
 	int cmdline();
@@ -468,40 +274,33 @@ static char* meta_h(char* prefix=''){
 
 	---;
 }
-static char* funcs_meta(map* funcs, map* macros, map* structs, char* prefix=''){
-	depends={}
-	funcs.each val,name
-		depends[name]=val.body.func_depend()
-		val.map_del_key(:body)
+static char* funcs_meta(map* data, char* prefix=''){
 	prefix&&=prefix.."_"
 	return ---
 	/* This is a generated file. To change it, edit function funcs_meta() in generator.fox */
-	char* $(prefix)version(){
-		return "Fox: build: $(increase_version()), date: $(time_str()) [%s old]".mstr("$(time_str())".time_ago());
-	}
 	void* $(prefix)invoke(map* v,char* name){
-		unsigned long long idn=str_hash((unsigned char*)name)
+		unsigned long long idn=str_hash((unsigned char*)name);
 		switch(idn){
-	//$(funcs.callfunc_c())
+	//$(data.funcs.callfunc_c())
 		}
-		return "invoke(): Function $$name not defined".fox_error()
+		return fox_error(xstr("invoke(): Function %s not defined", name, End), 0);
 	}
 	map* $(prefix)reflect(){
-		return {
-			funcs: $(funcs.map_ccode()),
-			macros: $(macros.map_ccode()),
-			structs: $(structs.map_ccode())
-			depends: $(depends.map_ccode())
-		}
+		return xmap(
+			"funcs", $(data.funcs.map_ccode()),
+			"macros", $(data.macros.map_ccode()),
+			"structs", $(data.structs.map_ccode()),
+			"depends", $(data.depends.map_ccode()),
+			"pragmas", $(data.pragmas.map_ccode()),
+			"version", $(data.version.map_ccode()), End
+		);
 	}
 
-	---.x_c()
+	---;
 }
 static char* gen_htaccess(char* outfile=NULL){
 	return ---
 	RewriteEngine On
-	#RewriteCond %{HTTPS} off
-	#RewriteRule (.*) https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
 	RewriteCond %{REQUEST_FILENAME} !-f
 	RewriteCond %{REQUEST_FILENAME} !-d
 	RewriteRule ^(.+)$ index.cgi [L,QSA]
@@ -517,61 +316,67 @@ static char* gen_cgi_makefile(char* name, char* outfile=NULL){
 	return ---
 	all:
 		fox cgi $name.fox
-	fox:
-		cd /web/fox && make install && cd -
-	c:
-		fox cgi salat.fox --keepfiles=1
+	debug:
+		fox cgi $name.fox --profile=cgidebug
 	
 	---.write_file(outfile)
 }
 static char* gen_fox_cgi(char* name,char* outfile=NULL){
 	return ---
 	#line 2 "$name.fox"
+
+	#include <fcgi_stdio.h> /* fcgi library; put it first*/
+	#include <core.h>
+	#include <syslog.h>
 	#include "$name.h"
 
-	run(){
+	int run(map* args){
 		_globals.dbs.$name="$name.db"
 		if cmdline() => return 0
-
-		path=_globals.paths
-
-		if "/".get().end
-			{{
-				title $(name.str_title())'s Application
-			}}.show_page()
-
-		not_found()
+		LOG_INFO.syslog("fox.fcgi started")
+		while FCGI_Accept() >= 0
+			ret=http_req().dispatch()
+			//close_conns()
+			_queries=0
+			"%s".printf(ret or "content-type: text/html\r\n\r\nBody is Blank!")
+			//gc_reset()
+		LOG_INFO.syslog("fox.fcgi exit")
 		return 0
 	}
 
+	char* dispatch(map* req){
+		path=_globals.paths
+		if "/".get().end
+			return "Hello World! - from $name.".show_body{{
+				title $(name.str_title())'s Application
+			}}
+
+		return not_found()
+	}
+
 	---.write_file(outfile)
-}
-int init_html(char* name){
-	{{
-		title =name.str_title()
-		body =name
-		tabs
-			../ Home
-	}}.page_data().page_html().write_file(name..".html")
-	return 0
 }
 int init_fox(char* name){
 	if !:Makefile.is_file()
 		---
 		all:
 			fox cc $name.fox
+			./$name
+		debug:
+			fox cc $name.fox --profile=debug
+			./$name
 		fox:
-			cd /web/fox && make install && cd -
+			pushd . && cd /web/fox2 && make install && popd
 		
 		---.write_file(:Makefile)
 	filename="$name.fox"
 	if !filename.is_file()
 		---
 		#line 2 "$name.fox"
+		#include <core.h>
 		#include "$name.h"
 
-		run(){
-
+		int run(map* args){
 			return 0
 		}
 
@@ -585,8 +390,10 @@ int init_cgi(char* name){
 	return 0
 }
 char* c_h(char* infile,char* outfile=NULL) => return infile.file_funcs().funcs_cdecl(0).write_file(outfile)
-char* fox_h(char* infile,char* outfile=NULL) => return ("#include <fox.h>\n"..infile.file_funcs().funcs_cdecl(0)).write_file(outfile)
-static map* x_map(char* in) => return c_tokenizer(&in,'\0')
+char* fox_h(char* infile,char* outfile=NULL){
+	return ("#pragma once\n"..infile.fox_defines()..infile.file_funcs().funcs_cdecl(0)).write_file(outfile)
+}
+//static
 char* c_x(char* in) => return in.x_map().map_tox().toks_c()
 
 static char* map_ccode(void* mp){
@@ -605,23 +412,13 @@ static char* map_ccode(void* mp){
 		mp.each v1,,i1
 			ret.="$(v1.map_ccode()),"
 		return ret.."End)"
-	return "Unknown type of variable $(mp.to_str()) [$(mp.ptr_name())]".fox_error()	
+	return "Unknown type of variable $(mp.to_str())".fox_error()	
 }
 static char* file_foxh(char* infile,char* outfile=NULL){
 	return infile.file_funcs().funcs_cdecl(1).write_file(outfile)
 }
-static char* func_cdecl(map* fn,int show_default=1){
-	ret2=""
-	fn.params.each param,name,i2
-		s=param.type.str_join(" ",name)
-		if name==="..." => s=name
-		if show_default => s=s.str_join("=",param.default)
-		ret2=ret2.str_join(", ",s)
-	file=''
-	if fn.file => file="//$(fn.file)"
-	return "$(fn.decltype) $(fn.name)($ret2); $file"
-}
-static char* funcs_cdecl(map* fns=funcs(),int show_default=1){
+//static
+char* funcs_cdecl(map* fns=funcs(),int show_default=1){
 	ret=""
 	fns.each v, k, i
 		if k.is_word("main") => continue
@@ -629,286 +426,10 @@ static char* funcs_cdecl(map* fns=funcs(),int show_default=1){
 		ret.="\n"
 	return ret
 }
-static char* foxh(){
-	return '---
-	/* This is a generated file. To change it, edit function foxh() in fox.c */
-	#pragma once
-	#ifndef _XOPEN_SOURCE
-	#define _XOPEN_SOURCE
-	#endif
-	#ifndef _GNU_SOURCE
-	#define _GNU_SOURCE
-	#endif
-	#include <setjmp.h>
-	#include <memory.h>
-	#include <stdio.h>
-	#include <stdlib.h>
-	#include <assert.h>
-	#include <stdarg.h>
-	#include <math.h>
-	#include <time.h>
-	#include <assert.h>
-	#include <sys/time.h>
-	#include <regex.h>
-	#ifndef __MINGW32__
-	#include <execinfo.h>
-	#include <sys/wait.h>
-	#include <sys/socket.h>
-	#include <netinet/in.h>
-	#include <arpa/inet.h>
-	#include <netdb.h>
-	#endif
-	#include <unistd.h>
-	#include <ctype.h>
-	#include <dirent.h>
-	#include <sys/types.h>
-	#include <sys/stat.h>
-
-	#include <signal.h>
-	#include <sqlite3.h>
-//	#include <openssl/md5.h>
-
-	enum Types {
-		Null,Int,Double,String,Blob,Map,Vector,Index,Keys,Cell,Cell2,Tail
-	};
-	typedef struct Mapcell {
-		int nextid;
-		int hkey;
-		char* id;
-		void* val;
-	} Mapcell;
-	typedef struct map {
-		int len;
-		char type;
-		union {
-			struct Mapcell* pairs;
-			void** vars;
-		};
-	} map;
-
-	#define each_mem(pg,i) int i=0; for(mempage* pg=_gcdata.pages;i<_gcdata.total_pages;i++,pg=_gcdata.pages+i)
-	#define max(a,b) ((a)>(b)?(a):(b))
-	#define min(a,b) ((a)<(b)?(a):(b))
-	#ifdef __MINGW32__
-	#define is_i(x) ((int)(x)>>30 & 1)
-	#else
-	#define is_i(x) ((long long)(x)>>61 & 2)
-	#define is_f(x) ((*(long long*)&(x))>>61 & 1)
-	#define is_num(x) ((*(long long*)&(x))>>61 & 3)
-	#endif
-
-	typedef struct mempage {
-		int no;
-		int idx;
-		int block_size;
-		int blocks;
-		int free;
-		char* types;
-		char* page;
-		map chains;
-		int abandoned;
-	} mempage;
-	struct gcdata {
-		int total_pages;
-		void** stack_head;
-		int page_no;
-		long long max_used;
-		long long curr_used;
-		long long max_mem;
-		long long curr_mem;
-		mempage* pages;
-		int gcruns;
-		int gcwaste;
-		int inalloc;
-		int gctime;
-		int gcmax;
-		int max_roots;
-		struct timeval run_time;
-		struct timeval time;
-		size_t clockstart;
-		int total_time;
-	};
-	extern struct gcdata _gcdata;
-	extern map* _globals;
-
-	extern int _printed;
-	extern int _is_web;
-
-	extern char* skip;
-
-	#define None 0x0F9AD3BA
-	#define End (char*)(0x0FF1B14E059AD3BA)
-
-	void* invoke(map* v,char* name);
-	char* strstr(const char* str1,const char* str2);
-	int chdir(const char* path);
-	int max_mem();
-	int curr_mem();
-	map* reflect();
-	char* version();
-
-	---'
-}
-static void* marked_str(char* str,char* name=NULL){
-	if !str => return NULL
-	str=str.str_trim(" \t")
-	if str==="\"\"" => return ""
-	if !str.str_len() => return NULL
-	if str===:NULL
-		return NULL
-
-	if str[0]=='{'
-		if str[str.str_len()-1]=='}' => str[str.str_len()-1]='\0'
-		mp=xjson_map(str+1,Map)
-		return mp
-	
-	if str.is_numeric() => return str.stoi().int_var()
-	if str[0]=='['
-		if str[str.str_len()-1]==']' => str[str.str_len()-1]='\0'
-		mp=xjson_map(str+1,Vector)
-		return mp
-	
-	if str[0]=='\\' => return str.sub_str(1)
-	if str[0]==':'
-		str++
-		thealpha=read_alpha(&str)
-		return {type: thealpha,name: name}.map_merge(xjson_map(str+1,Index))
-	return str
-}
-map* map_add_pair(map* mp,void* name,void* value,int type){
-	if !name && !value => return mp	
-
-	if name===:null => name=NULL
-	else if name.is_numeric() => name=(name.to_int()+1).int_var()
-	else name=name.str_unquote()
-
-	if name && value && *(char*)value==':'
-		if !mp.map_len()
-			return mp.xadd(:type,value.sub_str(1),:name,name)
-		else
-			char* str=value
-			str++
-			thealpha=read_alpha(&str)
-			value={type: thealpha,name: name}.map_merge(xjson_map(str+1,Index))
-
-	if value===:null => value=NULL
-	else if value.is_numeric()
-		if value.str_chr('.')
-			value=value.str_double().double_var()
-		else
-			value=value.to_int().int_var()
-	else value=value.str_unquote()
-
-	if type==Vector => return mp[]=value
-	return mp[name]=value
-}
-static map* add_name_val(map* mp,char* str,char** name,char** val,int type){
-	name1=*name
-	val1=*val
-	if !name1 && !val1 => return mp
-	*name=NULL
-	*val=NULL
-	void* v=NULL
-	if type==Vector
-		s=name1.sub_str(0,str-name1).str_trim()
-		return mp[]=s.marked_str()
-	
-	if(val1)
-		name1=name1.str_trim(" \t")
-		name1=name1.str_replace("\\=","=")
-		if !name1.str_len() => name1=NULL
-		v=val1.sub_str(0,str-val1).marked_str(name1)
-	else if name1 => v=name1.sub_str(0,str-name1).marked_str(); name1=NULL
-	if type==Index && !name1.str_len() => name1=v.to_str()
-	else if type==Keys && !name1
-		name1=v.to_str()
-		v=NULL
-	mp.map_add(name1,v)
-	return mp
-}
-static char* read_as_block(char** from,int level,char* terminator="-"){
-	str=*from
-	ret=''
-	while *str
-		if str.str_start("//") => str+=str.line_len(); continue
-		tabs=str.str_level()
-		len=str.line_len()
-		if tabs>=level||str.line_isempty()
-			ret.=len-level>0 ? str.sub_str(level,len-level) : "\n"
-		else break
-		str+=len
-	if str.sub_str(str.str_level(),str.line_len()-str.str_level()).str_trim()===terminator
-		len2=str.line_len()
-		str+=len2
-	*from=str
-	if ret.str_len() && ret[ret.str_len()-1]=='\n' => ret=ret.sub_str(0,-1)
-	return ret
-}
-map* block_map(char** from,int inlevel,int maptype){
-	if !from => return NULL
-	map* ret=NULL
-	if maptype==Vector => ret=[]
-	else ret={}
-	str=*from
-	if !str.str_len() => return NULL
-	level=0
-	iscomment=0
-	blk=''
-	name=''
-	val=''
-	for ;*str;str++
-		if *str=='\n'||*str=='\r'
-			ret.add_name_val(str,name,val,maptype)
-			level=0
-			iscomment=0
-			blk=NULL
-			continue
-		if !name && !val
-			if iscomment => continue
-			if !blk => blk=str
-			if *str=='/' && str[1]=='/' => str++; iscomment=1; continue
-			if *str=='\t' => level++; continue
-			if level<inlevel
-				*from=blk
-				return ret
-			if level>inlevel
-				s=ret[ret->len-1].is_str()
-				if s==="|" => read_as_block(&blk,inlevel+1).set_map(ret,ret->len-1)
-				else if s && s.str_start("---") => read_as_block(&blk,inlevel+1,s).set_map(ret,ret->len-1)
-				else if ret[ret->len-1].ptr_type()==Vector => block_map(&blk,inlevel+1,Vector).set_map(ret,ret->len-1)
-				else if ret[ret->len-1].ptr_type()==Map => block_map(&blk,inlevel+1,Map).set_map(ret,ret->len-1)
-				else if maptype==Vector
-					continue
-				else
-					if (s.str_len() && ret.map_key(ret->len-1).is_int()) => ret.change_key(ret->len-1,s)
-					block_map(&blk,inlevel+1,maptype).set_map(ret,ret->len-1)
-				str=blk-1
-				level=0
-				iscomment=0
-				blk=NULL
-				name=NULL
-				val=NULL
-				continue
-			
-			if maptype!=Vector && *str=='=' => val=str+1; continue
-			name=str
-		
-		if !val
-			if *str=='\\' => str++; continue
-			if maptype!=Vector && *str=='='
-				name=name.sub_str(0,str-name)
-				val=str+1
-				continue
-			continue
-		continue
-	ret.add_name_val(str,name,val,maptype)
-	*from=str
-	return ret
-}
 static char* old_decl_type(map* mp,int idx){
 	int from=mp.stm_start(idx,"{};,().>:=><!&-+/?")
 	for int i=from;i<idx;i+=2
-		if mp[i].is_word("int long double float char void struct map static extern unsigned register mempage size_t time_t const")
+		if mp[i].is_word("int long double float char void struct map static extern unsigned register mempage size_t time_t const var")
 			return mp.vec_sub(from,idx-from-1).toks_c()
 	return NULL
 }
@@ -933,195 +454,6 @@ static map* toks_keywords(map* mp,char* keywords){
 	if curr->len => ret[curr_key]=curr.toks_align()
 	return ret
 }
-char* read_num(char** in){
-	str=*in
-	deci=0
-	str++
-	while *str && ((*str>='0' && *str<='9')||(*str=='.' && !deci++ && !str[1].is_alpha()))
-		str++
-	from=*in
-	*in=str-1
-	return from.sub_str(0,str-from)
-}
-char* skip_word(char* in,char* seperators=" \t\r\n,"){
-	if !in || !*in => return in
-	term='\0'
-	counter=0
-	opener='\0'
-	if "[({".strchr(*in) => opener=*in;
-	if "\"'`".strchr(*in) => term=*in; in++
-	else if *in=='[' => term=']'; in++
-	else if *in=='(' => term=')'; in++
-	else if *in=='{' => term='}'; in++
-	while *in
-		if opener
-			if "\"'`".strchr(*in) => in=in.skip_word(seperators); continue
-			else if *in==opener => counter++
-		if *in==term
-			if !counter => in++; break
-			counter--
-		else if !term && seperators.strchr(*in) => break
-		else if *in=='\\' && in[1] => in++
-		in++
-	return in
-}
-void* read_value(char** str, char* sep){
-	if **str=='{'||**str=='[' => return xjson_map_recurse(str)
-	from=*str
-	*str=from.skip_word(sep)
-	ret=from.sub_str(0,*str-from)
-	return ret ? ret : :null
-}
-char* read_upto(char** in,char* terminators){
-	str=*in
-	isquote=0
-	if *str=='"' => terminators="\""; str++
-	else if *str=='\'' => terminators="'"; str++
-	while(*str && !terminators.strchr(*str))
-		if *str=='\\' && str[1] => str++
-		str++
-	if (*terminators=='\'' || *terminators=='"') && *str==*terminators => str++
-	from=*in
-	*in=str
-	return from.sub_str(0,str-from)
-}
-char* read_alpha(char** in){
-	str=*in
-	str++
-	while(*str && is_alphanum(*str)) str++
-	from=*in
-	*in=str-1
-	return from.sub_str(0,str-from)
-}
-char* fox_read_symbol(char** in){
-	str=*in
-	str++
-	while *str
-		if *str=='\\'
-			str+=2
-			continue
-		if !is_alphanum(*str) => break
-		str++
-	from=*in
-	*in=str-1
-	return from.sub_str(0,str-from)
-}
-char* fox_read_oper(char** in,char term){
-	str=*in
-	from=*in
-	while(*str && is_oper(*str) && *str!=term) str++
-	ret=from.sub_str(0,str-from)
-	less=0
-	while ret.strlen() && !ret.is_word("~ ! @ # $ % ^ & * - = + | < > ? / \\ } ] ) . != >= <= += -= /= *= || && << >> => ++ -- ** *** **** |= &= >>= <<= ^^ ... -> == === !== .= .. ||= &&=")
-		ret[ret.strlen()-1]='\0'
-		less++
-	*in=str-1-less
-	return ret
-}
-char* read_upto_word(char** in,char* upto){
-	str=*in
-	while(*str && !str.str_start(upto)) str++
-	from=*in
-	if *str
-		*in=str+upto.strlen()-1
-		return from.sub_str(0,str-from+upto.strlen())
-	else
-		*in=str-1
-		return from.sub_str(0,str-from)
-}
-char* read_theline(char** in){
-	if !in||!*in||!**in => return NULL
-	str=*in
-	while(*str && !"\n\r".strchr(*str)) str++
-	if *str=='\r' && str[1]=='\n' => str++
-	from=*in
-	*in=str-1
-	return from.sub_str(0,str-from)
-}
-char* read_newline(char** in){
-	str=*in
-	while(*str && "\n\r".strchr(*str)) str++
-	from=*in
-	*in=str-1
-	return from.sub_str(0,str-from)
-}
-char* read_space(char** in,char* spaces=" \t"){
-	str=*in
-	while(*str && spaces.strchr(*str)) str++
-	from=*in
-	*in=str-1
-	return from.sub_str(0,str-from)
-}
-static map* read_data(char** in){
-	str=*in
-	from=*in
-	while *str && !str.str_start("}}")
-		str+=str.line_len()
-		str+=str.str_level()
-	if *str => str+=2
-	*in=str-1
-	return from.sub_str(0,str-from).data_toks()
-}
-static char* read_heredoc(char** in){
-	str=*in
-	len=str.line_len()
-	hd=str.sub_str(0,len).str_trim()
-	from=*in
-	lno=0
-	str+=len
-	tabs=str.str_level()
-	str+=tabs
-	while *str && !str.str_start(hd)
-		len=str.line_len()
-		tabs=(str+len).str_level()
-		str+=len+tabs
-	if *str => str+=hd.str_len()-1
-	*in=str
-	return from.sub_str(0,str-from+1)
-}
-static char* read_multistr(char** in){
-	str=*in
-	end=*str
-	hd=''
-	from=*in
-	lno=0
-	word_start=''
-	str++
-	while *str
-		if *str=='\\' => if(!hd) str++
-		else if *str==end => if(!hd) break
-		else if *str=='\n'||*str=='\r'
-			if !lno && word_start
-				hd=word_start.sub_str(0,str-word_start)
-			lno++
-			word_start=NULL
-		else if *str!=' ' && *str!='\t'
-			if !word_start
-				word_start=str
-				if hd && lno && str.str_start(hd) && str[hd.str_len()]==end
-					str+=hd.str_len()
-					break
-		str++
-	*in=str
-	return from.sub_str(0,str-from+1)
-}
-char* read_quote(char** in){
-	str=*in
-	end=*str
-	str++
-	while *str
-		if *str=='\\' => str++
-		else if *str==end => break
-		str++
-	
-	from=*in
-	*in=str
-	return from.sub_str(0,str-from+1)
-}
-int map_has_word(map* mp,char* str){
-	mp.each v,,idx => if v===str => return idx+1
-	return 0
-}
 static int is_keyword(char* str) => return str.is_word("abstract and as break callable case catch class clone const continue declare default do echo else elseif enddeclare endfor endforeach endif endswitch endwhile extends final for foreach def function global goto if implements include include_once instanceof insteadof interface namespace new or private protected public require require_once return static switch throw trait try use while xor yield false true null")
 static char* toks_c(map* mp){
 	ret=''
@@ -1135,65 +467,6 @@ static char* toks_c(map* mp){
 		if !str => continue
 		ret.=mp[i]
 	return ret
-}
-static map* add_ctok(void* data,map* mp,int iscode){
-	if !data => return mp
-	data.assert()
-	assert(mp.ptr_type()==Vector)
-	int incode=!(mp->len%2)
-	if incode && iscode
-		mp[]=NULL
-		mp[]=data
-	else if incode && !iscode => mp[]=data
-	else if !incode && !iscode
-		if mp->len
-			old=mp[mp->len-1].is_str()
-			mp->vars[mp->len-1]=old..data
-		else mp[]=data
-	else if !incode && iscode => mp[]=data
-	return mp
-}
-static map* c_tokenizer(char** line,char term){
-	if !line||!*line||!**line => return NULL
-	head=*line
-	int headlen=head.str_len()
-	expected_end=head+head.str_len()
-	str=*line
-	mp=[]
-	space=''
-	int code=0
-	last=''
-	while *str && *str!=term
-		assert(last!=str)
-		assert(head.str_len()==headlen)
-		last=str
-		if str.str_start("//") => read_theline(&str).add_ctok(mp,0)
-		else if str.str_start("/*") => read_upto_word(&str,"*/").add_ctok(mp,0)
-		else if str.str_start("#") => read_theline(&str).add_ctok(mp,0)
-		else if " \t".strchr(*str) => read_space(&str).add_ctok(mp,0)
-		else if "\n\r".strchr(*str) => read_newline(&str).add_ctok(mp,0)
-		else if "\"`".strchr(*str) => read_quote(&str).add_ctok(mp,1)
-		else if *str=='\'' => read_multistr(&str).add_ctok(mp,1)
-		else if str.str_start("{{")
-			if !(mp->len%2) => mp[]=NULL
-			mp.vec_merge(read_data(&str))
-		else if str.str_start("---") => read_heredoc(&str).add_ctok(mp,1)
-		else if *str==':' => fox_read_symbol(&str).add_ctok(mp,1)
-		else if is_oper(*str) => fox_read_oper(&str,term).add_ctok(mp,1)
-		else if *str>='0' && *str<='9' => read_num(&str).add_ctok(mp,1)
-		else if is_alpha(*str) => read_alpha(&str).add_ctok(mp,1)
-		else if "([{".strchr(*str)
-			char c=*str
-			str++
-			c.char_str().add_ctok(mp,1)
-			c_tokenizer(&str,c.closing_paren()).add_ctok(mp,1)
-			if *str => c.closing_paren().char_str().add_ctok(mp,1)
-		else if ','==*str => str.sub_str(0,1).add_ctok(mp,1)
-		else if ';'==*str => str.sub_str(0,1).add_ctok(mp,1)
-		if *str => str++
-	assert(term || str==expected_end)
-	*line=str
-	return mp
 }
 static int func_dot(map* mp,int idx){
 	idx++
@@ -1403,7 +676,7 @@ static map* force_curly(map* mp){
 static map* expand_main(map* mp){
 	for int idx=1;idx<=mp->len;idx+=2
 		if mp[idx]===:run && mp[idx+2]==="(" && mp[idx+8]==="{" && !mp[idx+4].map_len() && mp[idx-2]!==:int
-			mp.vec_splice(idx,7,"int run(map* args)".x_map().vec_del(0,1)).vec_compact()
+			mp.vec_splice(idx,7,"void* run(map* args)".x_map().vec_del(0,1)).vec_compact()
 	return mp
 }
 static map* add_curly(map* mp,int recursive=1){
@@ -1972,13 +1245,13 @@ static int syn_assign_val(map* syn){
 }
 static int is_assign(map* syn) => return syn.next_tok(0,"=")
 static int is_var_decl(map* syn){
-	return syn[1].is_word("int long double float char void struct map static extern unsigned register mempage size_t time_t const FILE inline")
+	return syn[1].is_word("int long double float char void struct map static extern unsigned register mempage size_t time_t const FILE inline var")
 }
 static int is_func_decl(map* syn){
 	idx=syn.next_tok(0,"(")
 	if !idx-- => return 0
 	if syn.next_tok(0,"=") => return 0
-	if !syn[1].is_word("int long double float char void struct map static extern unsigned register mempage size_t time_t const FILE inline")
+	if !syn[1].is_word("int long double float char void struct map static extern unsigned register mempage size_t time_t const FILE inline var")
 		return 0
 	if syn[idx+7]===";" => return 1
 	if syn[idx+7]==="{" && syn[idx+13]===";" => return 1
@@ -2003,48 +1276,62 @@ static char* call_c(map* params,char* name){
 		ret[]=v.to_c().str_shorten()
 	return "$name($(ret.map_join(\", \")))"
 }
-char* read_line(FILE* fp){
-	char buff[1024]
-	ret=''
-	while fgets(buff,buff.sizeof(),fp)
-		ret.=buff		
-	return ret
-}
-static char* type_name(int type){
-	char* names[]={:Free,:Int,:Double,:String,:Blob,:Map,:Vector,:Index,:Keys,:Cell,:Cell2}
-	return names[type]
-}
-static char* ptr_name(void* var) => return var.ptr_type().type_name()
-static map* source_funcs(map* infiles=NULL){
-	if !infiles => return _globals.cache.funcs
+map* source_funcs(map* infiles=NULL){
+	if !infiles => return _globals.funcs
 	map* mp={}	
 	infiles.each v,,i
 		map* mp3=''
 		if v.str_end(".fox") => mp3=v.file_funcs(1)
 		else mp3=v.file_funcs()
+		"+ $(mp3.map_len()) <- $v".px()
 		mp.map_merge(mp3)
-	_globals.cache.funcs=mp
-	return _globals.cache.funcs
+	_globals.funcs=mp
+	return _globals.funcs
 }
-static map* file_funcs(char* filename,int withbody=0) => return filename.file_read().x_funcs(withbody,filename)
+map* file_funcs(char* filename,int withbody=0) => return filename.file_read().x_funcs(withbody,filename)
 static void src(map* mp,int from=0,int len=0,char* msg=NULL){
 	if !len => len=mp->len-from
 	"$(mp.vec_sub(from,len).json())".px()
 	if msg => "$msg ___________________________".px()
 }
 static map* structs(){
-	return _globals.structs ? _globals.structs : _globals.cache.reflect.structs
+	return _globals.structs or _globals.reflect.structs
 }
 static map* macros(){
-	return _globals.macros ? _globals.macros : _globals.cache.reflect.macros
+	return _globals.macros or _globals.reflect.macros
 }
-static map* source_structs(){
-	if !_globals.structs => _globals.structs=write_foxh(NULL).c_structs()
-	return _globals.structs
+map* file_blocks(char* infile){
+	toks=infile.file_read().str_tokenize("\n")
+	ret=[]
+	toks.each char* tok,,i=0 step 2
+		if !tok => continue
+		if tok[0]=='/' && (tok[1]=='/' || tok[1]=='*')
+			ret[]={type: :comment, code: tok, space: toks[i+1] }
+			continue
+		head=tok.next_word(" \t\n")
+		if head.is_word("typedef struct enum union class #include #pragma extern #define #if #ifdef #undef #else #endif #ifndef #line")
+			ret[]={type: head, code: tok, space: toks[i+1] }
+			continue
+		if tok.str_chr('{') || tok.str_has('=>')
+			ret[]={type: :func, code: tok, space: toks[i+1] }
+			continue
+		if tok.str_has('=>')
+			ret[]={type: :linefunc, code: tok, space: toks[i+1] }
+			continue
+		ret[]={type: :global, code: tok, space: toks[i+1] }
+	return ret
 }
-static map* source_macros(){
-	if !_globals.macros => _globals.macros=write_foxh(NULL).c_macros()
-	return _globals.macros
+char* file_section(char* file, char* section){
+	ret=''
+	file.file_blocks().each rec
+		if rec.type.is_word(section)
+			ret.=rec.code..rec.space
+	return ret
+}
+char* files_section(map* files, char* section){
+	ret=''
+	files.each file => ret.=file.file_section(section)
+	return ret
 }
 static map* toks_syn(map* toks,int recurse=1){
 	ret=[]
@@ -2062,92 +1349,9 @@ static map* toks_syn(map* toks,int recurse=1){
 	if toks.map_len()%2 => ret.xadd(NULL,[toks[toks.map_len()-1],NULL])
 	return ret
 }
-static char* increase_version(){
+char* increase_version(){
 	if !is_file(".version.txt") => "0".write_file(".version.txt")
 	return (".version.txt".file_read().atoi()+1).int_str().write_file(".version.txt")
-}
-//TODO: merge with _ptr defined bellow.
-int call_variadic_int(map* mp,void* fp,char* name){
-	int(*ptr)(void* param1,...)=fp
-	if !mp => return ptr(End)
-	len=mp.map_len()
-	if mp[mp->len-1]==(void*)End => len--
-	if len==0 => return ptr(End)
-	if len==1 => return ptr(mp[0],End)
-	if len==2 => return ptr(mp[0],mp[1],End)
-	if len==3 => return ptr(mp[0],mp[1],mp[2],End)
-	if len==4 => return ptr(mp[0],mp[1],mp[2],mp[3],End)
-	if len==5 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],End)
-	if len==6 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],End)
-	if len==7 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],End)
-	if len==8 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],End)
-	if len==9 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],End)
-	if len==10 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],End)
-	if len==11 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],End)
-	if len==12 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],End)
-	if len==13 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],End)
-	if len==14 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],End)
-	if len==15 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],End)
-	if len==16 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],End)
-	if len==17 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],End)
-	if len==18 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],End)
-	if len==19 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],End)
-	if len==20 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],End)
-	if len==21 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],End)
-	if len==22 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],End)
-	if len==23 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],End)
-	if len==24 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],End)
-	if len==25 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],End)
-	if len==26 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],End)
-	if len==27 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],mp[26],End)
-	if len==28 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],mp[26],mp[27],End)
-	if len==29 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],mp[26],mp[27],mp[28],End)
-	if len==30 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],mp[26],mp[27],mp[28],mp[29],End)
-	if len==31 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],mp[26],mp[27],mp[28],mp[29],mp[30],End)
-	if len==32 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],mp[26],mp[27],mp[28],mp[29],mp[30],mp[31],End)
-	"Only 32 parameters supported in call to function $name sent=$(mp.json())".fox_error()
-	return 0
-}
-void* call_variadic_ptr(map* mp,void* fp,char* name){
-	void*(*ptr)(void* param1,...)=fp
-	if !mp => return ptr(End)
-	len=mp.map_len()
-	if mp[mp->len-1]==(void*)End => len--
-	if len==0 => return ptr(End)
-	if len==1 => return ptr(mp[0],End)
-	if len==2 => return ptr(mp[0],mp[1],End)
-	if len==3 => return ptr(mp[0],mp[1],mp[2],End)
-	if len==4 => return ptr(mp[0],mp[1],mp[2],mp[3],End)
-	if len==5 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],End)
-	if len==6 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],End)
-	if len==7 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],End)
-	if len==8 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],End)
-	if len==9 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],End)
-	if len==10 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],End)
-	if len==11 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],End)
-	if len==12 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],End)
-	if len==13 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],End)
-	if len==14 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],End)
-	if len==15 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],End)
-	if len==16 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],End)
-	if len==17 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],End)
-	if len==18 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],End)
-	if len==19 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],End)
-	if len==20 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],End)
-	if len==21 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],End)
-	if len==22 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],End)
-	if len==23 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],End)
-	if len==24 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],End)
-	if len==25 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],End)
-	if len==26 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],End)
-	if len==27 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],mp[26],End)
-	if len==28 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],mp[26],mp[27],End)
-	if len==29 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],mp[26],mp[27],mp[28],End)
-	if len==30 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],mp[26],mp[27],mp[28],mp[29],End)
-	if len==31 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],mp[26],mp[27],mp[28],mp[29],mp[30],End)
-	if len==32 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],mp[26],mp[27],mp[28],mp[29],mp[30],mp[31],End)
-	"Only 32 parameters supported in call to function $name sent=$(mp.json())".fox_error()
-	return 0
 }
 static map* toks_replace(map* in,map* replace){
 	in.each v,k,i
@@ -2166,19 +1370,6 @@ static map* toks_join(map* in, char* by=""){
 		if !(ret.map_len()%2) => ret.xadd(NULL)
 		ret.xadd(by)
 		ret.vec_merge(in[i])
-	return ret
-}
-static map* toks_align(map* in){
-	last=in.map_len()
-	if !(last%2) => return in
-	if in[last-1]==NULL
-		in.vec_del(-1).vec_compact()
-	else in[]=NULL
-	return in
-}
-map* toks_split(map* in,char* by,int limit=0){
-	ret=in.map_split(by,limit)
-	for i=1;i<ret->len;i++ => ret[i-1].toks_align()
 	return ret
 }
 static map* expand_macros(map* mp,map* macros){
@@ -2203,12 +1394,12 @@ static map* expand_macros(map* mp,map* macros){
 			i+=expanded.map_len()-7
 	return mp
 }
-static map* c_macros(char* in) => return in.x_map().toks_macros()
+map* c_macros(char* in) => return in.x_map().toks_macros()
 static map* toks_macros(map* mp){
 	ret={}
-	for i=1; i<mp.map_len(); i+=2
-		if !mp[i-1].str_has("#define") => continue
-		mp[i-1].str_split("\n").each line,,i2
+	for i=0; i<mp.map_len(); i+=2
+		if !mp[i].str_has("#define") => continue
+		mp[i].str_split("\n").each line,,i2
 			if !line.str_start("#define") => continue
 			toks=line.drop_left("#define ").x_map()
 			if toks[3]!=="(" => continue
@@ -2230,7 +1421,7 @@ static int is_inline_vector(map* toks,int idx){
 	if pre.is_code() && !pre.is_word(:return) => return 0
 	if pre==="="
 		type=toks.old_decl_type(idx-4)
-		if type && !type.is_word("map* void*") => return 0
+		if type && !type.is_word("map* void* var") => return 0
 	return toks[idx]==="[" ? Vector : Map
 }
 static map* string_operators(map* toks){
@@ -2344,126 +1535,6 @@ static map* inline_vectors(map* toks){
 		if toks.requires_semicolon(idx+1) => toks.vec_splice(idx+2-1,0,[NULL,";"])
 	return toks
 }
-static map* data_toks(char* in) => in=in.sub_str(2,-2); return [:xmap,NULL,"(",NULL,data_tokenizer(&in),NULL,")"]
-static map* data_tokenizer(char** in,int level=0){
-	if !in||!*in||!**in => return NULL
-	str=*in
-	mp=[]
-	last=''
-	space1=''
-	space2=''
-	map* key=NULL
-	map* val=NULL
-	while *str
-		assert(last!=str)
-		last=str
-
-		temp=str
-		if str.str_start("//") => space1.=read_theline(&str); str++
-		else if " \t\n\r".str_chr(*str) => space1.=read_space(&str,"\t\n\r "); str++
-		clevel=0
-		for i=space1.str_len()-1; i>=0; i--
-			if " \t".str_chr(space1[i]) => clevel++
-		if clevel<level
-			space1=NULL
-			str=temp
-			break
-
-		if "\"'`".str_chr(*str) => key=[read_quote(&str)]; str++
-		else if *str=='('
-			str++
-			key=["(",NULL,c_tokenizer(&str,')'),NULL,")"]
-			if *str => str++
-		else
-			key=read_upto(&str,"\n\r \t").data_quote()
-
-		if " \t".str_chr(*str) => space2=read_over(&str,"\t "); str++
-
-		if str.str_start("---") => val=[read_heredoc(&str)]; str++
-		else if *str=='-' && " \t\n\r\0".str_chr(str[1]) => val=read_theline(&str).prop_toks(key); str++
-		else if !"\n\r".str_chr(*str) => val=read_theline(&str).data_quote(); str++
-		
-		if key && !val
-			temp=str
-			ret=data_tokenizer(&str,clevel+1)	
-			if ret.map_len()
-				val=["xmap",NULL,"(",NULL,ret,NULL,")"]
-			else
-				val=NULL
-	  			str=temp
-		if key || val
-			if mp.map_len()
-				mp[]=NULL
-				mp[]=","
-			mp[]=space1
-			mp.vec_merge(key or [:NULL])
-			mp[]=NULL
-			mp[]=","
-			mp[]=space2
-			mp.vec_merge(val or [:NULL])
-			space1=space2=NULL
-			key=val=NULL
-		else
-			space1.=space2
-			space2=NULL
-	if mp.map_len() || space1 => mp[]=space1
-	*in=str
-	return mp
-}
-static char* read_over(char** in,char* chars=" \t"){
-	str=*in
-	while(*str && chars.str_chr(*str))
-		str++
-	from=*in
-	*in=str-1
-	return from.sub_str(0,str-from)
-}
-static map* data_quote(char* in){
-	if !in || !in.str_len() => return NULL
-	if "\"'`".str_chr(*in) => return [in]
-	if *in=='=' => return in.sub_str(1).x_map().vec_del(0,1).vec_compact()
-	if *in=='{' => return in.sub_str(1,-1).prop_toks()
-	if *in=='[' => return in.sub_str(1,-1).prop_vec_toks()
-	return [in.str_quote()]
-}
-static map* prop_vec_toks(char* in){
-	ret=[]
-	toks=in.split_by(',')
-	ret.each val,idx
-		if idx => ret.vec_merge([NULL,","," "])
-		else ret[]=NULL
-		ret.vec_merge(val.data_quote())
-	return [:xvec,NULL,"(",NULL,ret,NULL,")"]
-}
-static map* prop_toks(char* in,map* name=NULL){
-	ret=[]
-	toks=split_by(in,',')
-	toks.each val,, idx
-		val=val.split_by(' ',2)
-		if !val.map_len() => continue
-		if idx==0 && val[0]==="-"
-			if name
-				ret[]=NULL
-				ret.vec_merge(:name.data_quote())
-				ret.vec_merge([NULL,","," "])
-				ret.vec_merge(name)
-			val[0]=:type
-		if ret.map_len()
-			ret.vec_merge([NULL,","," "])
-		else
-			ret[]=NULL
-		ret.vec_merge(val[0].data_quote())
-		ret.vec_merge([NULL,","," "])
-		ret.vec_merge(val[1] ? val[1].data_quote() : [:NULL])
-	return [:xmap,NULL,"(",NULL,ret,NULL,")"]
-}
-map* read_paren(map* mp,char** line,map*(*func)(char**)){
-	str=*line
-	mp[]=char_str(*str)
-	mp[]=line.func()
-	mp[]=closing_paren(*str).char_str()
-	return mp
-}
 static map* file_map(char* filename) => return filename.file_read().data_map()
 map* data_map(char* in) => return data_map2(&in)
 static map* data_map2(char** in,int level=0){
@@ -2551,10 +1622,6 @@ char* callfunc_c(map* funcs){
 		//pp1
 		ret.="\t\tcase %p: { %s break; }\n".mstr(v.name.str_hash(),str_params)
 	return ret
-}
-char* write_c(char* infile,char* outfile=NULL){
-	source_funcs()
-	return infile.file_read().x_c().write_file(outfile,1)
 }
 static char* func_ccall(map* fn){
 	ret=''
@@ -2749,8 +1816,8 @@ static map* auto_types(map* toks,char* context=:c,int is_script=0,map* env={},ma
 				fenv[param]=op.type
 			fn.body.add_return().auto_types(:body,is_script,fenv,fns,fn)
 			if is_script
-				if fn.body => _globals.cache.userfuncs[fn.name]=fn.body
-				_globals.cache.reflect.funcs[fn.name]=fn.map_del_key(:body)
+				if fn.body => _globals.userfuncs[fn.name]=fn.body
+				_globals.reflect.funcs[fn.name]=fn.map_del_key(:body)
 		return toks.auto_types(:body,is_script,env,fns)
 	else if context===:body
 		for int j=0; j<toks->len; j+=2
@@ -2804,7 +1871,7 @@ static map* auto_types(map* toks,char* context=:c,int is_script=0,map* env={},ma
 					toks.vec_splice(1,0,"$type ".x_map().vec_del(0).vec_compact())
 					env[name]=type
 				else
-					"$(func.name)(): unknown var $name".px()
+					"$(func.name)(): unknown void* $name".px()
 			toks.auto_types(:expr,is_script,env,fns,func,toks.syn_assign_val())
 		else
 			toks.auto_types(:expr,is_script,env,fns,func)
@@ -2830,7 +1897,7 @@ static map* auto_types(map* toks,char* context=:c,int is_script=0,map* env={},ma
 					if fn
 						params=params.param_c(env,fns,fn)
 					toks.syn_set_param(i,params)
-			else if toks[i+1]==="[" && toks.head_type(i-2,i,env,fns).is_word("map* void*") && toks.is_typecast(head).neq("void*") && 1
+			else if toks[i+1]==="[" && toks.head_type(i-2,i,env,fns).is_word("map* void* var") && toks.is_typecast(head).neq("void*") && 1
 				name=toks[i+3]
 				if !name.map_len() => name=[NULL,:NULL]
 				head=toks.expr_head(i-2)
@@ -2863,7 +1930,7 @@ static map* auto_types(map* toks,char* context=:c,int is_script=0,map* env={},ma
 					toks.syn_set_param(i+2,params)
 					toks.vec_compact()
 					i=head-2
-				else if toks.expr_type(head,i,env,fns).is_word("map* void*") && toks.is_typecast(head).neq("void*")
+				else if toks.expr_type(head,i,env,fns).is_word("map* void* var") && toks.is_typecast(head).neq("void*")
 					name=toks[i+3]
 					mid=toks.vec_sub(head+1,i-head-1).xadd(NULL,",",NULL,name.str_unquote().str_quote()).vec_splice(0,0,[NULL])
 					toks.vec_splice(head+1,i+3-head,[:map_val,NULL,"(",NULL,mid,NULL,")"])
@@ -2881,7 +1948,7 @@ static map* func_depend(map* mp,map* ret={}){
 }
 map* depends(char* filename){
 	ret={}
-	map* ref=reflect()	
+	map* ref=_globals.reflect
 	ref.depends.each funcs, name
 //		funcs.px()
 		if ref.funcs[name].file===filename
@@ -2930,60 +1997,8 @@ int utests(char* test=NULL,char* file="utests.map"){
 	"\n$passed/$runs tests passed.".px()
 	return errs
 }
-map* cmdline_params(map* args,map* funcs){
-	func=args[1]
-	args=args.vec_sub(2)
-	map* params=funcs[func].params
-	if !params => "Function: $func() not found".fox_error()
-	ret={}
-	int curr=1
-	int variadic=params.map_key(params.map_len()-1)==="..." ? params.map_len() : 0
-	named_param=''
-	args.each v,k,i
-		if v.str_start("-") && v.str_len()>1
-			val=''
-			if named_param
-				ret[named_param]=1
-			if v.str_start("--")
-				named_param=v.sub_str(2)
-				if v.str_has("=")
-					mp1=named_param.str_split("=",2)
-					named_param=mp1[0]
-					val=mp1[1]
-				else named_param=v.sub_str(2)
-			else
-				named_param=v.sub_str(1)
-				if !params[named_param]
-					params.each v2,k2,i2
-						if ret.map_has_key(k2) => continue
-						if k2.str_start(named_param) => named_param=k2; break
-//				if v.str_len()>2
-//					val=v.sub_str(2)
-			if !params[named_param] => "Invalid parameter $(named_param) in call to...\n$(funcs[func].func_cdecl())".fox_error()
-			if val
-				ret[named_param]=val
-				named_param=NULL
-		else if named_param
-			ret[named_param]=v
-			named_param=NULL
-		else if variadic && curr>=variadic
-			ret[]=v
-			curr++
-		else
-			if curr>params.map_len() => "Excess number of arguments. Function has only $(params.map_len())\narguments $(funcs[func].func_cdecl())".fox_error()
-			ret[params.map_key(curr-1)]=v
-			curr++
-	if named_param
-		ret[named_param]=1
-	ret=ret.eval_params(func,NULL,funcs)
-	ret.each v3,k3,i3
-		if params[k3].type==="map*"
-			ret[k3]=v3.str_map()
-	return ret
-}
 map* funcs(){
-	if !_globals.cache.reflect=>_globals.cache.reflect=reflect()
-	return _globals.cache.funcs ? _globals.cache.funcs : _globals.cache.reflect.funcs
+	return _globals.funcs or _globals.reflect.funcs
 }
 void* fox_run(char* in){
 	int halt=0
@@ -3066,13 +2081,24 @@ static void* binary_op(void* left, char oper, void* right){
 	"Unknown operator $oper".fox_error()
 	return NULL
 }
-static int is_true(void * val){
+static int is_true(void* val){
 	if !val => return 0
 	if val.is_i() => return val.is_int()
 	if val.is_f() => return val.is_double()
 	if val.is_map() => return val.map_len()
 	if val.is_str() => return val.str_len()
 	return 1
+}
+char* func_cdecl(map* fn,int show_default=1){
+	ret2=""
+	fn.params.each param,name,i2
+		s=param.type.str_join(" ",name)
+		if name==="..." => s=name
+		if show_default => s=s.str_join("=",param.default)
+		ret2=ret2.str_join(", ",s)
+	file=''
+	if fn.file => file="//$(fn.file)"
+	return "$(fn.decltype) $(fn.name)($ret2); $file"
 }
 void* eval(char* in,map* env=NULL){
 	return in.x_toks().eval_toks(env)
@@ -3235,34 +2261,6 @@ static int eval_expr_cont(map* mp,int idx,map* env,void** last,int level){
 	*last=ret
 	return idx
 }
-static map* eval_params(map* sent,char* name,map* env=NULL,map* fns=funcs()){
-	name.assert()
-	ret={}
-	fn=fns[name]
-	if !fn => "Function $name() not found".fox_error()
-	named=0
-	fn.params.each v,k,i
-		if k==="..."
-			for int i2=i; i2<sent->len; i2++
-				ret[]=sent[i2]
-			break
-		else if sent.map_has_key(k)
-			named=1
-			ret[k]=sent[k]
-		else if !named && sent.map_len()>i && sent.map_key(i).is_i()
-			ret[k]=sent[i]
-		else if env.map_has_key(k)
-			named=1
-			ret[k]=env[k]
-		else if k===:env
-			ret[k]=env
-		else if v.default
-			ret[k]=v.default.eval()
-		else
-			"Parameter missing in $(fn.name)($k=?) in $(fn.func_cdecl())\nargs=$(sent.json())".fox_error()
-			assert(0)
-	return ret
-}
 void* data_exec(void* data,map* env=NULL){
 	if !data => return NULL
 	if data.is_str() => return data	
@@ -3273,7 +2271,7 @@ void* data_exec(void* data,map* env=NULL){
 void* call_func(map* params,char* name,map* env=NULL){
 	params=params.eval_params(name,env)
 	if name.str_start(:php_) => return params.call_php(name.sub_str(5))
-	map* user=_globals.cache.userfuncs[name]
+	map* user=_globals.userfuncs[name]
 	void* ret=NULL
 	if user
 		int halt=0
@@ -3301,161 +2299,86 @@ map* func_depend_recursive(char* func, char* file, map* funcs, map* files){
 		fname.func_depend_recursive(ffile, funcs, files)
 	return funcs
 }
-
-char* mem_usage(){
-	runtime=run_time()
-	totaltime=total_time()
-	gctime=gc_time()
-	codetime=runtime-totaltime-gctime
-	return "Memory:%s-%s [%d%% garbage], Pages: %d/%d, GC runs=%d-%d, Time=%d[gc]+%d[code]=%d ms [%d%% gc] GC Max: %d msec, Root Objs: %d".mstr(
-		_gcdata.max_mem.int_kb(),
-		max_mem().int_kb(),
-		(_gcdata.max_mem-_gcdata.max_used)*100/_gcdata.max_mem,
-		_gcdata.total_pages,
-		_gcdata.page_no,
-		_gcdata.gcruns,
-		_gcdata.gcwaste,
-		gctime,
-		codetime,
-		runtime,
-		gctime*100/(codetime+gctime),
-		_gcdata.gcmax/1000,
-		_gcdata.max_roots
-	)
-}
-char* int_kb(size_t i,char* unit=:B){
-	size_t ks=1
-	if i<10*ks*1024=> return i.int_human()
-	if i<10*ks*1024*1024 => return (i/(1024)).int_human(:K..unit)
-	if i<10*ks*1024*1024*1024 => return (i/(1024*1024)).int_human(:M..unit)
-	return (i/(1024*1024*1024)).int_human("G"..unit)
-}
-char* int_human(int i,char* unit='',char* zero=""){
-	if !i => return zero
-	ret=i.int_str()
-	addat=3
-	while addat<ret.str_len()
-		ret=ret.sub_str(0,-addat)..","..ret.sub_str(-addat)
-		addat+=4
-	if ret && unit => ret.=unit
-	return ret
-}
-void rewrite_ptr(mempage* pg,void** ptr){
-	if *ptr<(void*)pg->page||*ptr>(void*)pg->types => return
-	off=ptr_block(*ptr,pg)
-	if !(pg->types[off] & (1<<6))
-		*ptr=**(void***)ptr
-		return
-	len=1
-	while(len<=off && (pg->types[off-len] & (1<<6))) len++
-	assert(len<=off)
-	head=pg->page+(off-len)*pg->block_size
-	*ptr=*(char**)head+((char*)*ptr-head)
-}
-void rewrite_ptrs(mempage* old){
-	pg.each_mem(mem_i){
-		if pg==old => continue
-		for i=0;i<pg->blocks;i++
-			if !pg->types[i] || pg->types[i] & (1<<6) => continue
-			char type=pg->types[i] & (31)
-			if type<Map => continue
-			len1=1
-			while(pg->types[i+len1] & (1<<6)) len1++
-			size1=len1*pg->block_size
-			void* data=pg->page+i*pg->block_size
-			void* ptr=NULL
-			if type==Map||type==Vector => old.rewrite_ptr((void**)&(((map*)data)->vars))
-			else if type==Cell
-				void** vars=(void**)data
-				size1/=sizeof(void*)
-				for(i=0;i<size1;i++) old.rewrite_ptr((void**)&(vars[i]))
-			else if type==Cell2
-				Mapcell* pairs=(Mapcell*)data
-				size1/=Mapcell.sizeof()
-				for i=0;i<size1;i++
-					old.rewrite_ptr((void**)&(pairs[i].val))
-					old.rewrite_ptr((void**)&(pairs[i].id))
-			i+=len1-1
-	}	
-	void** sp=NULL
-	root_ptrs().each v,,i => old.rewrite_ptr(v)
-	memset(old->types,0,old->blocks)
-
-	old->free=old->blocks
-	memset(old->types,0,old->blocks)
-}
-int page_map(mempage* pg){
-	if pg->blocks==1
-		"[---- %d KB / %d KB ----]\n".printf(pg->free * pg->block_size / 1024,pg->block_size/1024)
-		return 0
-	
-	"[".printf()
-	int skip=pg->blocks/80
-	int cont=0
-	for int i=0;i<pg->blocks;i++
-		char type=pg->types[i]
-		if skip && i%skip => continue
-		if type & (1<<6)
-			"=".printf()
-			continue
-		type &=(31)
-		if !type => ".".printf()
-		else if type==String => :s.printf()
-		else if type==Blob => :s.printf()
-		else if type==Map => :m.printf()
-		else if type==Vector => :v.printf()
-		else if type==Cell => :v.printf()
-		else if type==Cell2 => :m.printf()
-		else if type==Tail => :t.printf()
-		else "?".printf()
-	"]:%d %d*%d=%d KB/%d%%\n".printf(pg->no, pg->blocks,pg->block_size,pg->block_size * pg->blocks / 1024,(pg->blocks-pg->free)*100/pg->blocks)
+//TODO: merge with _ptr defined bellow.
+int call_variadic_int(map* mp,void* fp,char* name){
+	int(*ptr)(void* param1,...)=fp
+	if !mp => return ptr(End)
+	len=mp.map_len()
+	if mp[mp->len-1]==(void*)End => len--
+	if len==0 => return ptr(End)
+	if len==1 => return ptr(mp[0],End)
+	if len==2 => return ptr(mp[0],mp[1],End)
+	if len==3 => return ptr(mp[0],mp[1],mp[2],End)
+	if len==4 => return ptr(mp[0],mp[1],mp[2],mp[3],End)
+	if len==5 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],End)
+	if len==6 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],End)
+	if len==7 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],End)
+	if len==8 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],End)
+	if len==9 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],End)
+	if len==10 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],End)
+	if len==11 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],End)
+	if len==12 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],End)
+	if len==13 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],End)
+	if len==14 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],End)
+	if len==15 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],End)
+	if len==16 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],End)
+	if len==17 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],End)
+	if len==18 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],End)
+	if len==19 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],End)
+	if len==20 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],End)
+	if len==21 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],End)
+	if len==22 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],End)
+	if len==23 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],End)
+	if len==24 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],End)
+	if len==25 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],End)
+	if len==26 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],End)
+	if len==27 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],mp[26],End)
+	if len==28 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],mp[26],mp[27],End)
+	if len==29 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],mp[26],mp[27],mp[28],End)
+	if len==30 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],mp[26],mp[27],mp[28],mp[29],End)
+	if len==31 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],mp[26],mp[27],mp[28],mp[29],mp[30],End)
+	if len==32 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],mp[26],mp[27],mp[28],mp[29],mp[30],mp[31],End)
+	"Only 32 parameters supported in call to function $name sent=$(mp.json())".fox_error()
 	return 0
 }
-int dump_chain(mempage* pg,int line){
-	"________________ line=%d, page=%d, free=%d/%d\n".printf(line,pg->no,pg->free,pg->blocks)
-	for int i=0; i<pg->chains.len; i++
-		"%d => %p\n".printf(*(int*)(pg->chains.vars[i]),pg->chains.vars[i])
-	"----------------\n".printf()
-	assert(0)
-//	"Chain fox_error".fox_error()
+void* call_variadic_ptr(map* mp,void* fp,char* name){
+	void*(*ptr)(void* param1,...)=fp
+	if !mp => return ptr(End)
+	len=mp.map_len()
+	if mp[mp->len-1]==(void*)End => len--
+	if len==0 => return ptr(End)
+	if len==1 => return ptr(mp[0],End)
+	if len==2 => return ptr(mp[0],mp[1],End)
+	if len==3 => return ptr(mp[0],mp[1],mp[2],End)
+	if len==4 => return ptr(mp[0],mp[1],mp[2],mp[3],End)
+	if len==5 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],End)
+	if len==6 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],End)
+	if len==7 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],End)
+	if len==8 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],End)
+	if len==9 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],End)
+	if len==10 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],End)
+	if len==11 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],End)
+	if len==12 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],End)
+	if len==13 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],End)
+	if len==14 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],End)
+	if len==15 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],End)
+	if len==16 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],End)
+	if len==17 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],End)
+	if len==18 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],End)
+	if len==19 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],End)
+	if len==20 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],End)
+	if len==21 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],End)
+	if len==22 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],End)
+	if len==23 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],End)
+	if len==24 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],End)
+	if len==25 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],End)
+	if len==26 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],End)
+	if len==27 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],mp[26],End)
+	if len==28 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],mp[26],mp[27],End)
+	if len==29 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],mp[26],mp[27],mp[28],End)
+	if len==30 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],mp[26],mp[27],mp[28],mp[29],End)
+	if len==31 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],mp[26],mp[27],mp[28],mp[29],mp[30],End)
+	if len==32 => return ptr(mp[0],mp[1],mp[2],mp[3],mp[4],mp[5],mp[6],mp[7],mp[8],mp[9],mp[10],mp[11],mp[12],mp[13],mp[14],mp[15],mp[16],mp[17],mp[18],mp[19],mp[20],mp[21],mp[22],mp[23],mp[24],mp[25],mp[26],mp[27],mp[28],mp[29],mp[30],mp[31],End)
+	"Only 32 parameters supported in call to function $name sent=$(mp.json())".fox_error()
 	return 0
-}
-int check_chains(mempage* pg,int line=__LINE__){
-	for int i=1; i<pg->chains.len; i++
-		if *(int*)(pg->chains.vars[i])<MIN_CHAIN
-			pg.dump_chain(line)
-		if !(*(int*)(pg->chains.vars[i])<=*(int*)(pg->chains.vars[i-1]))
-			pg.dump_chain(line)
-		if *(int*)(pg->chains.vars[i])==*(int*)(pg->chains.vars[i-1])
-			if !(pg->chains.vars[i]>pg->chains.vars[i-1])
-				pg.dump_chain(line)
-//	"sort ok on %d points\n".printf(pg->chains.len)
-	return 0
-}
-int page_maps(char* title=""){
-	"%s\n".printf(title)
-	pg.each_mem(mem_i) pg.page_map()
-	return 0
-}
-char* ptr_id(void* ptr){
-	static char temp[128];
-	mempage* pg=ptr.ptr_page()
-	if !pg => return ptr
-	int block=ptr.ptr_block(pg)
-	type=ptr.ptr_type()
-	if type
-		int len=block.block_len(pg)
-		int head=block.block_head(pg)
-		int pre=block-head
-		sprintf(temp,"%d#%d+%d-%d*%d[%s]",pg->no,block,len,pre,pg->block_size,ptr.ptr_name())
-		return temp
-	sprintf(temp,"%d#%d+%d [%s]",pg->no,block,pg->block_size,ptr.ptr_name())
-	return temp
-}
-void benchmark_gc(){
-	ret=[]
-	for i=0;i<1000000;i++
-		ret[i%200000]=1023.new_str()
-	ret.map_len().dx()
-	mem_usage().dx()
 }

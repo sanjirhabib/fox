@@ -1,4 +1,7 @@
-#include <fox.h>
+#line 2 "src/unicode.fox"
+
+#include <core.h>
+#include <unicode.h>
 
 char* utf_letter(char* in, char* out){
 	if !in => return ''

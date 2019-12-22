@@ -1,6 +1,12 @@
-#include <fox.h>
+#line 2 "src/regexp.fox"
+
+#include <core.h>
 #include <regex.h>
+
 map* regexp(char* in, char* pattern){
+	if(!in && !pattern){ return new_vec(); };
+	if(!pattern){ return NULL; };
+	if(!(in)){in="";};
 	int status=0;
 	regex_t	re={0};
 	regmatch_t match[10]={0};

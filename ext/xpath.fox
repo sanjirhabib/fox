@@ -1,0 +1,41 @@
+#include <libxml/tree.h>
+#include <libxml/parser.h>
+#include <libxml/xpath.h>
+#include <libxml/xpathInternals.h>
+#include <libxml/HTMLparser.h>
+#include <core.h>
+#include <xpath.h>
+
+#pragma fox cc -lxml2
+
+map* xpath(char* in, char* x_path){
+	xmlInitParser();
+	xmlChar* nsList=''
+
+	xmlDocPtr doc=in.htmlReadDoc("https://habibur.com/","utf8",HTML_PARSE_NOERROR|HTML_PARSE_NOWARNING)
+	if !doc => xmlCleanupParser(); "error parsing HTML".fox_error()
+
+	xmlXPathContextPtr xpathCtx=doc.xmlXPathNewContext()
+	if !xpathCtx => doc.xmlFreeDoc(); xmlCleanupParser(); "XML parsing failed".fox_error()
+
+
+	xmlXPathObjectPtr xpathObj=x_path.xmlXPathEvalExpression(xpathCtx)
+	if !xpathObj => xpathCtx.xmlXPathFreeContext(); doc.xmlFreeDoc(); xmlCleanupParser(); "error in expression $x_path".fox_error()
+
+	xmlNodeSetPtr nodes=xpathObj->nodesetval
+	if !nodes => xpathCtx.xmlXPathFreeContext(); doc.xmlFreeDoc(); xmlCleanupParser(); return ''
+	ret=[]
+	for int i = 0; i < nodes->nodeNr; ++i
+		xmlNodePtr cur = nodes->nodeTab[i]
+		if cur->type==XML_NAMESPACE_DECL => continue
+		char* name=(char*)cur->name
+		if cur->ns => name=cur->ns->href..name
+		value=cur->children ? (cur->children->content ? cur->children->content.str_dup() : '') : ''
+		ret[]=value
+
+	xpathObj.xmlXPathFreeObject()
+	xpathCtx.xmlXPathFreeContext()
+	doc.xmlFreeDoc()
+	xmlCleanupParser();
+	return ret
+}

@@ -1,16 +1,91 @@
-#line 2 "/web/fox/core.fox"
-//#define NDEBUG
-#include <fox.h>
+#line 2 "src/core.fox"
+
+#ifndef _XOPEN_SOURCE
+#define _XOPEN_SOURCE
+#endif
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+#include <setjmp.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <assert.h>
+#include <stdarg.h>
+#include <math.h>
+#include <time.h>
+#include <sys/time.h>
+#include <memory.h>
+#include <unistd.h>
+#include <ctype.h>
+#include <sys/types.h>
+#include <execinfo.h>
+#include <signal.h>
+#include <sys/mman.h>
+
+#include <core.h>
+//enum Types {
+//	Null,Int,Double,String,Blob,Map,Vector,Index,Keys,Cell,Cell2,Tail
+//};
+//typedef struct Mapcell {
+//	int nextid;
+//	int hkey;
+//	char* id;
+//	void* val;
+//} Mapcell;
+//typedef struct map {
+//	int len;
+//	char type;
+//	unsigned short magic;
+//	union {
+//		struct Mapcell* pairs;
+//		void** vars;
+//	};
+//} map;
+
+#define max(a,b) ((a)>(b)?(a):(b))
+#define min(a,b) ((a)<(b)?(a):(b))
+#if UINTPTR_MAX == 0xffffffff
+//typedef long long void*;
+#else
+//typedef void* var;
+#endif
+#define is_i(x) ((long long)(x)>>61 & 2)
+#define is_f(x) ((*(long long*)&(x))>>61 & 1)
+#define is_num(x) (is_i(x)||is_f(x))
+
+//extern map* _globals;
+
+//extern int _printed;
+//extern int _is_web;
+
+//extern char* skip;
+//extern int _queries;
+int _queries;
+
+#define None 0x0F9AD3BA
+#define End (char*)(0x0FF1B14E059AD3BA)
+
+char* strstr(const char* str1,const char* str2);
+int chdir(const char* path);
+int max_mem();
+int curr_mem();
+// ^^^ habib upto
+
+char* strstr(const char* str1,const char* str2);
+int chdir(const char* path);
+int max_mem();
+int curr_mem();
+int run(map* args);
+#include <gc.h>
+//#include <map.h>
+#include <generator.h>
 
 #define MAXMEM 40*1024*1024
 #define MIN_CHAIN 1
 
-struct gcdata _gcdata={0};
 map* _globals=NULL;
-size_t _clockstart=0;
 
 int _printed=0;
-int _total_time=0;
 
 char* skip=NULL;
 
@@ -18,26 +93,16 @@ int rand();
 void* px(void* str,int newline);
 void xexit(int val);
 void* fox_error(char* msg,int dump);
-
-int mem_total(){
-	int ret=0;
-	each_mem(pg,mem_i){ ret+=pg->blocks*pg->block_size; };
-	return ret;
-};
-int mem_free(){
-	int ret=0;
-	each_mem(pg,mem_i){ ret+=pg->free*pg->block_size; };
-	return ret;
-};
 static void fox_signal_handler(int sig){ fox_stack_dump(); };
 void stack_dump_direct(){
-	void *array[400];
+	void* array[400];
 	size_t size=backtrace(array,400);
 	backtrace_symbols_fd(array,size,STDERR_FILENO);
-	assert(0);
+	return 0;
+//	assert(0)
 };
 char* stack_str(){
-	void *array[400];
+	void* array[400];
 	size_t size=backtrace(array,400);
 	char** lines=backtrace_symbols(array,size);
 	char* ret=NULL;
@@ -125,12 +190,44 @@ char* xcat(char* ret,...){
 	va_end(args);
 	return ret;
 };
-char* cat(char* str1,char* str2,size_t len){
+char* blob_cat(char* str1,char* str2,size_t len){
 	assert((!str1 || is_str(str1)) && (!str2 || is_str(str2)));
 	if(!str2){ return str1; };
 	if(len==-1020){ len=str_len(str2); };
 	if(!str1){ return str_dup_len(str2,len); };
 	int oldlen=str_len(str1);
+	if(!is_blob(str1)){
+		char* ret=new_blob(oldlen+len);
+		memcpy(ret,str1,oldlen);
+		memcpy((ret+oldlen),str2,len);
+		ret[oldlen+len]='\0';
+		assert(str_len(ret)==oldlen+len);
+		return ret;
+	}else{
+		char temp1[128];
+		char temp2[128];
+		char temp3[128];
+		void* temp=fox_realloc(str1,str_len(str1)+len+1,ptr_type(str1));
+//		"blob_cat %s + %s = %s\n".printf(str1.ptr_name(temp1), str2.ptr_name(temp2), temp.ptr_name(temp3))
+		assert(oldlen==str_len(temp));
+		str1=temp;
+		memcpy((str1+str_len(str1)),str2,len);
+		if(ptr_type(str1)==Blob){
+			char* head=ptr_head(str1);
+			*(size_t*)(head)+=len; };
+		assert(oldlen+len==str_len(str1));
+		assert(!str1[str_len(str1)]); };
+	return str1;
+};
+//extern char tempbuff[128];
+char* cat(char* str1,char* str2,size_t len){
+//	return str1.blob_cat(str2,len)
+	assert((!str1 || is_str(str1)) && (!str2 || is_str(str2)));
+	if(!str2){ return str1; };
+	if(len==-1020){ len=str_len(str2); };
+	if(!str1){ return str_dup_len(str2,len); };
+	int oldlen=str_len(str1);
+	if(oldlen+len>16 || is_blob(str1) || is_blob(str2)){ return blob_cat(str1,str2,len); };
 	str1=fox_realloc(str1,str_len(str1)+len+1,ptr_type(str1));
 	assert(oldlen==str_len(str1));
 	memcpy((str1+str_len(str1)),str2,len);
@@ -144,23 +241,20 @@ static char* vec_json(map* mp,int indent){
 	if(!is_vec(mp)){ return json(mp,indent); };
 	char* ret=NULL;
 	ret=xcat(ret,"[", End);
+	int last=map_len(mp);
 	for(int i=next(mp,-1,NULL,NULL); has_id(mp,i); i++){ void* v=map_id(mp,i);
 		if(!v){ ret=xcat(ret,"null", End); }
 		else if(is_str(v)){ ret=xcat(ret,str_quote(v), End); }
 		else if(is_num(v)){ ret=xcat(ret,v, End); }
 		else if(is_map(v)){ ret=xcat(ret,vec_json(is_map(v),indent ? indent+1 : 0), End); };
-		ret=xcat(ret,", ", End);
-	};
-	if(str_len(ret)==1){ ret=xcat(ret,"]", End); }
-	else{
-		ret[str_len(ret)-2]=']';
-		ret[str_len(ret)-1]='\0'; };
+		if(i<last-1){ ret=xcat(ret,", ", End); }; };
+	ret=xcat(ret,"]", End);
 	return ret;
 };
 char* json(map* mp,int indent){
+	if(!is_map(mp)){ return NULL; };
 	if(!map_len(mp)){ return "{}"; };
 	if(is_vec(mp)){ return vec_json(mp,indent); };
-	if(!is_map(mp)){ return NULL; };
 	char* ret=NULL;
 	ret=xcat(ret,"{", End);
 	for(int i=next(mp,-1,NULL,NULL); has_id(mp,i); i++){ void* v=map_id(mp,i); char* k=map_key(mp, i);
@@ -223,7 +317,12 @@ char* int_str(long long value){
 		value*=-1;
 		neg=1; };
 	char string[21]={0};
-	int string_l=(value == 0) ? 1 : (int)log10(value) + 1 + neg;
+	int string_l=1+neg;
+	int x=10;
+	while(x<=value){
+		x*=10;
+		string_l++; };
+	//int string_l=(value == 0) ? 1 : (int)value.log10() + 1 + neg
 	long long residual=value;
 	int it=0;
 	for(it=string_l-1;it>=0;it--){
@@ -241,6 +340,8 @@ int str_eq(char* str,char* str1){
 	int len2=str_len(str1);
 	if(!len1 && !len2){ return 1; };
 	if(len1!=len2){ return 0; };
+//	if !str && !str1 => return 1
+//	if !str || !str1 => return 0
 	return strcmp(str,str1) ? 0 : 1;
 };
 size_t str_hash(unsigned char *str){
@@ -282,11 +383,13 @@ char* new_str(int len){ return fox_alloc(len+1,String); };
 map* new_map(){
 	map* ret=fox_alloc(sizeof(map),Map);
 	ret->type=Map;
+	ret->magic=0xD41E;
 	return ret;
 };
 map* new_vec(){
 	map* ret=fox_alloc(sizeof(map),Vector);
 	ret->type=Vector;
+	ret->magic=0xD41E;
 	return ret;
 };
 int key_eq(map* mp,int idx,char* id){
@@ -297,9 +400,17 @@ int key_eq(map* mp,int idx,char* id){
 	return id==key;
 };
 int key_hash(char* id){ return is_str(id) ? str_hash((unsigned char*)id) : is_int(id); };
+int map_hash(map* mp, char* id){
+	int hash=key_hash(id);
+	hash=hash & (map_size(mp)-1);
+	return hash;
+};
+int map_idx(map* mp,char* id){
+	return map_has_key(mp,id);
+};
 int map_has_key(map* mp,char* id){
 	if(!id||!mp){ return 0; };
-	assert(is_map(mp));
+//	assert(mp.is_map())
 	if(!mp->len){ return 0; };
 	if(ptr_type(mp)==Vector){
 		if(is_str(id)){ return 0; };
@@ -363,13 +474,12 @@ int has_id(map* mp,int idx){
 };
 void* map_idp(map* mp,int idx){
 	if(!mp){ return NULL; };
-	if(!is_map(mp)){ px((xstr("Error! not map ",str_quote(to_str(mp,"",0)), End)),1); assert(0); };
-	assert(is_map(mp));
+//	if !mp.is_map() => ("Error! not map "..mp.to_str().str_quote()).px(); assert(0)
+//	assert(mp.is_map())
 	if(idx<0 || idx>=mp->len){ return NULL; };
 	return mp->type==Vector ? &mp->vars[idx] : &mp->pairs[idx].val;
 };
 void* map_id(map* mp,int idx){
-	if(!mp){ return NULL; };
 	if(!is_map(mp)){ return NULL; };
 //	if !mp.is_map() => ("Error! not map "..mp.to_str().str_quote()).px(); assert(0)
 //	assert(mp.is_map())
@@ -378,7 +488,7 @@ void* map_id(map* mp,int idx){
 };
 int map_len(map* mp){
 	if(!mp){ return 0; };
-	assert(is_map(mp));
+//	assert(mp.is_map())
 	return mp->len;
 };
 char* map_key(map* mp,int idx){ return idx<0 ? NULL : (ptr_type(mp)==Map ? mp->pairs[idx].id : int_var((idx+1))); };
@@ -390,7 +500,10 @@ char* is_str(void* v){
 char* is_blob(void* v){ return ptr_type(v)==Blob ? v: NULL; };
 map* is_vec(void* v){ return ptr_type(v)==Vector ? v: NULL; };
 map* is_hash(void* v){ return ptr_type(v)==Map ? v: NULL; };
-map* is_map(void* v){ return ptr_type(v)>=Map ? v: NULL; };
+map* is_map(void* v){
+//	return v.is_ptr() && ((map*)v)->magic==0xD41E ? v : NULL
+	return ptr_type(v)>=Map ? v: NULL;
+};
 double str_double(char* v){
 	double ret=0.0;
 	if(!v){ return ret; };
@@ -425,469 +538,11 @@ int stoi(char* str){
 	return atoi(str);
 };
 map* globals(){ return _globals; };
-int mem_used(int block_size,int type){
-	int ret=0;
-	each_mem(pg,mem_i){
-		if((!block_size || block_size==pg->block_size)){// && (!type || type==pg->type)
-			ret+=(pg->blocks-pg->free)*pg->block_size;
-		};};
-	return ret;
-};
-mempage* ptr_page(void* ptr){
-	if(!ptr || !_gcdata.total_pages || (char*)ptr<_gcdata.pages[0].page || (char*)ptr>_gcdata.pages[_gcdata.total_pages-1].types){ return NULL; };
-	int lo=-1;
-	int up=_gcdata.total_pages;
-	while(up-lo>1){
-		int mid=(lo+up)/2;
-		if(ptr>=(void*)_gcdata.pages[mid].page && ptr<(void*)_gcdata.pages[mid].types){
-			return &_gcdata.pages[mid];
-		}else if(ptr<(void*)_gcdata.pages[mid].page){
-			up=mid;
-		}else{
-			lo=mid; }; };
-	return NULL;
-};
-static void* block_ptr(int block,mempage* pg){ return pg->page+pg->block_size*block; };
-int ptr_block(void* ptr,mempage* pg){ return ((char*)ptr-pg->page)/pg->block_size; };
-int ptr_type(void* ptr){
-	if(!ptr){ return Null; };
-	if(is_i(ptr)){ return Int; };
-	if(is_f(ptr)){ return Double; };
-	mempage* pg=ptr_page(ptr);
-	if(!pg){ return String; };
-	return pg->types[ptr_block(ptr,pg)] & 31;
-};
-static int cell2_mark(Mapcell* pairs,int size){
-	for(int i=0;i<size;i++){
-		if(!is_num(pairs[i].id)){ gc_mark(pairs[i].id); };
-		gc_mark(pairs[i].val);
-	};
-	return 0;
-};
-static int cell_mark(void** pairs,int size){
-	for(int i=0;i<size;i++){
-		gc_mark(pairs[i]);
-	};
-	return 0;
-};
-static int gc_mark(void* ptr){
-	if(!ptr){ return 0; };
-	mempage* pg=ptr_page(ptr);
-	if(!pg){ return 0; };
-	int head=block_head(ptr_block(ptr,pg),pg);
-	int len=block_len(head,pg);
-	if(pg->types[head] & (1<<7)){ return 1; };
-	int type=pg->types[head];
-	for(int i=0; i<len; i++){ pg->types[head+i] |= (1<<7); };
-	ptr=block_ptr(head,pg);
-	if(type==Cell){ cell_mark((void**)ptr,mem_size(ptr)/sizeof(void*)); }
-	else if(type==Cell2){ cell2_mark((Mapcell*)ptr,mem_size(ptr)/sizeof(Mapcell)); }
-	else if(type==Map){ gc_mark(((map*)ptr)->pairs); }
-	else if(type==Vector){ gc_mark(((map*)ptr)->vars); }
-	else if(type==Index||type==Keys){ assert(0); };
-	return 1;
-};
-static int sweep_page(mempage* pg){
-	int ret=0;
-	pg->free=0;
-	for(int i=0;i<pg->blocks;i++){
-		if(!(pg->types[i] & (1<<7))){
-			if(pg->types[i]){
-				if((pg->types[i] & 31) !=Tail){ ret++; };
-				pg->types[i]='\0';
-				memset(pg->page+i*pg->block_size,0,pg->block_size); };
-			pg->free++;
-			continue;
-		}else{
-			pg->types[i] &= ~(1<<7); }; };
-	return ret*pg->block_size;
-};
-static void* data_delete(void* data,int idx,int size,int len){ return data_shift(data,idx+1,-1,size,len); };
-static void* data_insert(void* data,int idx,int size,int len){
-	data_shift(data,idx,1,size,len);
-	memset((char*)data+idx*size,0,size);
-	return data;
-};
-static void* data_shift(void* data,int idx,int shift,int size,int len){
-	if(idx>=len){ return data; };
-	memmove((char*)data+(idx+shift)*size,(char*)data+idx*size,(len-idx)*size);
-	return data;
-};
-static int cmp_page(const void* pg1,const void* pg2){
-	if(((mempage*)pg1)->page<((mempage*)pg2)->page){ return -1; };
-	return 1;
-};
-static void reindex_pages(){
-	char* lastpage=NULL;
-	qsort(_gcdata.pages,_gcdata.total_pages,sizeof(mempage),cmp_page);
-	each_mem(pg,mem_i){
-		pg->idx=mem_i;
-		assert(!lastpage || pg->page>lastpage);
-		lastpage=pg->page;
-	};
-};
-static mempage* no_page(int no){
-	each_mem(pg,idx){ if(pg->no==no){ return pg; }; };
-	assert(0);
-	return NULL;
-};
-static struct mempage* new_page(int block_size,int blocks){
-//	printf("\nGC Page: %d * %d = %d\n",block_size,blocks,block_size*blocks)
-	int size=block_size*blocks;
-	char* page=malloc((size+blocks));
-	_gcdata.pages=realloc(_gcdata.pages,(_gcdata.total_pages+1)*sizeof(mempage));
-	_gcdata.pages=data_insert(_gcdata.pages,_gcdata.total_pages,sizeof(mempage),_gcdata.total_pages);
-	mempage* ret=&_gcdata.pages[_gcdata.total_pages];
-	_gcdata.total_pages++;
-	ret->page=page;
-	int no=ret->no=_gcdata.page_no++;
-	reindex_pages();
-	ret=no_page(no);
-	assert((long long)ret->page>0);
-	ret->blocks=blocks;
-	ret->free=blocks;
-	ret->block_size=block_size;
-	ret->types=ret->page+size;
-	memset(ret->types,0,blocks);
-	index_free_space(ret);
-	_gcdata.curr_mem+=size+blocks*sizeof(char);
-	_gcdata.max_mem=max(_gcdata.max_mem,_gcdata.curr_mem);
-	return ret;
-};
-static int comp_iptr(const void* sp1,const void* sp2){
-	// -1: move sp1 left, +1: move right
-	int* i1=*(int**)sp1;
-	int* i2=*(int**)sp2;
-	if(*i1 > *i2){ return -1; };
-	if(*i1 < *i2){ return 1; };
-	if(i1 > i2){ return 1; };
-	if(i1 < i2){ return -1; };
-	return 0;
-};
-static mempage* index_free_space(mempage* pg){
-	if(pg->blocks==1){ return pg; };
-	int free_len=0;
-	int maxchain=max(pg->blocks/20,1);
-	int no=0;
-	int** chains=realloc(pg->chains.vars,maxchain*sizeof(int*));
-	for(int i=0;i<=pg->blocks;i++){
-		if(i<pg->blocks && !pg->types[i]){
-			free_len++;
-		}else if(free_len){
-			if(free_len<MIN_CHAIN){
-				free_len=0;
-				*(int*)(pg->page+(i-1)*pg->block_size)=free_len;
-				continue; };
-			if(no>=maxchain){
-				maxchain*=2;
-				chains=realloc(chains,maxchain*sizeof(int*)*2); };
-			chains[no]=(int*)(pg->page+(i-free_len)*pg->block_size);
-			*chains[no]=free_len;
-			no++;
-			free_len=0; }; };
-	assert(free_len==0);
-	qsort(chains,no,sizeof(int*),comp_iptr);
-	pg->chains.len=no;
-	pg->chains.vars=(void**)chains;
-	return pg;
-};
-static void* chain_alloc(mempage* pg, int size, int type, char* ptr){
-	int blocks=size_blocks(size,pg);
-	int chainid=-1;
-	int lo=-1;
-	int hi=pg->chains.len;
-	if(!ptr){
-		while(hi-lo>1){
-			chainid=(hi+lo)/2;
-			if(blocks==*(int*)(pg->chains.vars[chainid])){ break; }
-			else if(blocks<*(int*)(pg->chains.vars[chainid])){ lo=chainid; }
-			else {hi=chainid;}; };
-		if(hi-lo<2){
-			if(lo==-1){ return NULL; }
-			else {chainid=lo;}; };
-		assert(chainid>=0);
-		assert(chainid<pg->chains.len);
-		ptr=pg->chains.vars[chainid];
-		assert(*(int*)ptr>=blocks);
-	}else{
-		if(ptr<pg->page || ptr>=pg->types){ return NULL; };
-		if(ptr_type(ptr)){ return NULL; };
-		if(*(int*)ptr<blocks){ return NULL; };
-		if(*(int*)ptr>=MIN_CHAIN){
-			while(hi-lo>1){
-				int mid=(hi+lo)/2;
-				int match=comp_iptr(&ptr,&(pg->chains.vars[mid]));
-				if(!match){
-					chainid=mid;
-					break;
-				}else if(match<0){ hi=mid; }
-				else {lo=mid;}; };
-			assert(chainid>=0); }; };
-	if(chainid>=0){
-		pg->chains.vars=data_delete(pg->chains.vars,chainid,sizeof(int*),pg->chains.len);
-		pg->chains.len--; };
-	int rest=*(int*)ptr-blocks;
-	assert(rest>=0);
-	void* shifted=ptr+pg->block_size*blocks;
-	if(rest){
-		*(int*)shifted=rest; };
-	if(rest>=MIN_CHAIN){
-		assert(chainid>=0);
-		lo=-1;
-		hi=pg->chains.len;
-		while(hi-lo>1){
-			int mid=(hi+lo)/2;
-			if(comp_iptr(&shifted,&(pg->chains.vars[mid]))==1){ lo=mid; }
-			else {hi=mid;}; };
-		assert(hi>=0 && hi<=pg->chains.len);
-		if(hi){ assert(*(int*)shifted<=*(int*)(pg->chains.vars[hi-1])); };
-		if(hi<pg->chains.len){ assert(*(int*)shifted>=*(int*)(pg->chains.vars[hi])); };
-		pg->chains.vars=data_insert(pg->chains.vars,hi,sizeof(int*),pg->chains.len);
-		pg->chains.vars[hi]=shifted;
-		pg->chains.len++; };
-	int block=ptr_block(ptr,pg);
-	pg->types[block]=type;
-	type |= (1<<6);
-	for(int i=1;i<blocks;i++){
-		assert(!pg->types[block+i]);
-		pg->types[block+i]=type; };
-	pg->free-=blocks;
-	memset(ptr,0,blocks*pg->block_size);
-	return ptr;
-};
-static int copy_page(mempage* from,mempage* to){
-	for(int i1=0;i1<from->blocks;i1++){
-		char type1=from->types[i1];
-		type1 &= (31);
-		if(!type1){ continue; };
-		int len=1;
-		while(from->types[i1+len] & (1<<6)) {len++;};
-		int size=len*from->block_size;
-		void* ptr=from->page+i1*from->block_size;
-		void* ret=page_alloc(to,size,type1,NULL);
-		assert(ret);
-		memcpy(ret,ptr,size);
-		*(void**)ptr=ret;
-		assert(ptr_type(ret)==type1 && mem_size(ret)>=size);
-		i1+=len-1;
-	};
-	rewrite_ptrs(from);
-	printf("End copy mempage");
-	return 0;
-};
-static void* page_alloc(mempage* pg,int size,int type,int* full){
-	if(pg->blocks==1){
-		if(!pg->free || size>pg->block_size || size<pg->block_size*.4){ return NULL; };
-		pg->types[0]=type;
-		pg->free=0;
-		memset(pg->page,0,size);
-		return pg->page;
-	};
-	int block_size=pg->block_size;
-	int blocks=(size+block_size-1)/block_size;
-	if(!blocks){
-		printf("Block size: %d, blocks=%d\n",size,blocks);
-		stack_dump_direct(); };
-	assert(blocks);
-
-	if(block_size>16 && size<block_size/2){
-		return NULL; };
-	if(block_size<1024*4 && blocks>32){
-		return NULL; };
-	if(blocks > 0.5 * pg->blocks){
-		return NULL;
-	};
-	if(full && (block_size==16 || size>=block_size) && (block_size==1024*4||blocks<16) && blocks<0.4*pg->blocks){ (*full)++; };
-	return chain_alloc(pg,size,type,NULL);
-};
-static int gc_sweep(){
-	_gcdata.curr_used=0;
-	int ret=0;
-	each_mem(pg,mem_i){
-		ret+=sweep_page(pg);
-		if(pg->free==pg->blocks){
-			pg->abandoned++;
-			if(pg->abandoned>2){
-				free_page(pg);
-				mem_i--;
-				continue; };
-		}else{
-			pg->abandoned=0; };
-		_gcdata.curr_used+=(pg->blocks-pg->free)*pg->block_size;
-		index_free_space(pg);
-	};	
-	_gcdata.max_used=max(_gcdata.curr_used,_gcdata.max_used);
-	return ret;
-};
-map* root_ptrs(){
-	void* stack_end=_globals;
-	static map ret={0};
-	void* ptr=(void*)&stack_end;
-	if(!_gcdata.stack_head){ printf("gc_start() was not called fox_at start of application"); exit(-1); };
-	int size=((void*)_gcdata.stack_head-ptr)/sizeof(void*);
-	ret.vars=size<0 ? _gcdata.stack_head : ptr;
-	ret.len=abs(size)+1;
-	ret.type=Vector;
-	return &ret;
-};
-static int fox_gc(){
-//	puts("in gc")
-	int pre_usage=mem_used(0,0);
-	// commenting off setjmp() doesn't make any diff even in -O3
-	jmp_buf regs={0};
-	setjmp(regs);
-	map* roots=root_ptrs();
-	_gcdata.max_roots=max(_gcdata.max_roots,roots->len);
-	for(int i=0; i<roots->len; i++){ gc_mark(roots->vars[i]); };
-	int freed=gc_sweep();
-	_gcdata.gcruns++;
-	int percent=pre_usage ? freed*100/pre_usage : 100;
-	if(percent <=5){ _gcdata.gcwaste++; };
-//	puts("out gc")
-	return percent;
-};
-int gc_runs(){ return _gcdata.gcruns; };
-int gc_time(){ return _gcdata.gctime/1000; };
-int gc_end(){
-	_globals=NULL; _clockstart=0;
-	mempage* pg=_gcdata.pages;
-	each_mem(pg,i){
-		free(pg->page);
-	};
-	free(_gcdata.pages);
-	memset(&_gcdata,0,sizeof(_gcdata));
-	return 0;
-};
-static mempage* free_page(mempage* pg){
-	int idx=pg->idx;
-	free(pg->page);
-	_gcdata.pages=data_delete(_gcdata.pages,pg->idx,sizeof(mempage),_gcdata.total_pages);
-	_gcdata.total_pages--;
-	reindex_pages();
-	return idx < _gcdata.total_pages ? &_gcdata.pages[idx] : NULL;
-};
-int block_len(int block,mempage* pg){
-	if(!pg){ return 0; };
-	int ret=1;
-	for(int i=block+1;i<pg->blocks;i++){
-		if(pg->types[i] & (1<<6)){
-			ret++;
-		}else {break;}; };
-	return ret;
-};
-int mem_size(void* ptr){
-	mempage* pg=ptr_page(ptr);
-	if(!pg){ return 0; };
-	int block=ptr_block(ptr,pg);
-	assert(!(pg->types[block] & (1<<6)));
-	return pg->block_size*block_len(block,pg);
-};
-void* expand_inplace(char* ptr,char type,int size,int extra){
-	mempage* pg=ptr_page(ptr);
-	if(pg->blocks==1){
-		assert(ptr==pg->page);
-		int newsize=size+extra;
-		assert(newsize>pg->block_size);
-		if(type==String){
-			newsize*=2; };
-		newsize=(newsize+8-1) & ~(8-1); //roundup
-		pg->block_size=newsize;
-		pg->page=realloc(pg->page,newsize+1);
-		pg->types=pg->page+newsize;
-		pg->types[0]=type;
-		memset(pg->page+size,0,newsize-size);
-		void* ret=pg->page;
-		reindex_pages();
-		return ret; };
-	void* ret=chain_alloc(pg,extra,type,ptr+pg->block_size);
-	if(!ret){ return NULL; };
-	pg->types[ptr_block(ret,pg)]=type|(1<<6);
-	return ptr;
-};
-static int size_blocks(size_t size,mempage* pg){ return (size + pg->block_size - 1) / pg->block_size; };
-void* fox_realloc(void* ptr,size_t size,int type){
-	assert(size);
-	assert(size<MAXMEM);
-	if(!ptr){
-		return fox_alloc(size,type); };
-	void* head=ptr_head(ptr);
-	int oldsize=mem_size(head);
-	int offset=head ? (char*)ptr-(char*)head : 0;
-	size+=offset;
-	if(head){
-		if(oldsize>=size){
-			return ptr; };
-		void* ret=expand_inplace(head,type,oldsize,size-oldsize);
-		if(ret){ return ret+offset; }; };	
-	void* ret=fox_alloc(size,type);
-	assert(ret);
-	assert(oldsize || type==String);
-	oldsize ? memcpy(ret,head,oldsize) : memcpy(ret,ptr,strlen(ptr)+1);
-	return ret+offset;
-};
-void* fox_alloc(size_t size,int type){
-	if(size<=0){ return NULL; };
-	if(!_gcdata.stack_head){ printf("GC not started!!!"); exit(-1); };
-	if(_gcdata.inalloc){ printf("fox_error!!! Recursive fox_alloc() call"); exit(-1); };
-	_gcdata.inalloc=1;
-	assert(size<MAXMEM);
-	struct timeval gc_start=microtime();
-	void* ret=_xalloc(size,type);
-	if(!ret){ printf("%ld byte allocation failed.",size); exit(-1); };
-	int time=elapsed(gc_start);
-	_gcdata.gctime+=time;
-	_gcdata.gcmax=max(_gcdata.gcmax,time);
-	assert(!((char*)ret)[size-1]);
-	_gcdata.inalloc=0;
-	return ret;
-};
-static void* new_alloc(size_t size,int type){
-	int bsize=block_size(size);
-	if(!bsize){ return page_alloc(new_page(size,1),size,type,NULL); };
-	return page_alloc(new_page(bsize,max(ceil_pow2((mem_used(bsize,type)+size*2))/bsize,64*1024/bsize)),size,type,NULL);
-};
-static void* _xalloc(size_t size,int type){
-	if(!_gcdata.pages){ return new_alloc(size,type); };
-	if(size>256*256*16){ return new_alloc(size,type); };
-	char* ret=NULL;
-	int full=0;
-	each_mem(pg,mem_i){
-		if((ret=page_alloc(pg,size,type,&full))) {return ret;};
-	};
-	if(!full){ return new_alloc(size,type); };
-	int freed=fox_gc();
-	if(freed <=5){ return new_alloc(size,type); };
-	each_mem(pg,mem_i2) {if((ret=page_alloc(pg,size,type,NULL))) {return ret;};};
-	return new_alloc(size,type);
-};
-static int block_size(int size){
-	if(size <= 256){ return 16; };
-	if(size <= 256*16){ return 256; };
-	if(size <= 256*256){ return 256*16; };
-	return 0;
-};
-void start_time(){ _gcdata.time=microtime(); };
-void end_time(){ _total_time+=elapsed(_gcdata.time); };
-int run_time(){ return elapsed(_gcdata.run_time)/1000; };
-int total_time(){ return _total_time/1000; };
-static void time_max(){
-	int curr=elapsed(_gcdata.time);
-	_total_time=max(_total_time,curr);
-};
-struct timeval microtime(){
-	struct timeval ret={0};
-	gettimeofday(&ret,NULL);
-	return ret;
-};
-static int elapsed(struct timeval from){
-	struct timeval upto=microtime();
-	return (upto.tv_sec-from.tv_sec)*1000000+(upto.tv_usec-from.tv_usec);
-};
 int map_size(map* mp){
 	if(!mp){ return 0; };
 	return ceil_pow2(mp->len);
 };
-static int ceil_pow2(int i){
+int ceil_pow2(int i){
 	if(!i){ return 0; };
 	i--;
 	int ret=2;
@@ -912,12 +567,14 @@ map* map_add(map* mp,char* key,void* v){
 	int idx=map_has_key(mp,key);
 	if(idx){
 		mp->pairs[idx-1].val=v;
-		return mp;
-	};
+//		"map old key: %s\n".printf(key)	
+		return mp; };
+//	"map new key: %s\n".printf(key)	
 	int reindex=0;
 	if(mp->len>=map_size(mp)){
 		mp->pairs=map_size(mp) ? fox_realloc((char*)mp->pairs,2*map_size(mp)*sizeof(Mapcell),Cell2)
 			: fox_alloc(2*sizeof(Mapcell),Cell2);
+//		"map realloc for key:%s\n".printf(key)
 		reindex=1;
 	};
 	mp->pairs[mp->len].val=v;
@@ -979,28 +636,15 @@ int exec(char* cmd,char** output){
 	if(output){ *output=ret; };
 	return status;
 };
-static size_t clock_cycles(){
-	unsigned int lo,hi;
-	asm volatile ("rdtsc" : "=a" (lo), "=d" (hi));
-	return ((size_t)hi << 32) | lo;
-};
-static void* ptr_head(void* ptr){
-	mempage* pg=ptr_page(ptr);
-	if(!pg){ return NULL; };
-	return block_ptr(block_head(ptr_block(ptr,pg),pg),pg);
-};
-int block_head(int no,mempage* pg){
-	while(pg->types[no] & (1<<6)){ assert(no>0); no--; };
-	return no;
-};
-void init_rand(){ srand(time(NULL)*2817635252+_gcdata.run_time.tv_usec); };
+void init_rand(){ srand(time(NULL)*2817635252); };
 void* map_val(map* mp,char* key){
+//	if !mp||!key => return NULL
 	if(!mp||!key||!is_map(mp)){ return NULL; };
 //	assert(mp.ptr_type()==Map)
 	int i=map_has_key(mp,key);
 	return i ? mp->pairs[i-1].val : NULL;
 };
-extern char **environ;
+//extern char **environ;
 map* env_vars(){
 	if(map_val(_globals,"env")){ return map_val(_globals,"env"); };
 	map* ret=new_map();
@@ -1010,15 +654,9 @@ map* env_vars(){
 	add(_globals,"env",ret);
 	return ret;
 };
-map* init_gc(void** sptr){
-	_gcdata.stack_head=sptr;
-	_clockstart=clock_cycles();
-	_gcdata.run_time=microtime();
+map* argv_map(char** argv,int argc){
+	init_gc((void**)argv);
 	_globals=new_map();
-	return _globals;
-};
-map* argv_map(char** argv,int argc,void** globals){
-	*globals=init_gc((void**)argv);
 	signal(SIGSEGV,fox_signal_handler);
 	signal(SIGABRT,fox_signal_handler);
 	init_rand();
@@ -1047,3 +685,6 @@ char* str_has(char* str,char* sub){
 	return strstr(str,sub);
 };
 char* exec_str(char* in){ char* ret=NULL; exec(in,&ret); return ret; };
+int main(int argc, char** argv){
+	return run(argv_map(argv,argc));
+};

@@ -1,0 +1,282 @@
+#line 2 "src/tsv.fox"
+
+#include <core.h>
+#include <tsv.h>
+
+map* tsv_load(char* filename,int key=0) => return filename.file_read().str_rows(key)
+map* str_rows(char* in,int key=0){
+	ret={}
+	map* cols=NULL
+	in.str_rtrim().split_by('\n').each ln,,i
+		vals=ln.str_rtrim().split_by('\t')
+		if !i
+			cols=vals
+			continue
+		row={}
+		cols.each name,,j
+			row[name]=vals[j]
+		ret[key ? vals[0] : NULL]=row
+	return ret
+}
+int type_size(char* type){
+	return {{
+		text 128
+		code 50
+		guid 36
+		int 18
+		bool 1
+		para 256
+		daymonth 5
+		month 7
+	}}.map_type(type).to_int()
+}
+char* map_type(map* mp,char* type){
+	while(type)
+		if mp[type] => return mp[type].to_str()
+		type=types()[type]
+	return type
+}
+map* types(){
+	return {{
+		text
+		tinytext text
+		code text
+		name text
+		fold text
+		html text
+		link html
+		para text
+		source para
+		password code
+		email text
+		phone text
+		imagelink text
+		guid code
+		hidden code
+		list code
+		radio list
+		multicheck list
+		grid multicheck
+		fkey list
+		combo fkey
+		user code
+		ip code
+		flist fkey
+		inline fkey
+		int code
+		smallint int
+		bigint int
+		integer int
+		number int
+		intrange int
+		amount number
+		currency amount
+		debit amount
+		credit amount
+		float int
+		duration amount
+		mins amount
+		date int
+		pastdate date
+		futuredate date
+		time date
+		hour time
+		datetime date
+		timestamp datetime
+		daterange date
+		datefrom date
+		dateupto date
+		daymonth date
+		yearmonth date
+		month yearmonth
+		quarter yearmonth
+		bool int
+		check bool
+		checkbox check
+		file para
+		jpeg file
+		imagefile jpeg
+		bmp jpeg
+		wsq jpeg
+		clob para
+		blob file
+		tinyblob blob
+		longtext blob
+		raw blob
+		largefile file
+	}}
+}
+map* subtypes(char* type){
+	ret=[]
+	parent=types()[type]
+	while parent
+		ret[]=parent
+		parent=types()[parent]
+	return ret.vec_reverse()
+}
+map* str_cols(char* in){
+	if !in => return NULL
+	if in.is_map() => return (map*)in
+	ret={}
+	toks=in.str_tokenize(" ,\n\r\t=:").toks_trim(" ,\n\r\t=:").toks_recs("\n\r,")
+	toks.each tks
+		i=0
+		row={}
+		while i<tks.map_len()
+			if !i
+				row.name=tks[i]
+				i+=2
+				continue
+			if tks.map_len()<i+3
+				row[tks[i]]=:yes
+				i+=2
+				continue
+			row[tks[i]]=tks[i+2].str_unquote()
+			i+=4
+		if !row.type => row.type=row.name.data_type()
+		ret[row.name]=row
+	return ret
+}
+char* skip_c_comment(char* in){
+	if !*in => return in
+	if *in=='/' && in[1]=='*'
+		while *in && in[0]!='*' || in[1]!='/'
+			in++
+		if in => in+=1
+		return in
+	if *in=='/' && in[1]=='/'
+		while *in && *in!='\n'
+			in++
+		in--
+		return in
+	return in
+}
+char* skip_c_code(char* in){
+	if !*in => return in
+	if "({[".strchr(*in)
+		open=*in;
+		close=')'
+		if open=='[' => close=']'
+		else if open=='{' => close='}'
+		in++
+		while *in && *in!=close
+			in=in.skip_c_code()
+			in++
+		return in
+	temp=in.skip_c_comment()
+	if temp!=in => return temp
+
+	if *in=='-' && in[1]=='-' && in[2]=='-' 
+		head=in
+		while *in && *in!='\n' => in++
+		if !*in => return in
+		while *in
+			bad=0
+			j=0 
+			for j=0; head[j]!='\n'; j++
+				if in[j] && in[j]!=head[j]
+					bad=1
+					break
+			if !bad
+				in+=j-1
+				return in
+			in++
+		return in
+	if *in=='\'' && in[1]=='-' && in[2]=='-' && in[3]=='-'
+		head=in+1
+		while *in && *in!='\n' => in++
+		if !*in => return in
+		while *in
+			bad=0
+			j=0 
+			for j=0; in[j] && head[j]!='\n'; j++
+				if in[j] && in[j]!=head[j]
+					bad=1
+					break
+			if !bad && in[j]=='\''
+				in+=j
+				return in
+			in++
+		return in
+	if "\"'`".strchr(*in)
+		quote=*in
+		in++
+		while *in && *in!=quote && (quote!='\'' || *in!='\n')
+			if *in=='\\' => in++
+			in++
+		return in
+	return in
+}
+map* str_tokenize(char* in,char* terminators=" ,\n\r\t=:", int max=0){
+	ret=[]
+	if !in => return ret
+	head=in
+	max--
+	while *in && max--
+		while *in && !terminators.strchr(*in)
+			in=in.skip_c_code()
+			in++
+		ret[]=head.sub_str(0,in-head)
+		head=in
+		if !*in || !max-- => break
+		while *in && terminators.strchr(*in)
+			in=in.skip_c_comment()
+			in++
+		ret[]=head.sub_str(0,in-head)
+		head=in
+	if *head => ret[]=head.str_dup()
+	return ret
+}
+map* toks_trim(map* toks, char* terminators){
+	if !toks || !toks.map_len() || !terminators.str_chr(toks[0].is_str()[0]) => return toks
+	return toks.vec_splice(1,1,NULL)
+}
+map* toks_recs(map* in, char* terminator){
+	ret=[]
+	row=[]
+	in.each rec
+		row[]=rec
+		if terminator.str_chr(rec.is_str()[0])
+			ret[]=row
+			row=[]
+	if row.map_len()
+		ret[]=row
+	return ret
+}
+char* data_type(char* name, void* val=NULL){
+	vals={{
+		debit currency
+		due currency
+		amount currency
+		bill currency
+		paid currency
+		balance currency
+		credit currency
+		note para
+		time daysec
+		datetime datetime
+		date date
+		month month
+		year year
+		password password
+		cell phone
+		phone phone
+		date date
+		action action
+		flat flat
+		arabic arabic
+	}}
+	if vals[name] => return vals[name]
+	if !val => return :text
+	if val.is_i() || val.is_f() => return :int
+	if !val.is_str() => return :text
+	if val.is_numeric() => return :int
+	if val.is_str()[0]=='<' => return :html
+	return :text
+}
+char* month_en3(int val){
+	map* ret=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+	if(!val) return ''
+	return ret[val-1]
+}
+double frac(double val) => return val>0 ? val-(int)val : -(val-(int)(val))

@@ -1,5 +1,10 @@
+#line 2 "src/dir.fox"
+
+#include <dir.h>
+#include <dirent.h>
+#include <sys/stat.h>
 #include <glob.h>
-#include <fox.h>
+#include <core.h>
 
 int is_file(char* filename){
 	struct stat buff={0};
@@ -29,7 +34,7 @@ char* file_rename(char* file,char* dir,char* delext,char* addext,char* prefix,ch
 	if(dir){ olddir=dir; };
 	return xstr(sane_dir(olddir),ret, End);
 };
-char* sane_dir(char* dir){ return dir ? xstr(str_rtrim(dir,"/"),"/", End) : NULL; };
+char* sane_dir(char* dir){ return dir && str_len(dir) ? xstr(str_rtrim(dir,"/"),"/", End) : NULL; };
 char* write_file(char* data,char* filename,int readonly,int verbose){
 	if(!filename){ return data; };
 	if(str_eq(filename,"-")){ return px(data,1); };
@@ -136,5 +141,13 @@ map* dir_glob(char* name){
 	for(int i=0; i<results.gl_pathc; i++){
 		vec_add(ret,str_dup(results.gl_pathv[i])); };
 	globfree(&results);
+	return ret;
+};
+char* read_line(FILE* fp){
+	char buff[1024];
+	char* ret=NULL;
+	while(fgets(buff,sizeof(buff),fp)){
+		ret=xcat(ret,buff, End);		
+		if(buff[str_len(buff)-1]=='\n'){ break; }; };
 	return ret;
 };

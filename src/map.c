@@ -1,4 +1,10 @@
-#include <fox.h>
+#line 2 "src/map.fox"
+
+#include <core.h>
+#include <map.h>
+#include <playground.h>
+#include <dir.h>
+#include <foxstring.h>
 
 map* xadd(map* mp,...){
 	int type=ptr_type(mp);
@@ -136,11 +142,13 @@ map* str_vec(void* str){
 map* str_map(char* str,int type){
 	if(is_map(str)){ return is_map(str); };
 	if(!str_len(str)){ return xjson_map(str,type); };
-	void* ret=cache(str,"str_map",NULL);
-	if(ret){ return ret; };
+//	ret=str.cache(:str_map)
+//	if ret => return ret
+	map* ret=NULL;
 	if((!strchr(str,'\n') && !strchr(str,'\r'))){ ret=xjson_map(str,type); }
 	else {ret=block_map(&str,block_level(str),type);};
-	return cache(str,"str_map",ret);
+	return ret;
+//	return str.cache(:str_map,ret)
 };
 map* vec_del(map* mp,int from,int len){
 	if(!map_len(mp)){ return NULL; };
@@ -423,3 +431,273 @@ map* vec_rdup(map* mp){
 	return ret;
 };
 map* set_map(void* val,map* mp,int idx){ return set(mp,idx,val); };
+char* skip_word(char* in,char* seperators){
+	if(!in || !*in){ return in; };
+	char term='\0';
+	int counter=0;
+	char opener='\0';
+	if(strchr("[({",*in)){ opener=*in; };
+	if(strchr("\"'`",*in)){ term=*in; in++; }
+	else if(*in=='['){ term=']'; in++; }
+	else if(*in=='('){ term=')'; in++; }
+	else if(*in=='{'){ term='}'; in++; };
+	while(*in){
+		if(opener){
+			if(strchr("\"'`",*in)){ in=skip_word(in,seperators); continue; }
+			else if(*in==opener){ counter++; }; };
+		if(*in==term){
+			if(!counter){ in++; break; };
+			counter--;
+		}else if(!term && strchr(seperators,*in)){ break; }
+		else if(*in=='\\' && in[1]){ in++; };
+		in++; };
+	return in;
+};
+void* read_value(char** str, char* sep){
+	if(**str=='{'||**str=='['){ return xjson_map_recurse(str,Map); };
+	char* from=*str;
+	*str=skip_word(from,sep);
+	char* ret=sub_str(from,0,*str-from);
+	return ret ? ret : "null";
+};
+char* read_upto(char** in,char* terminators){
+	char* str=*in;
+	int isquote=0;
+	if(*str=='"'){ terminators="\""; str++; }
+	else if(*str=='\''){ terminators="'"; str++; };
+	while(*str && !strchr(terminators,*str)){
+		if(*str=='\\' && str[1]){ str++; };
+		str++; };
+	if((*terminators=='\'' || *terminators=='"') && *str==*terminators){ str++; };
+	char* from=*in;
+	*in=str;
+	return sub_str(from,0,str-from);
+};
+map* map_add_pair(map* mp,void* name,void* value,int type){
+	if(!name && !value){ return mp; };	
+
+	if(str_eq(name,"null")){ name=NULL; }
+	else if(is_numeric(name)){ name=int_var((to_int(name)+1)); }
+	else {name=str_unquote(name);};
+
+	if(name && value && *(char*)value==':'){
+		if(!map_len(mp)){
+			return xadd(mp,"type",sub_str(value,1,-2147483648),"name",name, End);
+		}else{
+			char* str=value;
+			str++;
+			char* thealpha=read_alpha(&str);
+			value=map_merge(xmap("type", thealpha,"name", name, End),xjson_map(str+1,Index)); };
+	};
+	if(str_eq(value,"null")){ value=NULL; }
+	else if(is_numeric(value)){
+		if(str_chr(value,'.')){
+			value=double_var(str_double(value));
+		}else{
+			value=int_var(to_int(value)); };
+	}else {value=str_unquote(value);};
+
+	if(type==Vector){ return vec_add(mp,value); };
+	return add(mp,name,value);
+};
+map* block_map(char** from,int inlevel,int maptype){
+	if(!from){ return NULL; };
+	map* ret=NULL;
+	if(maptype==Vector){ ret=new_vec(); }
+	else {ret=new_map();};
+	char* str=*from;
+	if(!str_len(str)){ return NULL; };
+	int level=0;
+	int iscomment=0;
+	char* blk=NULL;
+	char* name=NULL;
+	char* val=NULL;
+	for(;*str;str++){
+		if(*str=='\n'||*str=='\r'){
+			add_name_val(ret,str,&name,&val,maptype);
+			level=0;
+			iscomment=0;
+			blk=NULL;
+			continue; };
+		if(!name && !val){
+			if(iscomment){ continue; };
+			if(!blk){ blk=str; };
+			if(*str=='/' && str[1]=='/'){ str++; iscomment=1; continue; };
+			if(*str=='\t'){ level++; continue; };
+			if(level<inlevel){
+				*from=blk;
+				return ret; };
+			if(level>inlevel){
+				char* s=is_str(map_id(ret,ret->len-1));
+				if(str_eq(s,"|")){ set_map(read_as_block(&blk,inlevel+1,"-"),ret,ret->len-1); }
+				else if(s && str_start(s,"---")){ set_map(read_as_block(&blk,inlevel+1,s),ret,ret->len-1); }
+				else if(ptr_type(map_id(ret,ret->len-1))==Vector){ set_map(block_map(&blk,inlevel+1,Vector),ret,ret->len-1); }
+				else if(ptr_type(map_id(ret,ret->len-1))==Map){ set_map(block_map(&blk,inlevel+1,Map),ret,ret->len-1); }
+				else if(maptype==Vector){
+					continue;
+				}else{
+					if((str_len(s) && is_int(map_key(ret,ret->len-1)))){ change_key(ret,ret->len-1,s); };
+					set_map(block_map(&blk,inlevel+1,maptype),ret,ret->len-1); };
+				str=blk-1;
+				level=0;
+				iscomment=0;
+				blk=NULL;
+				name=NULL;
+				val=NULL;
+				continue;
+			};
+			if(maptype!=Vector && *str=='='){ val=str+1; continue; };
+			name=str;
+		};
+		if(!val){
+			if(*str=='\\'){ str++; continue; };
+			if(maptype!=Vector && *str=='='){
+				name=sub_str(name,0,str-name);
+				val=str+1;
+				continue; };
+			continue; };
+		continue; };
+	add_name_val(ret,str,&name,&val,maptype);
+	*from=str;
+	return ret;
+};
+char* read_num(char** in){
+	char* str=*in;
+	int deci=0;
+	str++;
+	while(*str && ((*str>='0' && *str<='9')||(*str=='.' && !deci++ && !is_alpha(str[1],NULL)))){
+		str++; };
+	char* from=*in;
+	*in=str-1;
+	return sub_str(from,0,str-from);
+};
+char* read_alpha(char** in){
+	char* str=*in;
+	str++;
+	while(*str && is_alphanum(*str,NULL)) {str++;};
+	char* from=*in;
+	*in=str-1;
+	return sub_str(from,0,str-from);
+};
+static map* add_name_val(map* mp,char* str,char** name,char** val,int type){
+	char* name1=*name;
+	char* val1=*val;
+	if(!name1 && !val1){ return mp; };
+	*name=NULL;
+	*val=NULL;
+	void* v=NULL;
+	if(type==Vector){
+		char* s=str_trim(sub_str(name1,0,str-name1)," \t\n\r");
+		return vec_add(mp,marked_str(s,NULL));
+	};
+	if(val1){
+		name1=str_trim(name1," \t");
+		name1=str_replace(name1,"\\=","=");
+		if(!str_len(name1)){ name1=NULL; };
+		v=marked_str(sub_str(val1,0,str-val1),name1);
+	}else if(name1){ v=marked_str(sub_str(name1,0,str-name1),NULL); name1=NULL; };
+	if(type==Index && !str_len(name1)){ name1=to_str(v,"",0); }
+	else if(type==Keys && !name1){
+		name1=to_str(v,"",0);
+		v=NULL; };
+	map_add(mp,name1,v);
+	return mp;
+};
+static char* read_as_block(char** from,int level,char* terminator){
+	char* str=*from;
+	char* ret=NULL;
+	while(*str){
+		if(str_start(str,"//")){ str+=line_len(str); continue; };
+		int tabs=str_level(str);
+		int len=line_len(str);
+		if(tabs>=level||line_isempty(str)){
+			ret=xcat(ret,len-level>0 ? sub_str(str,level,len-level) : "\n", End);
+		}else {break;};
+		str+=len; };
+	if(str_eq(str_trim(sub_str(str,str_level(str),line_len(str)-str_level(str))," \t\n\r"),terminator)){
+		int len2=line_len(str);
+		str+=len2; };
+	*from=str;
+	if(str_len(ret) && ret[str_len(ret)-1]=='\n'){ ret=sub_str(ret,0,-1); };
+	return ret;
+};
+static void* marked_str(char* str,char* name){
+	if(!str){ return NULL; };
+	str=str_trim(str," \t");
+	if(str_eq(str,"\"\"")){ return ""; };
+	if(!str_len(str)){ return NULL; };
+	if(str_eq(str,"NULL")){
+		return NULL;
+	};
+	if(str[0]=='{'){
+		if(str[str_len(str)-1]=='}'){ str[str_len(str)-1]='\0'; };
+		map* mp=xjson_map(str+1,Map);
+		return mp;
+	};
+	if(is_numeric(str)){ return int_var(stoi(str)); };
+	if(str[0]=='['){
+		if(str[str_len(str)-1]==']'){ str[str_len(str)-1]='\0'; };
+		map* mp=xjson_map(str+1,Vector);
+		return mp;
+	};
+	if(str[0]=='\\'){ return sub_str(str,1,-2147483648); };
+	if(str[0]==':'){
+		str++;
+		char* thealpha=read_alpha(&str);
+		return map_merge(xmap("type", thealpha,"name", name, End),xjson_map(str+1,Index)); };
+	return str;
+};
+int cmp_ptr_reverse(const void* ptr1, const void* ptr2){ return cmp_ptr(ptr2,ptr1); };
+int cmp_ptr(const void* ptr1,const void* ptr2){
+	void* p1=(void*)ptr1;
+	void* p2=(void*)ptr2;
+	if(p1==p2){ return 0; };
+	if(is_i(p1) && is_i(p2)){
+		return is_int(p1) < is_int(p2) ? -1 : 1; };
+	if(is_str(p1) && is_str(p2)){
+		if(!p1){ return -1; };
+		if(!p2){ return 1; };
+		return strcmp(p1,p2); };
+	return 0;
+};
+int cmp_cons_reverse(const void* ptr1, const void* ptr2){ return cmp_cons(ptr2,ptr1); };
+int cmp_cons(const void* ptr1, const void* ptr2){
+	return cmp_ptr(((Mapcell*)ptr1)->val,((Mapcell*)ptr2)->val);
+};
+map* map_sort(map* mp,int reverse){
+	if(!mp){ return mp; };
+	if(reverse){
+		if(is_vec(mp)){ qsort(mp,mp->len,sizeof(void*),cmp_ptr_reverse); return mp; };
+		qsort(mp->pairs,mp->len,sizeof(Mapcell),cmp_cons_reverse);	
+	}else{
+		if(is_vec(mp)){ qsort(mp,mp->len,sizeof(void*),cmp_ptr); return mp; };
+		qsort(mp->pairs,mp->len,sizeof(Mapcell),cmp_cons); };	
+	map_reindex(mp);
+	return mp;
+};
+map* vec_map(map* in){
+	if(!is_vec(in)){ return in; };
+	map* ret=new_map();
+	for(int next1=next(in,-1,NULL,NULL); has_id(in,next1); next1++){ void* val=map_id(in,next1);
+		add(ret,val,val); };
+	return ret;
+};
+map* to_vec(void* val){
+	map* mp=new_vec();
+	vec_add(mp,val);
+	return mp;
+};
+map* del_keys(map* mp,map* keys){
+	for(int next1=next(keys,-1,NULL,NULL); has_id(keys,next1); next1++){ void* key=map_id(keys,next1); map_compact(map_del(mp,map_has_key(mp,key)-1,1)); };
+	return mp;
+};
+map* merge_soft(map* strong, map* soft){
+	if(!strong){ strong=new_map(); };
+	if(!soft){ return strong; };
+	for(int next1=next(soft,-1,NULL,NULL); has_id(soft,next1); next1++){ void* val=map_id(soft,next1); char*  key=map_key(soft, next1);
+		if(!is_int(key)){
+			if(map_has_key(strong,key)){ continue; };
+		}else {key=NULL;};
+		add(strong,key,val); };
+	return strong;
+};

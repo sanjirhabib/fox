@@ -1,0 +1,546 @@
+#line 2 "src/foxstring.h"
+
+#include <core.h>
+#include <foxstring.h>
+#include <unicode.h>
+#include <map.h>
+
+char* mstr(char* format, ...){
+	ret=''
+	va_list args
+	args.va_start(format)
+	ret=format.va_str(args)
+	args.va_end()
+	return ret
+}
+char* cat_char(char* str, char c){
+	if !str => return c.char_str()
+	len=str.str_len() //lima
+	str=str.fox_realloc(len+2,String)	
+	str[len]=c;
+	assert(!str[len+1])
+	return str
+}
+char* va_str(char* format,va_list args){
+	if !format => return NULL
+	va_list copy
+	copy.va_copy(args)
+	int len=NULL.vsnprintf(0,format,args)
+	ret=new_str(len)
+	ret.vsnprintf(len+1,format,copy)
+	copy.va_end()
+	return ret
+}
+void* dx(void* data="**",char* name=NULL,int panic=0){
+	if name
+		"$name=".px(0)
+	data.to_str(:NULL,1).px()
+	if panic==1 => xexit(0)
+	else if panic==2 => fox_stack_dump()
+	return data
+}
+int neq(char* str,char* str1) => return str!==str1
+int eq(char* str,char* str1) => return !str||!str1||!str.is_str() ? 0 : str.strcmp(str1)==0
+char* cwd(){
+	char* ret=getcwd(NULL,0)
+	ret2=ret.str_dup()
+	ret.free()
+	return ret2
+}
+char* str_unquote(char* str){
+	if !str||!*str => return NULL
+	if str==="\"\"" || str==="''" => return ""
+	if *str=='\'' || *str=='"' => str=str.sub_str(1,-1)
+	if !str.str_chr('\\') => return str
+	temp=str.str_dup()
+	ret=temp
+	while *str
+		other=0
+		if *str=='\\'
+			str++
+			if !*str => break
+			switch *str
+				case 'n': *temp='\n'; break
+				case 'r': *temp='\r'; break
+				case 't': *temp='\t'; break
+				case '0': *temp='\0'; break
+				default: other=1; break
+			other=!other
+		if !other => *temp=*str
+		temp++
+		str++
+	*temp=0
+	return ret
+}
+char* str_escape(char* head){
+	if !head => return ""
+	len=head.str_len()
+	assert(len<4000)
+	extra=0
+	char c
+	str=head
+	quotable="\\\""
+	quoteto="\\\""
+	while((c=*str++)) if quotable.strchr(c) => extra++
+	assert(extra<=len)
+	ret=new_str(head.str_len()+extra)
+	str=head
+	i=0
+	fox_at=''
+	while((c=*str++))
+		if !(fox_at=quotable.strchr(c)) => ret[i++]=c; continue
+		ret[i++]='\\'
+		ret[i++]=quoteto[fox_at-quotable]
+		assert(i<len+extra+2)
+	
+	assert(!ret[i])
+	return ret
+}
+char* str_end(char* str,char* end){
+	if str.str_len()<end.str_len() => return NULL
+	return strcmp(str+str.str_len()-end.str_len(),end)==0 ? str : NULL
+}
+char* chop_first(char* str, char* substr){
+	if !str.str_start(substr) => return str
+	return str.sub_str(substr.str_len())
+}
+char* chop_last(char* str, char* substr){
+	if !str.str_end(substr) => return str
+	return str.sub_str(0,-substr.str_len())
+}
+int str_starti(char* str,char* start){
+	if !str || !start || !*str || !*start => return 0
+	while *str && *start
+		if *str!=*start
+			c=*str 
+			if c>='A' && c<='Z' => c+='a'-'A'
+			if c!=*start => return 0
+		start++
+		str++
+	if *start => return 0
+	return 1
+}
+int str_start(char* str,char* start) => return str && start && str.is_str() && str.strncmp(start,start.strlen())==0
+char* str_chr(char* str,char c) => return !str||!c||!str.is_str() ? NULL : str.strchr(c)
+int str_chrs(char* str,char* chars){
+	for i=0; i<chars.strlen(); i++
+		if str.str_chr(chars[i]) => return 1
+	return 0
+}
+char* str_ltrim(char* str,char* chars=" \t\n\r"){
+	if !str || !*str => return NULL
+	return str+str.lchars(chars)
+}
+char* str_rtrim(char* str,char* chars=" \t\n\r"){
+	if !str || !*str => return NULL
+	r=str.rchars(chars)
+	if !r => return str
+	return str.sub_str(0,str.str_len()-r)
+}
+char* str_trim(char* str,char* chars=" \t\n\r"){
+	l=str.lchars(chars)
+	r=str.rchars(chars)
+	if !l && !r => return str
+	return str.sub_str(l,str.str_len()-l-r)
+}
+int line_isempty(char* line){
+	while(*line && *line!='\n' && *line!='\r'){ if(*line!=' ' && *line!='\t') return 0; line++; }
+	return 1
+}
+int line_len(char* line){
+	ret=0
+	while(*line && *line!='\n' && *line!='\r'){ ret++; line++; }
+	if *line=='\r' => ret++; line++
+	if *line=='\n' => ret++
+	return ret
+}
+int lchars(char* str,char* chars){
+	if !str||!chars => return 0
+	ret=0
+	while str[ret]
+		if chars.strchr(str[ret]) => ret++
+		else break
+	
+	return ret
+}
+int rchars(char* str,char* chars,int off=0){
+	if !str||!chars => return 0
+	ret=0
+	len=str.str_len()+off
+	while ret<len
+		if chars.strchr(str[len-ret-1]) => ret++
+		else break
+	
+	return ret
+}
+int has_str(char* str,char* substr){
+	if !str||!substr => return 0
+	ret=0
+	while *str
+		if str.str_start(substr) => ret++
+		str++
+	return ret
+}
+char* str_replace(char* str,void* find,void* replace=NULL){
+	if !str || !find || !str.str_len() => return str
+	assert(str.is_str())
+	if find.is_str()
+		if !str.str_has(find) => return str
+		assert(replace.is_str())
+		find={(find) : replace}
+	assert(find.is_map())
+	dels=0
+	adds=0
+	find.each v,k,i2
+		assert(k.is_str())
+		if v.is_i() => find[i2]=(v=v.is_int().int_str())
+		assert(!v || v.is_str())
+		i=str.has_str(k)
+		if !i => continue
+		dels+=i*k.str_len()
+		adds+=i*v.str_len()
+	if !dels => return str
+	ret=new_str(str.str_len()+adds-dels)
+	temp=str
+	temp2=ret
+	for ;*temp;temp++,temp2++
+		found=0
+		find.each v3, k3, i3
+			if temp.str_start(k3)
+				if v3
+					temp2.strcat(v3)
+					temp2+=v3.strlen()-1
+				else
+					temp2--
+				temp+=k3.strlen()-1
+				found=1
+				break
+		if !found => *temp2=*temp
+	return ret
+}
+char* str_str(char* in, char* sub){
+	len=in.str_len()
+	sublen=sub.str_len()
+	for i=0; i<=len-sublen; i++
+		ok=1
+		for j=0; j<sublen; j++
+			if sub[j]!=in[i+j]
+				ok=0
+				break
+		if ok => return in+i
+	return NULL
+}
+char* str_upper(char* s){
+	ret=s
+	for(;*s;++s) *s=toupper(*s)
+	return ret
+}
+char* str_lower(char* s){
+	ret=s
+	for(;*s;++s) *s=tolower(*s)
+	return ret
+}
+char fox_at(char* str,int idx){
+	if !str || !str.is_str() => return '\0'
+	if(idx<0) idx+=str.str_len()
+	return idx<str_len(str) ? str[idx] : '\0'
+}
+char* indent_str(int i){
+	ret=new_str(i+1)
+	ret.memset('\t',i+1)
+	ret[0]='\n'
+	return ret
+}
+int str_chars(char* str,char* chars){
+	if !str || !chars || !str.is_str() => return 0
+	int len1=str.strlen()
+	int len2=chars.strlen()
+	for i=0;i<len1;i++
+		for j=0;j<len2;j++
+			if str[i]==chars[j] => return 1
+	return 0
+}
+char* end_word(char* str,char* words){
+	if !str||!words => return NULL
+	word=words.str_dup()
+	int total=word.terminate_words()
+	for int i=0;i<total;i++
+		ret=str.str_end(word)
+		if ret => return ret
+		word+=word.str_len()+1
+	
+	return NULL
+}
+char* has_word(char* str,char* words){
+	if !str||!words => return NULL
+	word=words.str_dup()
+	int total=word.terminate_words()
+	for int i=0;i<total;i++
+		char* ret=str.strstr(word)
+		if ret => return ret
+		word+=word.str_len()+1
+	
+	return NULL
+}
+int is_word(char* word,char* list){
+	assert(list)
+	assert(list.is_str())
+	if !word.is_str() => return 0
+	ret=list
+	while (ret=ret.str_has(word))
+		if ret && (ret==list||ret[-1]==' ') && (ret[word.strlen()]==' '||!ret[word.strlen()]) => return ret-list+1
+		ret+=word.strlen()
+	return 0
+}
+int terminate_words(char* in){//Takes a string and adds NULL between eash words. Returns total number of words terminated with NULL
+	if !in => return 0
+	s=in
+	int ret=1
+	for(;*s;s++) if *s==' ' => ret++; *s='\0'
+	return ret
+}
+int is_alphanum(char c,char* others=NULL){
+	if (c>='a' && c<='z') || (c>='A' && c<='Z') || (c>='0' && c<='9') || c=='_' => return 1
+	if others && others.strchr(c) => return 1
+	return 0
+}
+int is_alpha(char c,char* others=NULL){
+	if c>='a' && c<='z' || c>='A' && c<='Z' || c=='_' => return 1
+	if others && others.strchr(c) => return 1
+	return 0
+}
+int is_oper(char c) => return "~!@#$%^&*-=+|<>?/\\}]).".strchr(c) ? 1 : 0
+int str_is_oper(char* str){
+	if !str_len(str) => return 0
+	while(*str++) if !"~!@#$%^&*-=+|:<>?/\\{[(}]),.".strchr(str[-1]) => return 0
+	return 1
+}
+//int is_number(char c) => return (c>='0' && c<='9') || c=='.' || c=='-' || c=='+'
+//int str_is_num(char* str){
+//	if !str_len(str) => return 0
+//	while(*str++) if !is_number(str[-1]) => return 0
+//	return 1
+//}
+int is_code(char* str){
+	if !str_len(str) => return 0
+	if !is_alpha(*str) => return 0
+	while(*++str) if !is_alphanum(*str) => return 0
+	return 1
+}
+int char_at(char* str,char* terms){
+	if !str || !str.is_str() => return 0
+	head=str
+	while *str && !terms.strchr(*str) => str++
+	return str-head
+}
+int rchar_at(char* str,char* terms){
+	if !str || !str.is_str() => return 0
+	tail=str+str.str_len()-1
+	while tail>=str && !terms.strchr(*tail) => tail--
+	return tail-str
+}
+char* char_str(char c){
+	char ret[2]={0}
+	ret[0]=c
+	ret[1]='\0'
+	str=ret.str_dup()
+	assert(str.str_len()<=1)
+	return str
+}
+int has_chars(char* line){
+	if !line => return 0
+	for ;*line;line++ => if !"\n\r \t".strchr(*line) => return 1
+	return 0;	
+}
+char* drop_right(char* str,char* w){
+	if w && w.is_str() && w.str_end(w) => return str.sub_str(-w.str_len())	
+	return str
+}
+char* drop_left(char* str,char* w){
+	if str && str.is_str() && str.str_start(w) => return str.sub_str(w.str_len())	
+	return str
+}
+char* str_toupper(char* str){
+	if(!str) return NULL
+	ret=str
+	for(;*str;str++) *str=toupper(*str)
+	return ret
+}
+char* str_tolower(char* str){
+	if(!str) return NULL
+	ret=str
+	for(;*str;str++) *str=tolower(*str)
+	return ret
+}
+char* str_title(char* str){
+	if(!str) return NULL
+	map* words=str.str_split(:_,0)
+	words.each v,,i
+		char* s=v
+		if(!s.str_len()) words.map_del(i,1)
+		else if s.is_word("lft rgt id slno")
+			s.str_toupper()
+		else s[0]=s[0].toupper()
+	return words.map_join(" ")
+}
+char hex_char(char* in){
+	char temp[3]={0}
+	if(!in[0]||!in[1]) return '\0'
+	temp[0]=in[0]
+	temp[1]=in[1]
+	return (char)temp.strtol(NULL,16)
+}
+char* rand_str(int len=8){
+	ret=''
+	while ret.str_len()<len => ret.=rand()
+	return ret.sub_str(0,len)
+}
+
+int str_char_count(char* str,char c){
+	int ret=0
+	if(!str) return ret
+	while(*str) if(*str++==c) ret++
+	return ret
+}
+char* str_join(char* str1,char* joiner,char* str2){
+	if !str1.str_len() => return str2
+	if !str2.str_len() => return str1
+	return str1..joiner..str2
+}
+char* var_bits(void* v){
+	ret=71.new_str()
+	unsigned char *ptr = (unsigned char*)&v
+	for idx=64,i=0;idx--;i++
+		if i && !(i%8) => ret[i+i/8-1]='-'
+		ret[i+i/8]=ptr[idx/8] & (1u << (idx%8) ) ? '1' : '0'
+	return ret
+}
+char* rtrim_upto(char* in,char upto,int keep=1){
+	if !in => return in
+	char* at=in.strrchr(upto)
+	if !at => return in
+	return in.sub_str(0,at-in + (keep ? 1 : 0))
+}
+map* split_by(char* str, char term=',', int max=0){
+//	"spliting by $(term.char_str())".px()
+	if !*str => return NULL
+	ret=[]
+	head=str
+	if !" \t\n\r".str_chr(term) => head=head.skip_over(" \t\n\r")
+	while *str && (!max || ret.map_len()<max-1)
+		if "\"'`".strchr(*str) => str=str.skip_quote(); continue
+		else if "([{".strchr(*str) => str=str.skip_paren(); continue
+		else if *str==term
+			ret[]=head.sub_str(0,str-head)
+			head=str+1
+			if !" \t\n\r".str_chr(term) => head=head.skip_over(" \t\n\r")
+		str++
+	while *str => str++
+	if str>head => ret[]=head.sub_str(0,str-head)
+	return ret
+}
+char* str_hex(char* in){
+	ret=new_str(in.str_len()*2)
+	for i=0; i<in.str_len(); i++
+		sprintf(ret+i*2,"%02x",((unsigned char*)in)[i])
+	return ret
+}
+char* str_tr(char* in, map* replace){
+	if !in => return NULL
+	ret=''
+	saved=in
+	maxlen=0
+	replace.each ,key => maxlen=max(maxlen,key.str_len())
+	buff=maxlen.new_str()
+	while *in
+		while(*in && !is_alphanum(*in)) in+=in.utf_len()
+		head=in
+		while(*in && is_alphanum(*in)) in+=in.utf_len()
+		if !(in-head) => break
+		if in-head>maxlen => continue
+		buff.memcpy(head,in-head)
+		buff[in-head]='\0'
+		if !replace[buff] => continue
+		ret.=saved.sub_str(0,head-saved)
+		ret.=replace[buff]
+		saved=in
+
+	if saved<in
+		ret.=saved.sub_str(0,in-saved)
+
+	return ret	
+}
+char* skip_over(char* in,char* chars=" \t\n\r"){
+	while(*in && chars.strchr(*in)) in++
+	return in
+}
+char* skip_quote(char* str){
+	if !str || !*str => return str
+	char end=*str
+	str++
+	while *str && *str!=end
+		if *str=='\\'
+			str++
+			if !*str => break
+		str++
+	if *str==end => str++
+	return str
+}
+char* skip_paren(char* str){
+	char open=*str
+	char close=open.closing_paren()
+	level=1
+	str++
+	while *str && level
+		if "\"'`".str_chr(*str) => str=str.skip_quote(); continue;
+		else if *str==open => level++
+		else if *str==close => level--
+		else if *str=='\\' => str++; if !*str => break
+		str++
+	return str
+}
+char closing_paren(char c) => switch(c) => case '{': return '}'; case '[': return ']'; case '(': return ')'; default: return '\0'
+int is_numeric(char* str){
+	if !str => return 0
+	deci=0
+	for ;*str;str++ => if (*str<'0' || *str>'9') && (*str!='.' || deci++) => return 0
+	return 1
+}
+char* next_word(char* in,char* terminators){
+	while *in && terminators.str_chr(*in) => in++
+	head=in
+	while *in && !terminators.str_chr(*in) => in++
+	return head.sub_str(0,in-head)
+}
+char* int_kb(size_t i,char* unit=:B){
+	size_t ks=1
+	if i<10*ks*1024=> return i.int_human()
+	if i<10*ks*1024*1024 => return (i/(1024)).int_human(:K..unit)
+	if i<10*ks*1024*1024*1024 => return (i/(1024*1024)).int_human(:M..unit)
+	return (i/(1024*1024*1024)).int_human("G"..unit)
+}
+char* int_human(int i,char* unit='',char* zero=""){
+	if !i => return zero
+	ret=i.int_str()
+	addat=3
+	while addat<ret.str_len()
+		ret=ret.sub_str(0,-addat)..","..ret.sub_str(-addat)
+		addat+=4
+	if ret && unit => ret.=unit
+	return ret
+}
+char* num_lang(char* in,int langid){
+	if !in || !*in => return NULL
+	char buff[5]={0}
+	int points[]={ 48, 2534, 1632 }
+	ret=''
+	code=0
+	while (code=in.utf_unicode())
+		in+=in.utf_len()
+		for i=0; i<3; i++
+			if i!=langid && code>=points[i] && code<points[i]+10
+				code-=(points[i]-points[langid])
+				break
+		ret.=code.unicode_utf(buff)
+	return ret
+}

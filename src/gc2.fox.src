@@ -1,0 +1,451 @@
+#line 2 "gc.fox"
+#include <sys/mman.h>
+#include <core.h>
+#include "gc.h"
+#define PAGES 10*4096
+#define MAXJMP 1023
+struct vobj_meta {
+	unsigned char size : 7;
+	unsigned char mark : 1;
+};
+typedef struct vobj {
+	struct vobj_meta meta[240];
+	union {
+		struct {
+			unsigned char m241;
+			unsigned char used;
+		};
+		char page[241][16];
+	};
+} vobj;
+struct pageno_meta {
+	unsigned short type : 4;
+	unsigned short objs : 1;
+	unsigned short mark : 1;
+	unsigned short size : 10;
+};
+struct vinfo {
+	int used;
+	int limit;
+	void** stack;
+	int gc_runs;
+	int objfree[16];
+};
+struct vpage {
+	struct pageno_meta meta[PAGES];
+	union {
+		struct vinfo info;
+		char page[PAGES][4096];
+		struct vobj objs[PAGES];
+	};
+};
+struct vpage* pages=NULL;
+vpage* init_pages(){
+	vpage* ret=mmap(0, sizeof(struct vpage), PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0)
+	if ret==MAP_FAILED
+		"Memory initialization failed".fox_error()
+		exit(-1)
+	ret->info.limit=16
+	return ret
+}
+map* init_gc(void** stack){
+	assert(sizeof(struct vobj)==4096)
+	assert(sizeof(struct pageno_meta)==2)
+	assert(sizeof(struct vinfo)<=4096)
+	if pages => return 0
+	pages=init_pages()
+	pages->info.stack=stack
+	_globals={}
+	return _globals
+}
+void gc_end(){
+	if !pages => return
+	int ret=munmap(pages,sizeof(struct vpage))
+	if ret
+		"munmap() faild".fox_error()
+		return
+	pages=NULL
+}
+void vmem_reset(){
+	void** stack=pages->info.stack
+	memset(pages,0,pages->page[pages->info.used+1]-(char*)pages)
+	pages->info.limit=16
+	pages->info.stack=stack
+//	gc_end()
+//	init_gc()
+}
+void* ptr_head(void* ptr){
+	if !ptr.is_vmem() => return ptr
+	pageno=ptr.ptr_pageno()
+	if ptr.is_vobj()
+		return pages->objs[pageno].page[ptr.ptr_objno(pageno).objno_firstobj(pageno)]
+	return pages->page[pageno.pageno_firstpage()]
+}
+int size_blocks(size_t size,int block_size) => return size/block_size+(size % block_size ? 1 : 0)
+int objno_realloc(int no, int pageno, int extra){
+	assert(extra>0 && extra<=240)
+	vobj* objs=pages->objs+pageno
+	int len=objs->meta[no].size
+	assert(len+extra<128)
+	if no+len+extra>=240 => return 0
+	int from=no+len
+	for int i=0; i<extra; i++
+		if objs->meta[from+i].size
+			return 0
+	for int i=0; i<len+extra; i++
+		objs->meta[no+i].size=len+extra-i
+	pages->objs[pageno].used+=extra
+	return no
+}
+char* page_map(){
+	ret=''
+	for int k=1; k<17; k++
+		ret.=" "..(int)(pages->meta[k].size)
+	return ret
+}
+char* objs_map(int pageno){
+	vobj* objs=pages->objs+pageno
+	ret=''
+	for int k=1; k<17; k++
+		ret.=" "..(int)(objs->meta[k].size)
+	return ret
+}
+int pageno_realloc(int no, int extra){
+	assert(extra>0 && extra<10000)
+	int len=no.pageno_len()
+	assert(len+extra<10000)
+	if no+len+extra>=pages->info.limit+1 => return 0
+	int from=no+len
+	for int i=0; i<extra; i++
+		if pages->meta[from+i].size
+			return 0
+	int type=pages->meta[no].type
+	for int i=0; i<len+extra; i++
+		pages->meta[no+i].size=min(MAXJMP, len+extra-i)
+		pages->meta[no+i].type=type
+	return no
+}
+int objno_free(int objno, int pageno){
+	assert(objno>0 && objno<=240)
+	vobj* objs=pages->objs+pageno
+	int len=objs->meta[objno].size
+	struct vobj_meta blank={0}
+	for int i=0; i<len; i++
+		objs->meta[objno+i]=blank
+	objs->page[objno].memset(0,len*16)
+	pages->objs[pageno].used-=len
+	return len*16
+}
+int pageno_len(int no){
+	int ret=pages->meta[no].size
+	if pages->meta[no+ret-1].size!=1
+		ret+=pages->meta[no+ret].size
+	return ret
+}
+int pageno_free(int no){
+	assert(no>0 && no<PAGES)
+	len=no.pageno_len()
+	struct pageno_meta blank={0}
+	for int i=0; i<len; i++
+		pages->meta[no+i]=blank
+	pages->page[no].memset(0,len*4096)
+	return len*4096
+}
+int vobj_alloc(int pageno, int size){
+	assert(size>0 && size<128)
+	vobj* objs=pages->objs+pageno
+	upto=0
+	for int i=1+size-1; i<241;
+		err=0
+		for int j=0; j<size-upto; j++
+			if objs->meta[i-j].size
+				i+=objs->meta[i-j].size+size-1-j
+				upto=j
+				err=1
+				break
+		if !err
+			for int j=0; j<size; j++
+				objs->meta[i-j].size=j+1
+			pages->objs[pageno].used+=size
+			return i-size+1
+	"vobjalloc failed: page:%d, size:%d, used:%d\n".printf(pageno,size,pages->objs[pageno].used)
+	pageno.objs_dump()
+	return 0
+}
+void objs_dump(int pageno){
+	"[".printf()
+	vobj* objs=pages->objs+pageno
+	for int i=0; i<241; i++
+		"%d ".printf(objs->meta[i].size)
+	printf("]\n")
+}
+int pages_alloc(int size,int type=0){
+	assert(size>0 && size<10000)
+	upto=0
+	for int i=1+size-1; i<pages->info.limit+1;
+		err=0
+		for int j=0; j<size-upto; j++
+			if pages->meta[i-j].size
+				i+=pages->meta[i-j].size+size-1-j
+				upto=j
+				err=1
+				break
+		if !err
+			for int j=0; j<size; j++
+				pages->meta[i-j].size=min(MAXJMP,j+1)
+				pages->meta[i-j].type=type
+			pages->info.used=max(pages->info.used,i+1)
+			return i-size+1
+	return 0
+}
+int inc_limit(int blocks){
+	pages->info.limit=min(pages->info.limit+blocks, PAGES-1)
+	"Mem: %d KB\n".printf(pages->info.limit*4)
+	return pages->info.limit
+}
+int gc_alloc(int blocks, int type){
+	if blocks>=pages->info.limit+1
+		blocks.inc_limit()	
+	ret=blocks.pages_alloc(type)
+	if ret => return ret
+	ret=fox_gc()
+	percent=100*ret/4096/pages->info.used
+	if percent>5
+		ret=blocks.pages_alloc(type)
+		if ret => return ret
+	
+	(blocks*1.4+pages->info.limit*0.4).inc_limit()
+	ret=blocks.pages_alloc(type)
+	if ret => return ret
+	"gc_alloc() failed".fox_error()
+	exit(-1)
+}
+void* search_place(int blocks, int type){
+	for int i=0; i<=pages->info.used; i++
+		meta=i.pageno_meta()
+		if !meta.size => continue
+		if meta.size>1
+			i+=meta.size-1
+			continue
+		if !meta.objs || meta.type!=type
+			continue
+		if blocks>1 && pages->objs[i].used>=120
+			continue
+		if pages->objs[i].used>=240
+			continue
+		ret=i.vobj_alloc(blocks)
+		if !ret
+			continue
+		return pages->objs[i].page[ret]
+	return NULL
+}
+void* fox_alloc(size_t size, int type){
+	if size<=0 => return NULL
+	blocks=size.size_blocks(16)
+	if blocks>=127 => return pages->page[size.size_blocks(4096).gc_alloc(type)]
+//	if pages->info.objfree[type]
+//		int pageno=pages->info.objfree[type]
+//		ret=pageno.vobj_alloc(blocks)
+//		if ret => return pages->objs[pageno].page[ret]
+//	else
+	ptr=blocks.search_place(type)
+	if ptr => return ptr
+	ret=1.gc_alloc(type)
+//	if pages->info.objfree[type]
+//		pages->info.objfree[type]=ret
+
+//	"miss: searched %d from %d, next from=%d\n".printf(searched,from,ret)
+	pages->meta[ret].objs=1
+	return pages->objs[ret].page[ret.vobj_alloc(blocks)]
+}
+struct pageno_meta pageno_meta(int no) => return pages->meta[no]
+int ptr_pageno(void* ptr) => return ((char*)ptr-(char*)pages-sizeof(pages->meta))/4096
+int ptr_objno(void* ptr, int pageno) => return ((char*)ptr-(char*)pages->page[pageno]-sizeof(pages->objs[0].meta))/16
+int fox_free(void* ptr){
+	pageno=ptr.ptr_pageno()
+	if ptr.is_vobj() => return ptr.ptr_objno(pageno).objno_free(pageno)
+	return pageno.pageno_free()
+}
+int mem_size(void* ptr){
+	pageno=ptr.ptr_pageno()
+	meta=pageno.pageno_meta()
+	if meta.objs
+		return pages->objs[pageno].meta[ptr.ptr_objno(pageno)].size*16
+	return pageno.pageno_len()*4096
+}
+int is_vobj(void* ptr) => return pages->meta[ptr.ptr_pageno()].objs
+void* fox_realloc(void* ptr, size_t size, int type){
+	if !ptr.is_vmem() => return size.fox_alloc(type)
+	head=ptr.ptr_head()
+	headlen=head.mem_size()
+	prelen=ptr-head
+	len=headlen-prelen
+	if len>=size => return ptr
+	newlen=prelen+size
+	extra=size-len
+	if ptr.is_vobj() && (headlen+extra.size_blocks(16)*16)<2048
+		pageno=ptr.ptr_pageno()
+		ret=ptr.ptr_objno(pageno).objno_realloc(pageno, extra.size_blocks(16))
+		if ret => return ptr
+	if !ptr.is_vobj()
+		ret=ptr.ptr_pageno().pageno_realloc(extra.size_blocks(4096))
+		if ret => return ptr
+	ret=newlen.fox_alloc(type)
+	ret.memcpy(head, headlen)
+	head.fox_free()
+	return ret+prelen
+}
+int ptr_type(void* ptr){
+	if !ptr => return Null
+	if ptr.is_i() => return Int
+	if ptr.is_f() => return Double
+	if !ptr.is_vmem() => return String
+	return pages->meta[ptr.ptr_pageno()].type
+}
+int is_vmem(void* ptr) => return (char*)ptr>=pages->page[1] && (char*)ptr<pages->page[PAGES+1]
+int pageno_lastpage(int pageno) => return pageno+pageno.pageno_len()-1
+int pageno_firstpage(int pageno){
+	while pageno>1 && pages->meta[pageno-1].size==pages->meta[pageno].size+1
+		pageno--
+	return pageno
+}
+int objno_firstobj(int objno, int pageno){
+	vobj* objs=pages->objs+pageno
+	while objno>1 && objs->meta[objno-1].size==objs->meta[objno].size+1
+		objno--
+	return objno
+}
+void vmem_mark(void* ptr){
+	if !ptr.is_vmem()
+		return
+	pageno=ptr.ptr_pageno()
+	type=0
+	size=0
+	if ptr.is_vobj()
+		objno=ptr.ptr_objno(pageno)
+		regno=objno+pages->objs[pageno].meta[objno].size-1
+		if pages->objs[pageno].meta[regno].mark => return
+		pages->meta[pageno].mark=1
+		pages->objs[pageno].meta[regno].mark=1
+		headno=objno.objno_firstobj(pageno)
+		ptr=pages->objs[pageno].page[headno]
+		type=pages->meta[pageno].type
+		size=(regno-headno+1)*16
+	else
+		regno=pageno+pageno.pageno_len()-1
+		if pages->meta[regno].mark => return
+		pages->meta[regno].mark=1
+		type=pages->meta[regno].type
+		headno=pageno.pageno_firstpage()
+		ptr=pages->page[headno]
+		size=(regno-headno+1)*4096
+	if type==Cell
+		void** pairs=(void**) ptr
+		size/=sizeof(void*)
+		for i=0;i<size;i++
+			vmem_mark(pairs[i])
+	else if type==Cell2
+		Mapcell* pairs=(Mapcell*)ptr
+		size/=Mapcell.sizeof()
+		for i=0;i<size;i++
+			if !pairs[i].id.is_num() => vmem_mark(pairs[i].id)
+			vmem_mark(pairs[i].val)
+	else if type==Map => vmem_mark(((map*)ptr)->pairs)
+	else if type==Vector => vmem_mark(((map*)ptr)->vars)
+	else if type==Index||type==Keys => assert(0)
+}
+int vmem_sweep(){
+	ret=0
+	for i=1; i<pages->info.used+1;
+		if !pages->meta[i].size => i++; continue
+		regno=i+i.pageno_len()-1
+		if !pages->meta[regno].mark
+			ret+=i.pageno_free()
+		if pages->meta[regno].objs
+			vobj* objs=pages->objs+regno
+			ofreed=0
+			for j=1; j<241;
+				if !objs->meta[j].size
+					j++
+					continue
+				int oregno=j+objs->meta[j].size-1
+				if !objs->meta[oregno].mark
+					ofreed+=j.objno_free(regno)
+				objs->meta[oregno].mark=0
+				j=oregno+1
+			if !objs->used
+				ret+=regno.pageno_free()
+			else
+				ret+=ofreed
+		pages->meta[regno].mark=0
+		i=regno+1
+//	memset(pages->info.objfree,0,sizeof(pages->info.objfree))
+	return ret
+}
+int vmem_compact(map* roots){
+	for i=1; i<pages->info.used+1;
+		if !pages->meta[i].size => i++; continue
+		regno=i+i.pageno_len()-1
+		if pages->meta[regno].objs
+			vobj* objs=pages->objs+regno
+			ofreed=0
+			for j=1; j<241;
+				if !objs->meta[j].size
+					j++
+					continue
+				int oregno=j+objs->meta[j].size-1
+				//move j to oregno whole objs.
+				j=oregno+1
+		else
+			//move i to regno whole pages.
+		i=regno+1
+}
+int fox_gc(){
+	"GC...".printf()
+	jmp_buf regs={0}
+	setjmp(regs)
+	roots=root_ptrs()
+	for int i=0; i<roots->len; i++
+		roots->vars[i].vmem_mark()
+	ret=vmem_sweep()
+	pages->info.gc_runs++
+	"Done %d kb freed.\n".printf((int)(ret/1024))
+	ret=vmem_compact(roots)
+	return ret
+}
+char* mem_usage(){
+	int kb=pages->info.used*4
+	unit="kb"
+	if kb>2048 => kb/=1024; unit="mb"
+	return ---
+	Pages: $((int)(pages->info.used)). $kb $unit. GC Runs: $((int)pages->info.gc_runs).
+	---;
+}
+map* root_ptrs(){
+	void* stack_end=_globals
+	static map ret={0}
+	void* ptr=(void*)&stack_end
+	int size=((void*)(pages->info.stack)-ptr)/sizeof(void*)
+	ret.vars=size<0 ? pages->info.stack : ptr
+	ret.len=size.abs()+1
+	ret.type=Vector
+	return &ret
+}
+void benchmark_gc(){
+	ret=[]
+	for i=0;i<1000000;i++
+		ret[i%200000]=1023.new_str()
+//		if !(i%1000) => "%d - %d\n".printf(i, pages->info.used)
+//		"%d ".printf(i)
+//		mem_usage().dx()
+	ret.map_len().dx()
+	mem_usage().dx()
+}
+void gc_benchmark(){
+	ret={}
+	for i=0;i<50000;i++
+		ret["id."..(i%5000)]="val."..i
+	ret.map_len().px()
+	ret["id.100"].px()
+	mem_usage().px()
+}

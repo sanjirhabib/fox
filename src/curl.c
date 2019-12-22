@@ -1,5 +1,10 @@
+#line 2 "src/curl.fox"
+
 #include <curl/curl.h>
-#include <fox.h>
+#include <core.h>
+#include <curl.h>
+
+#pragma fox cc -lcurl
 
 size_t fox_curl_cat(void* ptr, size_t size, size_t num, void* old){
 	char** old1=(char**)old;

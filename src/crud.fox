@@ -1,0 +1,147 @@
+#line 2 "src/crud.fox"
+
+#include <core.h>
+#include <crud.h>
+#include <sql.h>
+#include <schema.h>
+#include <http.h>
+#include <html.h>
+
+char* row_id(map* row, map* cols) => return row.row_ids(cols).map_join("\t").str_url()
+map* row_ids(map* row, map* cols){
+	ret=cols.cols_pkeys()
+	ret.each name
+		ret[name]=row[name]
+	return ret
+}
+char* crud(char* sql,char* db){
+	path=_globals.paths	
+	curr=path.matched
+	table=sql.sql_table()
+	if path.end
+		rows=sql.sql_rows(db)
+		cols=sql.sql_cols(db)		
+		data=rows.rows_data(cols)
+		data.head=---
+		<th style='text-align:center;'>
+		<div class="btn-group">
+		<button class="btn btn-mini">Action</button>
+		<button class="btn btn-mini dropdown-toggle" data-toggle="dropdown">
+		<span class="caret"></span>
+		</button>
+		<ul class="dropdown-menu">
+			<li><a href="add/">Add New</a></li>
+		</ul>
+		</div>		
+		</th>
+
+		---..data.head
+		data.body.each row,key
+			data.body[key]=---
+			<td style='text-align:center;'>
+			<div class="btn-group">
+			<button class="btn btn-mini dropdown-toggle" data-toggle="dropdown">
+			<span class="caret"></span>
+			</button>
+			<ul class="dropdown-menu">
+				<li><a href="id.$key/edit/">Edit</a></li>
+				<li><a href="id.$key/delete/">Delete</a></li>
+			</ul>
+			</div>		
+			</td>
+
+			---..row
+		return data.rows_data_html().show_body({{
+			title =sql.sql_table().str_title().." List"
+			width =4
+		}})
+	if "$(curr)add/".get().end
+		:Add.name_tab()
+		cols=sql.sql_cols(db).del_keys([:lft,:rgt])
+		form={{
+			title ="Add New $(table.str_title())"
+			cols =cols
+			buttons
+				save -
+		}}
+		data=form.form_posted()
+		if data
+			data.row_insert(table, db)
+			url_back().http_redirect("Record Added")
+		return form.form_gets().show_form()
+	"$(curr)id.([^/]+)/".get([:id])
+	if "$(curr)id.[^/]+/edit/".get().end
+		:Edit.name_tab()
+		table=sql.sql_table()
+		row=path.id.id_row(table, db)
+		cols=sql.sql_cols(db).del_keys([:lft,:rgt])
+		form={{
+			title ="Edit $(table.str_title())"
+			cols =cols
+			vals =row
+			buttons
+				save -
+		}}
+		data=form.form_posted()
+		if data
+			row.row_ids(table.tbl_cols(db)).id_update(table, db, data)
+			url_back().http_redirect("Record Updated")
+		return form.show_form()
+	if "$(curr)id.[^/]+/delete/".get().end
+		:Delete.name_tab()
+		form={{
+			title Delete This Record?
+			buttons
+				delete -
+				cancel -
+		}}
+		data=form.form_posted()
+		if data.cancel
+			return url_back().http_redirect(:Cancelled)
+		else if data.delete
+			path.id.id_delete(table,db)
+			return url_back().http_redirect("Record Deleted")
+		return form.show_form()
+	return not_found()
+}
+char* rows_data_html(map* in){
+	return ---
+	<table class='table table-condensed table-bordered table-striped'>
+	<thead>
+	<tr>$(in.head)</tr>
+	</thead>
+	<tbody>
+	<tr>$(in.body.map_join("</tr>\n<tr>"))</tr>
+	</tbody>
+	</table>
+
+	---;
+}
+map* rows_data(map* rows, map* cols){
+	head=''
+	cols.each val
+		head.="<th$(val.col_align())>$(val.label or val.name.str_title())</th>"
+	body={}
+	rows.each row
+		s=''
+		row.each val, key
+			s.="<td$(cols[key].col_align())>$(val)</td>"
+		body[row.row_id(cols)]=s
+	return {head: head, body: body}
+}
+char* fts5_create(char* db=NULL){
+	ret=[
+	"drop table if exists search",
+	"create virtual table search using fts5(table,key,title,body,thumb)"
+	]
+	if db => ret.sqls_exec(db)
+	return ret.map_join(";\n")
+}
+char* col_align(map* col){
+	if col.sql || col.list => return ''
+	if {{
+		text text
+		int
+	}}.map_type(col.type)===:text => return ''
+	return " style='text-align:right;'"
+}

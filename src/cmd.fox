@@ -1,4 +1,7 @@
-#include <fox.h>
+#line 2 "src/cmd.fox"
+
+#include <core.h>
+#include <cmd.h>
 
 __attribute__((destructor)) static void maindtor(void) => gc_end()
 void* px(void* str,int newline=1){
@@ -10,12 +13,13 @@ void* px(void* str,int newline=1){
 	return ret
 }
 void xexit(int val=0){
-	gc_end()
+//	gc_end()
 	exit(val)
 }
 void* fox_error(char* msg,int dump=0){
-	stderr.fprintf("%s",msg)
-	if dump => stderr.fprintf("%s",stack_str())
+//	stack_dump_direct()
+	stderr.fprintf("%s\n",msg)
+//	if dump => stderr.fprintf("%s\n",stack_str())
 	xexit(-1)
 	return NULL
 }

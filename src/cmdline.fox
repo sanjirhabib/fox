@@ -1,0 +1,86 @@
+#line 2 "src/cmdline.fox"
+
+#include <core.h>
+#include <cmdline.h>
+#include <generator.h>
+
+map* eval_params(map* sent,char* name,map* env=NULL,map* fns=funcs()){
+	name.assert()
+	ret={}
+	fn=fns[name]
+	if !fn => "Function $name() not found".fox_error()
+	named=0
+	fn.params.each v,k,i
+		if k==="..."
+			for int i2=i; i2<sent->len; i2++
+				ret[]=sent[i2]
+			break
+		else if sent.map_has_key(k)
+			named=1
+			ret[k]=sent[k]
+		else if !named && sent.map_len()>i && sent.map_key(i).is_i()
+			ret[k]=sent[i]
+		else if env.map_has_key(k)
+			named=1
+			ret[k]=env[k]
+		else if k===:env
+			ret[k]=env
+		//else if v.default
+			//ret[k]=v.default.eval()
+			//invoke() will use the default
+		else if !v.default
+			"Parameter missing in $(fn.name)($k=?) in $(fn.func_cdecl())\nargs=$(sent.json())".fox_error()
+			assert(0)
+	return ret
+}
+map* cmdline_params(map* args,map* funcs){
+	func=args[1]
+	args=args.vec_sub(2)
+	map* params=funcs[func].params
+	if !params => "Function: $func() not found".fox_error()
+	ret={}
+	int curr=1
+	int variadic=params.map_key(params.map_len()-1)==="..." ? params.map_len() : 0
+	named_param=''
+	args.each v,k,i
+		if v.str_start("-") && v.str_len()>1
+			val=''
+			if named_param
+				ret[named_param]=1
+			if v.str_start("--")
+				named_param=v.sub_str(2)
+				if v.str_has("=")
+					mp1=named_param.str_split("=",2)
+					named_param=mp1[0]
+					val=mp1[1]
+				else named_param=v.sub_str(2)
+			else
+				named_param=v.sub_str(1)
+				if !params[named_param]
+					params.each v2,k2,i2
+						if ret.map_has_key(k2) => continue
+						if k2.str_start(named_param) => named_param=k2; break
+//				if v.str_len()>2
+//					val=v.sub_str(2)
+			if !params[named_param] => "Invalid parameter $(named_param) in call to...\n$(funcs[func].func_cdecl())".fox_error()
+			if val
+				ret[named_param]=val
+				named_param=NULL
+		else if named_param
+			ret[named_param]=v
+			named_param=NULL
+		else if variadic && curr>=variadic
+			ret[]=v
+			curr++
+		else
+			if curr>params.map_len() => "Excess number of arguments. Function has only $(params.map_len())\narguments $(funcs[func].func_cdecl())".fox_error()
+			ret[params.map_key(curr-1)]=v
+			curr++
+	if named_param
+		ret[named_param]=1
+	ret=ret.eval_params(func,NULL,funcs)
+	ret.each v3,k3,i3
+		if params[k3].type==="map*"
+			ret[k3]=v3.str_map()
+	return ret
+}

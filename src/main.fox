@@ -1,6 +1,36 @@
-#include <fox.h>
-int run(map* args);
-int main(int argc,char** argv){
-	map* globals=NULL
-	return argv.argv_map(argc,(void**)&globals).run()
+#line 2 "src/main.fox"
+
+#include <core.h>
+#include <main.h>
+#include <meta.h>
+#include <cmdline.h>
+#include <fox_meta.h>
+
+map* fox_reflect()
+
+int run(map* args){
+	invoke=fox_invoke
+	reflect=fox_reflect
+	_globals.reflect=reflect()
+//	_globals.reflect.json(1).px()	
+
+	if args->len==1
+		---
+		Fox: build: $(fox_reflect().version.build), date: $(fox_reflect().version.date) [$(fox_reflect().version.date.time_ago()) old]
+		Usage: fox <function> [<arg1> <arg2> ...]
+			Run "fox help" for list of functions
+			Run "fox tutorial" for a tutorial
+		---.px()
+		return 0
+	char* name=args[1]
+	void* ret=NULL
+	if name.str_end(".fox")
+		_globals.args=_globals.args.vec_sub(1)
+		ret=name.file_read().fox_run()
+	else if !name.is_code() && !name.str_start("--")
+		ret=name.fox_run()
+	else
+		if name.str_start("--") => name=name.sub_str(2)
+		ret=args.cmdline_params(funcs()).invoke(name)
+	return ret.ret_print()
 }

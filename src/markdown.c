@@ -1,5 +1,9 @@
 #include <mkdio.h>
-#include <fox.h>
+#include <core.h>
+#include <markdown.h>
+#include <dir.h>
+#pragma fox cc -lmarkdown
+
 //char* md_url(char* in,int len,void* junk){
 //	url=in.sub_str(0,len)	
 //	if !url.url_host() || url.url_host()===:localhost || url.url_host().str_has(:habibur) => return url

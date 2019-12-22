@@ -1,29 +1,27 @@
-#include <fox.h>
+#line 2 "src/html.fox"
 
-char* fkey_sql(char* sql,char* db){
-	map* cols=sql_select_cols(sql,db,NULL);
-	void* pkey=map_id(cols_pkeys(cols),0);
-	void* skey=map_id(cols_skeys(cols),0);
-	map* ret=sql_map(sql);
-	add(ret,"select",xmap("id", map_val(map_val(cols,pkey),"expr"), "name", map_val(map_val(cols,skey),"expr"), End));
-	return sql_add_order(map_sql(ret),db,NULL);
-};
-char* callback_php(map* param,char* name){ return call_php(param,name); };
-char* fkey_show(char* sql,char* db,char* id){
-	char* sign=xstr(sql, "/", id, End);
-	char* ret=NULL;
-	if((ret=cache(sign,"str_show",NULL))){ return ret; };
-	return cache(sign,"str_show",map_val(sql_row(sql_add_where(fkey_sql(sql,db),xmap("id", ":id", End)),db,xmap("id", id, End)),"name"));
-};
-int fkey_valid(char* sql,char* db,char* id){
-	return fkey_show(sql,db,id) ? 1 : 0;
-};
+#include <core.h>
+#include <foxtime.h>
+#include <regexp.h>
+#include <http.h>
+#include <html.h>
+#include <tsv.h>
+//#include "astrostr.h"
+
+#pragma fox cc -lfoxdeps
+
+//extern char*(*page_html)(map* data);
+//extern map*(*page_data)(map* data);
+
+char*(*page_html)(map* data)=default_page_html;
+map*(*page_data)(map* data)=default_page_data;
+
 char* str_show(char* value,char* type,map* op,int width){
 	value=to_str(value,"",0);
 	if(!value){ return ""; };
 	if(!type){ return value; };
 	if(map_val(op,"list")){ return map_val(map_val(op,"list"),value) ? str_title(map_val(map_val(op,"list"),value)) : value; };
-	if(map_val(op,"sql") && map_val(op,"db")){ return fkey_show(map_val(op,"sql"),map_val(op,"db"),value); };
+//	if op.sql && op.db => return op.sql.fkey_show(op.db,value)
 	type=map_type(xmap(
 		"text", "text",
 		"para", "para",
@@ -97,278 +95,8 @@ map* rows_show(map* rows,map* cols,int width){
 		vec_add(ret,r); };
 	return ret;
 };
-
-char* month_name(int month){ return map_val(xmap("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec", End),abs(month-1)%12); };
-char* http_moved(char* url){ return http_out(NULL,"301 Moved Permanently","text/html",xvec(xstr("Location: ", url, End), End)); };
-char* http_redirect(char* url,char* msg){
-	if(msg){ add(add_key(_globals,"sess",Map),"msg",msg); };
-	return http_out(NULL,"302 Moved Temporarily","text/html",xvec(xstr("Location: ", url, End), End));
-};
-void* http_error(char* msg,char* status){ http_out(msg,status,"text/html; charset=utf-8",NULL); xexit(0); return NULL; };
-char* file_mime(char* path){
-	map* map_1=map_val(_globals,"mime"); for(int i=next(map_1,-1,NULL,NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i); char* k=map_key(map_1, i);
-		if(str_end(path,k)) {return v;}; };
-	return NULL;
-};
-char* str_html(char* in){
-	if(!str_len(in)){ return ""; };
-	char* chars="<>\"'&";
-	map* into=xvec("&lt;","&gt;","&quot;","&#039;","&amp;", End);
-	char* ret=NULL;
-	for(;*in;in++){
-		char* match=strchr(chars,*in);
-		if(!match){ ret=cat_char(ret,*in); }
-		else {ret=xcat(ret,map_id(into,match-chars), End);}; };
-	return ret;
-};
-void header(char* str){ print(str,stdout); print("\r\n",stdout); };
-char* http_out(char* str,char* status,char* mime,map* headers){
-	static int callonce=0;
-	if(callonce){ return str; };
-	callonce=1;
-	char* sess=json(map_val(_globals,"sess"),0);
-	if(str_eq(sess,"{}")){ sess=NULL; };
-	if(!str_eq(map_val(_globals,"sess_str"),sess)){
-		add(_globals,"sess",NULL);
-		add(_globals,"sess_str",NULL);
-		void* sid=map_val(_globals,"sess_id");
-		if(!sid && sess){
-			sid=sess_newid();
-			cookie_set("sessid",sid,"/",NULL); };
-		if(!sess && sid){
-			if(is_file(xstr("/tmp/sess.", sid, End))){ unlink(xstr("/tmp/sess.", sid, End)); };
-		}else if(sess && sid){
-			write_file(sess,xstr("/tmp/sess.", sid, End),0,0); }; };
-	char* out=xstr(map_val(_globals,"out"),str, End);
-	header(xstr("Status: ", status, End));
-	header(xstr("Content-Type: ", mime, End));
-	header(xstr("Content-Length: ",int_str( str_len(out)), End));
-	for(int i=next(headers,-1,NULL,NULL); has_id(headers,i); i++){ void* v=map_id(headers,i); header(v); };
-	map* map_1=map_val(_globals,"cookie"); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* v2=map_id(map_1,next1);
-		header(xstr("Set-Cookie: ", v2, End)); };
-	header("");
-	print(out,stdout);
-	xexit(0);
-	return str;
-};
-char* static_file(char* path){
-	if(has_word(path,"? ../ /.. \\")){ return NULL; };
-	if(!str_start(path,"/res/")){ return NULL; };
-	char* ret=file_read(cat("/web/",str_trim(path,"/"),-1020),1,0);
-	if(ret){ return http_out(ret,"200 OK",file_mime(path),NULL); };
-	return NULL;
-};
-
-char* str_url(char* in){
-	if(!in||!*in){ return in; };
-	int bad=0;
-	char* head=in;
-	for(;*in;in++){
-		if(!is_alphanum(*in,"\"'-.[]*$%{}()@!~")){ bad++; }; };
-	if(!bad){ return head; };
-	char* ret=new_str(str_len(head)+bad*2);		
-	int off=0;
-	in=head;
-	for(;*in;in++){
-		if(!is_alphanum(*in,"\"'-.[]*$%{}()@!~")){
-			sprintf(ret+off,"%%%02X",(unsigned char)*in);
-			off+=3;
-		}else{
-			ret[off]=*in;
-			off++; }; };
-	return ret;
-};
-char* url_str(char* in){
-	if(!in){ return NULL; };
-	int len=0;
-	int fix=0;
-	char* str=in;
-	for(;*in;in++){
-		if(*in=='+'){ fix=1; }
-		else if(*in=='%'){ fix=1; len-=2; }; };
-	if(!fix){ return str; };
-	char* ret=new_str(str_len(str)+len);
-	int i=0;
-	for(in=str;*in;in++,i++){
-		if(*in=='+'){ ret[i]=' '; }
-		else if(*in=='%'){ ret[i]=hex_char((++in)); in++; }
-		else {ret[i]=*in;}; };
-	return ret;
-};
-char* map_amps(void* val,char* name){
-	if(!val){ return NULL; };
-	if(!is_map(val)){
-		val=to_str(val,"",0);
-		return name ? xstr(str_url(name),"=",str_url(val), End) : NULL; };
-	char* ret=NULL;
-	if(name){ name=xcat(name,".", End); };
-	for(int next1=next(val,-1,NULL,NULL); has_id(val,next1); next1++){ void* v=map_id(val,next1); char* n=map_key(val, next1);
-		ret=str_join(ret,"&",map_amps(v,xstr(name,n, End))); };
-	return ret;
-};
-map* amps_map(char* in){
-	map* ret=new_map();
-	map* map_1=str_split(in,"&",0); for(int i=next(map_1,-1,NULL,NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i);
-		map* pr=str_split(v,"=",2);
-		char* key=url_str(map_id(pr,0));
-		if(!strchr(key,'.')){
-			add(ret,key,url_str(map_id(pr,1)));
-			continue; };
-		map* keys=str_split(key,".",0);
-		void* lastkey=map_id(keys,map_len(keys)-1);
-		vec_del(keys,-1,1);
-		map* val=ret;
-		for(int next1=next(keys,-1,NULL,NULL); has_id(keys,next1); next1++){ void* k=map_id(keys,next1);
-			void* nval=map_val(val,k);
-			if(!is_map(nval)){ nval=new_map(); add(val,k,nval); };
-			val=nval; };
-		add(val,lastkey,url_str(map_id(pr,1))); };
-	return ret;
-};
-map* parse_url(char* path){
-	map* ret=xmap("url", path, End);
-	map* two=str_split(path,"?",2);
-	add(ret,"path",map_id(two,0));
-	add(ret,"get",amps_map(map_id(two,1)));
-	return ret;
-};
-char* url_host(char* url){ return map_id(regexp(url,"://([^:/]+)"),1); };
-map* sess_init(){
-	void* sid=map_val(header_map(map_val(env_vars(),"HTTP_COOKIE")),"sessid");
-	if(!sid){ return NULL; };
-	char* sess=file_read(xstr("/tmp/sess.", sid, End),1,0);
-	add(_globals,"sess_id",sid);
-	add(_globals,"sess_str",sess);
-	add(_globals,"sess",xjson_map(sess,Map));
-	return map_val(_globals,"sess");
-};
-void	sess_add(char* name, char* value){ add(add_key(_globals,"sess",Map),name,value); };
-char*	sess_id(){ return map_val(_globals,"sess_id"); };
-char*	sess_file(){ return sess_id() ? xstr("/tmp/sess.", sess_id(), End) : NULL; };
-char*	sess_newid(){ return rand_str(24); };
-void cookie_set(char* name,char* value,char* path,char* expire){
-	char* xexpire=NULL;
-	if(expire){ xexpire=xstr("; expires=", expire, End); };
-	char* ss=xstr(name, "=", value, "; path=", path, xexpire, End);
-	vec_add(add_key(_globals,"cookie",Vector),ss);
-};
-void sess_delete(){
-	if(!sess_file()){ return; };
-	remove(sess_file());
-	cookie_set("sessid","NULL","/","Thu, 01 Jan 1970 00:00:00 GMT");
-};
-map* link_relative(map* links,char* url){
-	if(!links||!url) {return links;};
-	char* prepad=str_times("../",str_char_count(url,'/')+1);
-	for(int i=next(links,-1,NULL,NULL); has_id(links,i); i++){ void* v=map_id(links,i);
-		if(is_map(v)){
-			link_relative(v,url);
-			continue; };
-		if(fox_at(v,0)=='/') {continue;};
-		set(links,i,xstr(prepad,v, End)); };
-	return links;
-};
-map* header_map(char* val){
-	if(!val){ return NULL; };
-	map* ret=new_map();
-	map* map_1=str_split(val,";",0); for(int i=next(map_1,-1,NULL,NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i);
-		if(!strchr(v,'=')){ vec_add(ret,v); continue; };
-		map* pair=str_split(v,"=",2);
-		add(ret,str_trim(map_id(pair,0)," \t\n\r"),str_unquote(str_trim(map_id(pair,1)," \t\n\r"))); };
-	return ret;
-};
-map* http_req(){
-	map* ret=new_map();
-	map* env=env_vars();
-	sess_init();
-	add(_globals,"css",new_map());
-	add(_globals,"js",new_map());
-	if(!map_val(env,"REQUEST_METHOD")){
-		void* path=map_id(map_val(_globals,"args"),1);
-		char* home=xstr(sub_str(cwd(),char_at((cwd()+1),"/")+1,-2147483648),"/", End);
-		//char* home="https://sanjir.com"..cwd().sub_str((cwd()+1).char_at("/")+1).."/"
-		ret=parse_url((xstr(home,path, End)));
-		add(ret,"method","get");
-		add(ret,"remote","localhost");
-		add(ret,"server","localhost");
-		add(ret,"protocol","http");
-		add(ret,"port","80");
-		add(ret,"path",xmap(
-			"full", map_val(ret,"path"),
-			"home", home,
-			"next", (sub_str(map_val(ret,"path"),str_len(home),-2147483648) ? sub_str(map_val(ret,"path"),str_len(home),-2147483648) : "/")
-		, End));
-		add(_globals,"req",ret);
-		return ret; };
-	ret=parse_url(map_val(env,"REQUEST_URI"));
-	add(ret,"remote",map_val(env,"REMOTE_ADDR"));
-	add(ret,"server",map_val(env,"HTTP_HOST"));
-	add(ret,"protocol",map_val(env,"REQUEST_SCHEME"));
-	add(ret,"port",map_val(env,"SERVER_PORT"));
-	char* home=rtrim_upto(map_val(env,"SCRIPT_NAME"),'/',1);
-	add(ret,"path",xmap(
-		"full", map_val(ret,"path"),
-		"home", home,
-		"next", (sub_str(map_val(ret,"path"),str_len(home),-2147483648) ? sub_str(map_val(ret,"path"),str_len(home),-2147483648) : "/")
-	, End));
-	if(str_eq(map_val(env,"REQUEST_METHOD"),"GET")){
-		add(ret,"method","get");
-		add(_globals,"req",ret);
-		return ret; };
-	if(!str_eq(map_val(env,"REQUEST_METHOD"),"POST")){
-		http_error(xstr("Method ", map_val(env,"REQUEST_METHOD"), " not supported", End),"405 Method not supported"); };
-	add(ret,"method","post");
-	long long size=str_int(map_val(env,"CONTENT_LENGTH"));
-	if(!size){ http_error("Content-Lenght was not provided","411 Length Required"); };
-	if(size>20000000){ http_error("Request should be with less than 20MB data","413 Request Entity Too Large"); };
-	char line[1024];
-	char* header=new_blob(0);
-	int done=0;
-	int done1=0;
-	int toread=min(size-done,1024);
-	while(done<size && (done1=read(STDIN_FILENO,line,toread))){
-		if(done1<=0){ http_error(xstr("POST data read error at ",int_str( done), "/",int_str( size), " bytes", End),"500 Internal Server Error"); };
-		header=cat(header,line,done1);
-		done+=done1;
-		toread=min(size-done,1024); };
-	add(ret,"post",header);
-	add(_globals,"req",ret);
-	return ret;
-};
-char* full_url(char* url){ return xstr(((map_val(map_val(_globals,"req"),"protocol") ? map_val(map_val(_globals,"req"),"protocol") : "http")),"://",((map_val(map_val(_globals,"req"),"server") ? map_val(map_val(_globals,"req"),"server") : "localhost")),show_port(),"/",str_ltrim(url,"/"), End); };
-//char* full_path(char* url=NULL) => return "/"..url.str_ltrim("/")
-char* url_abs(char* abs, char* rel){
-	if(!rel){ return abs; };
-	if(str_start(rel,"./")){ return xstr(abs,sub_str(rel,2,-2147483648), End); };
-	if(rel[0]!='.'){ return xstr(abs,rel, End); };
-	char* srel=rel;
-	int level=0;
-	while(str_start(srel,"../")){ srel+=3; level++; };
-	map* base=str_split(abs,"/",0);
-	if(strstr(abs,"://")){ level=max(map_len(base)-level-1,3); }
-	else {level=max(map_len(base)-level-1,0);};
-	char* ret=map_join(vec_sub(base,0,level),"/");
-	return xstr(ret,"/",srel, End);
-};
-char* base_url(char* path){ return url_abs(map_key(map_val(_globals,"tabs"),0),path); };
-char* home_url(char* path){ return url_abs(map_val(map_val(map_val(_globals,"req"),"path"),"home"),path); };
-char* show_port(){
-	if(!map_val(map_val(_globals,"req"),"port")){ return NULL; };
-	if(str_eq(map_val(map_val(_globals,"req"),"protocol"),"http") && str_eq(map_val(map_val(_globals,"req"),"port"),"80")){ return NULL; };
-	if(str_eq(map_val(map_val(_globals,"req"),"protocol"),"https") && str_eq(map_val(map_val(_globals,"req"),"port"),"443")){ return NULL; };
-	return xstr(":",map_val(map_val(_globals,"req"),"port"), End);
-};
-char* h(char* in){
-	return str_replace(in,xmap(
-	"&", "&amp;",
-	"<", "&gt;",
-	">", "&lt;",
-	"\"", "&quot;",
-	"'", "&apos;"
-	, End),NULL);
-};
-extern int _queries;
-char* page_html(map* data){
+//extern int _queries;
+char* default_page_html(map* data){
 	char* head=xstr("", 
 	"<!DOCTYPE html>\n", 
 	"<html><head><meta charset='utf-8'>\n", 
@@ -379,7 +107,7 @@ char* page_html(map* data){
 	"	\"@type\": \"WebSite\",\n", 
 	"	\"name\": \"Habib's Site\",\n", 
 	"	\"alternateName\": \"Sanjir Habib\",\n", 
-	"\t\"url\": \"", full_url(map_val(map_val(map_val(_globals,"req"),"path"),"full")), "\"\n", 
+	"\t\"url\": \"", full_url(map_val(map_val(_globals,"req"),"fullpath")), "\"\n", 
 	"}\n", 
 	"</script>\n", 
 	"<link rel=\"apple-touch-icon\" href=\"/apple-touch-icon.png\">\n", 
@@ -423,7 +151,7 @@ char* page_html(map* data){
 	"", 
 	"", End);
 };
-map* page_data(map* data){
+map* default_page_data(map* data){
 	if(!(map_val(data,"title"))){add(data,"title","Habib's Site");};
 	if(!(map_val(data,"tab"))){add(data,"tab",map_val(data,"title"));};
 	if(!(map_val(data,"logo"))){add(data,"logo",home_url("logo.jpg"));};
@@ -450,9 +178,7 @@ map* page_data(map* data){
 		add(data,"header",xcat(map_val(data,"header"),xstr("<meta property=\"", key, "\" content=\"", val, "\">\n", End), End)); };
 	if(map_val(map_val(map_val(_globals,"req"),"get"),"_print")){ return data; };
 	add(data,"footer",xstr("", 
-	"Run Time: ",int_str( run_time()), "ms=",int_str( gc_time()), "GC+",int_str( run_time()-total_time()-gc_time()), "Code+",int_str( total_time()), "DB\n", 
-	"Heap: ", int_kb(_gcdata.max_mem,"B"), ". Stack: ", int_str(_gcdata.max_roots), ", Total: ", int_kb(max_mem(),"B"), ".\n", 
-	"GC: ",int_str( gc_runs()), "runs. Queries: ", int_str(_queries), ".", 
+	"Total: ", int_kb(max_mem(),"B"), ". ", mem_usage(), " Queries: ", int_str(_queries), ".", 
 	"", End));
 	add(data,"footer",xcat(map_val(data,"footer"),((map_len(map_val(_globals,"js")) ? xstr("<script>\n",map_join(map_val(_globals,"js"),"\n"),"</script>", End) : NULL)), End));
 	char* tabs=NULL;
@@ -477,7 +203,10 @@ map* page_data(map* data){
 	"ul.menu2 {margin-top:5em;}"
 	"");
 	map* map_5=map_val(data,"menu"); for(int next1=next(map_5,-1,NULL,NULL); has_id(map_5,next1); next1++){ void* name=map_id(map_5,next1); char*  url=map_key(map_5, next1);
-		body=xcat(body,xstr("<li><a class='menu' href='", url, "'>", name, "</a></li>\n", End), End); };
+		if(str_start(url,"onclick:")){
+			body=xcat(body,xstr("<li><a class='menu' href='#' onclick='", sub_str(url,8,-2147483648), "'>", name, "</a></li>\n", End), End);
+		}else{
+			body=xcat(body,xstr("<li><a class='menu' href='", url, "'>", name, "</a></li>\n", End), End); }; };
 	if(map_val(data,"menus")){
 		map* map_1=map_val(data,"menus"); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* menu=map_id(map_1,next1); char*  title=map_key(map_1, next1);
 			if(!map_len(menu)){ continue; };
@@ -510,8 +239,8 @@ map* page_data(map* data){
 	add(data,"login",login);
 	return data;
 };
-void* not_found(char* path){ http_out(xstr("The requested content ", (path ? path : map_val(map_val(map_val(_globals,"req"),"path"),"full")), " was not found on the server.", End),"404 Not Found","text/html; charset=utf-8",NULL); return NULL; };
-int show_page(map* data){ http_out(page_html(page_data(data)),"200 OK","text/html; charset=utf-8",NULL); return 0; };
+char* not_found(char* path){ return http_out(xstr("The requested content ", (path ? path : map_val(map_val(_globals,"req"),"fullpath")), " was not found on the server.", End),"404 Not Found","text/html; charset=utf-8",NULL); };
+char* show_page(map* data){ return http_out(page_html(page_data(data)),"200 OK","text/html; charset=utf-8",NULL); };
 int is_post(){ return str_eq(map_val(map_val(_globals,"req"),"method"),"post"); };
 map* post_data_multipart(){
 	if(map_val(_globals,"post")){ return map_val(_globals,"post"); };
@@ -538,7 +267,7 @@ char* name_tab(char* name){
 	return name;
 };
 map* get(char* path, map* names){
-	map* ret=regexp(map_val(map_val(map_val(_globals,"req"),"path"),"next"),xstr("^",path, End));
+	map* ret=regexp(map_val(map_val(_globals,"req"),"path"),xstr("^",path, End));
 	if(!ret){ return NULL; };
 	void* ret2=map_val(_globals,"paths");
 	if(!ret2){ add(_globals,"paths",new_map()); ret2=map_val(_globals,"paths"); };
@@ -546,12 +275,12 @@ map* get(char* path, map* names){
 		for(int i=1; i<map_len(ret) && i<=map_len(names); i++){
 			add(ret2,map_id(names,i-1),map_id(ret,i)); }; };
 	add(ret2,"matched",map_id(ret,0));
-	add(ret2,"end",regexp(map_val(map_val(map_val(_globals,"req"),"path"),"next"),xstr("^",path,"$", End)) ? "yes" : NULL);
+	add(ret2,"end",regexp(map_val(map_val(_globals,"req"),"path"),xstr("^",path,"$", End)) ? "yes" : NULL);
 	return ret2;
 };
-void show_body(char* body,map* page){
+char* show_body(char* body,map* page){
 	add(page,"body",body);
-	show_page(page);
+	return show_page(page);
 };
 int days_in_feb(int year){
 	if(!(year%400)){ return 29; };
@@ -628,37 +357,6 @@ map* tz_data(char* name,char* date){
 		"dst", tz_dst(name,date),
 		"utc", tz_utc(name,date)
 	, End);
-};
-char* fts5_create(char* db){
-	map* ret=xvec(
-	"drop table if exists search",
-	"create virtual table search using fts5(table,key,title,body,thumb)"
-	, End);
-	if(db){ sqls_exec(ret,db); };
-	return map_join(ret,";\n");
-};
-map* merge_soft(map* strong, map* soft){
-	if(!strong){ strong=new_map(); };
-	if(!soft){ return strong; };
-	for(int next1=next(soft,-1,NULL,NULL); has_id(soft,next1); next1++){ void* val=map_id(soft,next1); char*  key=map_key(soft, next1);
-		if(!is_int(key)){
-			if(map_has_key(strong,key)){ continue; };
-		}else {key=NULL;};
-		add(strong,key,val); };
-	return strong;
-};
-char* param(map* change){
-	return map_amps(merge_soft(change,map_val(map_val(_globals,"req"),"get")),NULL);
-};
-void save_caller(){
-	char* refer=url_back();
-	void* req=map_val(_globals,"req");
-	if(!str_eq(map_val(req,"method"),"get") || !refer || map_val(map_val(req,"get"),"_refer") || str_end(refer,map_val(req,"path"))){ return; };
-	add(add_key(req,"get",Map),"_refer",refer);
-	http_redirect(xstr("./?", map_amps(map_val(req,"get"),NULL), End),NULL);
-};
-char* url_back(){
-	return (map_val(map_val(map_val(_globals,"req"),"get"),"_refer") ? map_val(map_val(map_val(_globals,"req"),"get"),"_refer") : (map_val(parse_url(map_val(env_vars(),"HTTP_REFERER")),"path") ? map_val(parse_url(map_val(env_vars(),"HTTP_REFERER")),"path") : home_url(NULL)));
 };
 char* form_html(map* mp){
 	map* map_1=map_val(mp,"vals"); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* val=map_id(map_1,next1); char* key=map_key(map_1, next1);
@@ -759,146 +457,14 @@ map* form_gets(map* form){
 		if(map_val(map_val(form,"cols"),key)){ add(add_key(add_key(form,"cols",Map),key,Map),"value",val); }; };
 	return form;
 };
-int show_form(map* data){
+char* show_form(map* data){
 	add(data,"body",form_html(data));
 	return show_page(data);
 };
 int is_user(char* who){ return !str_len(who) || str_eq(map_val(map_val(_globals,"sess"),"user"),who) || str_eq(map_val(map_val(_globals,"sess"),"role"),who); };
-void authorized(char* who){ if(!is_user(who)){ not_found(map_val(map_val(_globals,"req"),"path")); }; };
-char* col_align(map* col){
-	if(map_val(col,"sql") || map_val(col,"list")){ return NULL; };
-	if(str_eq(map_type(xmap(
-		"text", "text",
-		"int",NULL
-	, End),map_val(col,"type")),"text")){ return NULL; };
-	return " style='text-align:right;'";
-};
-char* rows_data_html(map* in){
-	return xstr("", 
-	"<table class='table table-condensed table-bordered table-striped'>\n", 
-	"<thead>\n", 
-	"<tr>", map_val(in,"head"), "</tr>\n", 
-	"</thead>\n", 
-	"<tbody>\n", 
-	"<tr>", map_join(map_val(in,"body"),"</tr>\n<tr>"), "</tr>\n", 
-	"</tbody>\n", 
-	"</table>\n", 
-	"", 
-	"", End);
-};
-map* rows_data(map* rows, map* cols){
-	char* head=NULL;
-	for(int next1=next(cols,-1,NULL,NULL); has_id(cols,next1); next1++){ void* val=map_id(cols,next1);
-		head=xcat(head,xstr("<th", col_align(val), ">", (map_val(val,"label") ? map_val(val,"label") : str_title(map_val(val,"name"))), "</th>", End), End); };
-	map* body=new_map();
-	for(int next1=next(rows,-1,NULL,NULL); has_id(rows,next1); next1++){ void* row=map_id(rows,next1);
-		char* s=NULL;
-		for(int next1=next(row,-1,NULL,NULL); has_id(row,next1); next1++){ void* val=map_id(row,next1); char*  key=map_key(row, next1);
-			s=xcat(s,xstr("<td", col_align(map_val(cols,key)), ">", val, "</td>", End), End); };
-		add(body,row_id(row,cols),s); };
-	return xmap("head", head, "body", body, End);
-};
-char* row_id(map* row, map* cols){ return str_url(map_join(row_ids(row,cols),"\t")); };
-map* row_ids(map* row, map* cols){
-	map* ret=cols_pkeys(cols);
-	for(int next1=next(ret,-1,NULL,NULL); has_id(ret,next1); next1++){ void* name=map_id(ret,next1);
-		add(ret,name,map_val(row,name)); };
-	return ret;
-};
-void crud(char* sql,char* db){
-	void* path=map_val(_globals,"paths");	
-	void* curr=map_val(path,"matched");
-	char* table=sql_table(sql);
-	if(map_val(path,"end")){
-		map* rows=sql_rows(sql,db,NULL);
-		map* cols=sql_cols(sql,db,NULL);		
-		map* data=rows_data(rows,cols);
-		add(data,"head",xstr(""
-		"<th style='text-align:center;'>\n"
-		"<div class=\"btn-group\">\n"
-		"<button class=\"btn btn-mini\">Action</button>\n"
-		"<button class=\"btn btn-mini dropdown-toggle\" data-toggle=\"dropdown\">\n"
-		"<span class=\"caret\"></span>\n"
-		"</button>\n"
-		"<ul class=\"dropdown-menu\">\n"
-		"	<li><a href=\"add/\">Add New</a></li>\n"
-		"</ul>\n"
-		"</div>		\n"
-		"</th>\n"
-		""
-		"",map_val(data,"head"), End));
-		map* map_1=map_val(data,"body"); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* row=map_id(map_1,next1); char* key=map_key(map_1, next1);
-			add(add_key(data,"body",Map),key,xstr(xstr("", 
-			"<td style='text-align:center;'>\n", 
-			"<div class=\"btn-group\">\n", 
-			"<button class=\"btn btn-mini dropdown-toggle\" data-toggle=\"dropdown\">\n", 
-			"<span class=\"caret\"></span>\n", 
-			"</button>\n", 
-			"<ul class=\"dropdown-menu\">\n", 
-			"\t<li><a href=\"id.", key, "/edit/\">Edit</a></li>\n", 
-			"\t<li><a href=\"id.", key, "/delete/\">Delete</a></li>\n", 
-			"</ul>\n", 
-			"</div>		\n", 
-			"</td>\n", 
-			"", 
-			"", End),row, End)); };
-		show_body(rows_data_html(data),xmap(
-			"title", xstr(str_title(sql_table(sql))," List", End),
-			"width",int_var( 4
-		), End));
-		return; };
-	if(map_val(get(xstr(curr, "add/", End),NULL),"end")){
-		name_tab("Add");
-		map* cols=del_keys(sql_cols(sql,db,NULL),xvec("lft","rgt", End));
-		map* form=xmap(
-			"title", xstr("Add New ", str_title(table), End),
-			"cols", cols,
-			"buttons",xmap(
-				"save", xmap("name", "save", "type", NULL, End), End)
-		, End);
-		map* data=form_posted(form);
-		if(data){
-			row_insert(data,table, db);
-			http_redirect(url_back(),"Record Added"); };
-		show_form(form_gets(form)); };
-	get(xstr(curr, "id.([^/]+)/", End),xvec("id", End));
-	if(map_val(get(xstr(curr, "id.[^/]+/edit/", End),NULL),"end")){
-		name_tab("Edit");
-		table=sql_table(sql);
-		map* row=id_row(map_val(path,"id"),table, db);
-		map* cols=del_keys(sql_cols(sql,db,NULL),xvec("lft","rgt", End));
-		map* form=xmap(
-			"title", xstr("Edit ", str_title(table), End),
-			"cols", cols,
-			"vals", row,
-			"buttons",xmap(
-				"save", xmap("name", "save", "type", NULL, End), End)
-		, End);
-		map* data=form_posted(form);
-		if(data){
-			id_update(row_ids(row,tbl_cols(table,db)),table, db, data);
-			http_redirect(url_back(),"Record Updated"); };
-		show_form(form); };
-	if(map_val(get(xstr(curr, "id.[^/]+/delete/", End),NULL),"end")){
-		name_tab("Delete");
-		map* form=xmap(
-			"title", "Delete This Record?",
-			"buttons",xmap(
-				"delete", xmap("name", "delete", "type", NULL, End),
-				"cancel", xmap("name", "cancel", "type", NULL, End), End)
-		, End);
-		map* data=form_posted(form);
-		if(map_val(data,"cancel")){
-			http_redirect(url_back(),"Cancelled");
-		}else if(map_val(data,"delete")){
-			id_delete(map_val(path,"id"),table,db);
-			http_redirect(url_back(),"Record Deleted"); };
-		show_form(form); };
-	not_found(NULL);
-};
-map* del_keys(map* mp,map* keys){
-	for(int next1=next(keys,-1,NULL,NULL); has_id(keys,next1); next1++){ void* key=map_id(keys,next1); map_compact(map_del(mp,map_has_key(mp,key)-1,1)); };
-	return mp;
+char* authorized(char* who){
+	if(!is_user(who)){ return not_found(map_val(map_val(_globals,"req"),"path")); };
+	return NULL;
 };
 char* str_bare(char* in,char* accept){
 	if(!in){ return in; };
@@ -915,8 +481,7 @@ char* word_end(char* in,int len){
 	if(!*ptr){ return in; };
 	return sub_str(in,0,ptr-in);
 };
-void go_back(char* msg){ http_redirect(url_back(),msg); };
-int confirm(char* msg){
+char* confirm(char* msg){
 	map* form=xmap(
 		"title", msg,
 		"buttons",xmap(
@@ -925,18 +490,10 @@ int confirm(char* msg){
 	, End);
 	map* data=form_posted(form);
 	if(map_val(data,"yes")){
-		return 1; };
-	if(data){ return 0; };
+		return "yes"; };
+	if(data){ return NULL; };
 	return show_form(form);
 };
-void retree(char* db){
-	map* rows=sql_rows("section",db,NULL);
-	sql_exec("delete from section",db,NULL);
-	for(int next1=next(rows,-1,NULL,NULL); has_id(rows,next1); next1++){ void* row=map_id(rows,next1);
-		map_del_key(row,"lft");
-		map_del_key(row,"rgt");
-		row_insert(row,"section",db);
-	};};
 char* html_text(char* in){
 	int len=0;
 	char* head=in;
@@ -974,4 +531,206 @@ char* url_filename(char* url){
 	int slash=rchar_at(url,"/");
 	if(slash<0){ return url; };
 	return sub_str(url,slash+1,-2147483648);
+};
+int init_html(char* name){
+	write_file(page_html(page_data(xmap(
+		"title", str_title(name),
+		"body", name,
+		"tabs",xmap(
+			"../", "Home", End)
+	, End))),xstr(name,".html", End),0,1);
+	return 0;
+};
+map* str_list(char* in){
+	if(!in){ return NULL; };
+	if(!is_str(in)){ return (map*)in; };
+	map* toks=str_tokenize(in," ,\n\r\t=:",0);
+	char* name=NULL;
+	char* val=NULL;
+	map* ret=new_map();
+	for(int i=next(toks,-1,NULL,NULL); has_id(toks,i); i++){ void* tok=map_id(toks,i);
+		int isword=!str_chr(" ,\n\r\t=:",is_str(tok)[0]);
+		if(!isword){
+			if(name && str_chr(tok,',')){
+				add(ret,name,str_title(name));
+				name=NULL; };
+			continue; };
+		if(!name){
+			name=tok;
+			continue; };
+		add(ret,name,tok);
+		name=NULL; };
+	if(name){
+		add(ret,name,str_title(name)); };
+	return ret;
+};
+map* row_cols(map* row){
+	map* ret=new_map();
+	for(int next1=next(row,-1,NULL,NULL); has_id(row,next1); next1++){ void* v=map_id(row,next1); char* n=map_key(row, next1);
+		add(ret,n,xmap(
+			"type", data_type(n,v),
+			"title", str_title(n),
+			"name", n
+		, End)); };
+	return ret;
+};
+map* rows_cols(map* rows){ return rows ? row_cols(map_id(rows,0)) : new_vec(); };
+char* val_format(char* val,char* type,map* op){
+	if(map_val(op,"list")){
+		map* list=str_list(sub_str(map_val(op,"list"),1,-1));
+		return (map_val(list,val) ? map_val(list,val) : val);
+	}
+//		return val.taka()
+	else if(str_eq(type,"html")){
+		return val;
+	}else if(str_eq(type,"action")){
+		return val;
+	}
+//		return val.hm12()
+	else if(str_eq(type,"password")){
+		return str_len(val) ? "****" : NULL;
+	}else if(str_eq(type,"para")){
+		return str_replace(val,"\n","<br/>");
+	}else if(str_eq(type,"date")){
+		return date_human(val);
+	}
+//		return val.month_human()
+//	else if type===:int
+//		return val ? val.number_format() : ''
+	else if(str_eq(type,"percent")){
+		return val ? xstr(val,"%", End) : NULL;
+	}else if(str_eq(type,"flat")){
+		return val && is_numeric(val) ? xstr("F-", val, End) : val;
+	}
+//		return val.balance();
+	else if(str_eq(type,"phone")){
+		return xstr(sub_str(val,0,-6),"-",sub_str(val,-6,-2147483648), End);
+	}else if(str_eq(type,"gb")){
+		return xstr(int_str(((int)(floor((to_int(val)/1000000.0+0.5)))))," GB", End); };
+	return html(val);
+};
+char* rows_sum(map* rows, map* cols){
+	map* sum=new_map();
+	for(int next1=next(cols,-1,NULL,NULL); has_id(cols,next1); next1++){ void* col=map_id(cols,next1); char* n=map_key(cols, next1);
+		if(map_val(col,"sum")){ add(sum,n,int_var(0)); }; };	
+	if(!map_len(sum)){ return NULL; };
+	for(int next1=next(rows,-1,NULL,NULL); has_id(rows,next1); next1++){ void* row=map_id(rows,next1);
+		for(int next1=next(row,-1,NULL,NULL); has_id(row,next1); next1++){ void* val=map_id(row,next1); char* col=map_key(row, next1);
+			add(sum,col,map_val(sum,col)+str_int(map_val(row,col))); }; };
+	char* ret="<tr class='total'>";
+	int blanks=0;
+	for(int next1=next(cols,-1,NULL,NULL); has_id(cols,next1); next1++){ void* col=map_id(cols,next1); char* n=map_key(cols, next1);
+		if(map_val(sum,n)){ break; };
+		blanks++; };
+	if(blanks){ ret=xcat(ret,xstr("<td colspan=",int_str( blanks), " class=total>Total</td>", End), End); };
+	for(int n=next(cols,-1,NULL,NULL); has_id(cols,n); n++){ char* col=map_key(cols, n);
+		if(n<blanks){ continue; };
+		if(!map_val(sum,col)){ ret=xcat(ret,xstr("<td class=", map_val(map_val(cols,col),"type"), ">&nbsp;</td>", End), End); }
+		else {ret=xcat(ret,xstr("<td class='total ", map_val(map_val(cols,col),"type"), "'>", val_format(map_val(sum,col),map_val(map_val(cols,col),"type"),NULL), "</td>", End), End);}; };
+	ret=xcat(ret,"</tr>", End);
+//	if(@$sum['debit']!=@$sum['credit']){
+//		$ret.="<tr>";
+//		if($blanks) $ret.="<td colspan=$blanks class=balance>Balance</td>";
+//		foreach(array_keys($cols) as $n=>$col){
+//			if($n<$blanks) continue;
+//			if($col!='debit' && $col!='credit') $ret.="<td>&nbsp;</td>";
+//			else if($sum['debit']>$sum['credit']){
+//				if($col=='debit')
+//					$ret.="<td class='currency'>".taka($sum['debit']-$sum['credit'])."</td>";
+//				else 
+//					$ret.="<td>Debit</td>";
+//			}
+//			else{
+//				if($col=='credit')
+//					$ret.="<td class='currency'>".taka($sum['credit']-$sum['debit'])."</td>";
+//				else 
+//					$ret.="<td>Credit</td>";
+//			}
+//		}
+//	}
+	return ret;
+};
+char* table_close(char* in,char* tags){
+	if(tags){tags=xstr(" ", tags, End);};
+	return xstr("<table", tags, ">", in, "</table>", End);
+};
+char* html(char* in){
+	return str_tr(in,xmap( "<" , "&gt;", ">" , "&lt;", "&" , "&amp;" , End));
+};
+//char* taka(char* val){
+//	$val=trim($val);
+//	if(!$val) return '';
+//	$neg='';
+//	if($val[0]=='-'){
+//		$neg='-';
+//		$val=substr($val,1);
+//	}
+//	$deci='';
+//	$val=explode('.',$val);
+//	if(count($val)==2){
+//		$deci='.'.$val[1];
+//		$val=$val[0];
+//	}
+//	else $val=$val[0];
+//	if(strlen($val)>7) $val=substr($val,0,-7).",".substr($val,-7,-5).",".substr($val,-5,-3).",".substr($val,-3);
+//	else if(strlen($val)>5) $val=substr($val,-7,-5).",".substr($val,-5,-3).",".substr($val,-3);
+//	else if(strlen($val)>3) $val=substr($val,-5,-3).",".substr($val,-3);
+//	return "Tk. ".$neg.$val.$deci;
+//}
+char* rows_list(map* rows, void* cols, void* callback){
+	map* rows_fmt=NULL;
+	if(is_str(cols)){ cols=str_cols(cols); };
+	if(callback){
+		rows_fmt=new_vec();
+		for(int i=next(rows,-1,NULL,NULL); has_id(rows,i); i++){ void* row=map_id(rows,i);
+			map* ret=((map*(*)(map*,int))(callback))(row,i);
+			if(ret){
+				set(rows_fmt,i,ret); }; };
+	}else{
+		rows_fmt=rows; };
+	if(!(cols)){cols=map_val(rows_fmt,"rows_cols");};
+	// col definition can have link=<name of another col that contains link>
+	for(int next1=next(cols,-1,NULL,NULL); has_id(cols,next1); next1++){ void* op=map_id(cols,next1); char*  col=map_key(cols, next1);
+		if(map_val(op,"link")){
+			for(int next1=next(rows_fmt,-1,NULL,NULL); has_id(rows_fmt,next1); next1++){ void* row=map_id(rows_fmt,next1);
+				add(row,col,xstr("<a href='", map_val(row,map_val(op,"link")), "'>", map_val(row,col), "</a>", End)); }; };
+	};
+	char* blank=NULL;
+	if(!map_len(rows)){
+		blank=xstr("<tr><td style='height:3em;vertical-align:center;text-align:center;' colspan=",int_str( map_len(cols)), ">Blank</td></tr>", End); };
+	char* ret=NULL;
+	ret=xcat(ret,xstr("", 
+	"<tr>", cols_th(cols), "</tr>\n", 
+	"<tr>", map_join(rows_td(rows_fmt,cols),"</tr><tr>"), "</tr>\n", 
+	blank, "\n", 
+	rows_sum(rows_fmt,cols), "\n", 
+	"", 
+	"", End), End);
+	return ret;
+};
+char* cols_th(map* cols){
+	char* ret=NULL;
+	int found=0;
+	for(int next1=next(cols,-1,NULL,NULL); has_id(cols,next1); next1++){ void* col=map_id(cols,next1);
+		if(str_len(map_val(col,"title"))){ found++; };
+		ret=xcat(ret,xstr("<th class='", map_val(col,"type"), "'>", map_val(col,"title"), "</th>", End), End); };
+	return found ? ret : NULL;
+};
+char* row_td(void* row,map* cols){
+	if(!is_map(row)){ return row; };
+	char* ret=NULL;
+	for(int next1=next(cols,-1,NULL,NULL); has_id(cols,next1); next1++){ void* col=map_id(cols,next1); char* n=map_key(cols, next1);
+		void* cls=map_val(col,"class");
+		if(cls){cls=xstr(" ",cls, End);};
+		char* style=NULL;
+		if(map_val(col,"style")){
+			style=xstr(" style='", map_val(col,"style"), "'", End); };
+		ret=xcat(ret,xstr("<td class='", map_val(col,"type"), cls, "'", style, ">", val_format(map_val(row,n),map_val(col,"type"),col), "</td>", End), End); };
+	return ret;
+};
+map* rows_td(map* rows, map* cols){
+	map* ret=new_vec();
+	for(int next1=next(rows,-1,NULL,NULL); has_id(rows,next1); next1++){ void* r=map_id(rows,next1);
+		vec_add(ret,row_td(r,cols)); };
+	return ret;
 };

@@ -1,29 +1,27 @@
-#include <fox.h>
+#line 2 "src/html.fox"
 
-char* fkey_sql(char* sql,char* db){
-	cols=sql.sql_select_cols(db)
-	pkey=cols.cols_pkeys(db)[0]
-	skey=cols.cols_skeys(db)[0]
-	ret=sql.sql_map(db)
-	ret.select={id: cols[pkey].expr, name: cols[skey].expr}
-	return ret.map_sql().sql_add_order(db)
-}
-char* callback_php(map* param,char* name) => return param.call_php(name)
-char* fkey_show(char* sql,char* db,char* id){
-	sign="$sql/$id"
-	ret=''
-	if (ret=sign.cache(:str_show)) => return ret
-	return sign.cache(:str_show,sql.fkey_sql(db).sql_add_where({id: ':id'}).sql_row(db,{id: id}).name)
-}
-int fkey_valid(char* sql,char* db,char* id){
-	return sql.fkey_show(db,id) ? 1 : 0
-}
+#include <core.h>
+#include <foxtime.h>
+#include <regexp.h>
+#include <http.h>
+#include <html.h>
+#include <tsv.h>
+//#include "astrostr.h"
+
+#pragma fox cc -lfoxdeps
+
+extern char*(*page_html)(map* data);
+extern map*(*page_data)(map* data);
+
+char*(*page_html)(map* data)=default_page_html;
+map*(*page_data)(map* data)=default_page_data;
+
 char* str_show(char* value,char* type,map* op=NULL,int width=0){
 	value=value.to_str()
 	if !value => return ""
 	if !type => return value
 	if op.list => return op.list[value] ? op.list[value].str_title() : value
-	if op.sql && op.db => return op.sql.fkey_show(op.db,value)
+//	if op.sql && op.db => return op.sql.fkey_show(op.db,value)
 	type={{
 		text text
 		para para
@@ -97,278 +95,8 @@ map* rows_show(map* rows,map* cols,int width=2){
 		ret[]=r
 	return ret
 }
-
-char* month_name(int month) => return {:Jan,:Feb,:Mar,:Apr,:May,:Jun,:Jul,:Aug,:Sep,:Oct,:Nov,:Dec}[abs(month-1)%12]
-char* http_moved(char* url) => return NULL.http_out("301 Moved Permanently","text/html",["Location: $url"])
-char* http_redirect(char* url,char* msg=''){
-	if msg => _globals.sess.msg=msg
-	return NULL.http_out("302 Moved Temporarily","text/html",["Location: $url"])
-}
-void* http_error(char* msg,char* status) => msg.http_out(status); xexit(0); return NULL
-char* file_mime(char* path){
-	_globals.mime.each v,k,i
-		if(path.str_end(k)) return v
-	return NULL
-}
-char* str_html(char* in){
-	if !in.str_len() => return ""
-	chars="<>\"'&"
-	into=["&lt;","&gt;","&quot;","&#039;","&amp;"]
-	ret=''
-	for ;*in;in++
-		char* match=chars.strchr(*in)
-		if !match => ret=ret.cat_char(*in)
-		else ret.=into[match-chars]
-	return ret
-}
-void header(char* str) => str.print(); "\r\n".print()
-char* http_out(char* str=NULL,char* status="200 OK",char* mime="text/html; charset=utf-8",map* headers=NULL){
-	static int callonce=0
-	if callonce => return str
-	callonce=1
-	sess=_globals.sess.json()
-	if sess==="{}" => sess=NULL
-	if _globals.sess_str!==sess
-		_globals.sess=NULL
-		_globals.sess_str=NULL
-		sid=_globals.sess_id
-		if !sid && sess
-			sid=sess_newid()
-			:sessid.cookie_set(sid)
-		if !sess && sid
-			if "/tmp/sess.$sid".is_file() => "/tmp/sess.$sid".unlink()
-		else if sess && sid
-			sess.write_file("/tmp/sess.$sid",0,0)
-	out=_globals.out..str
-	"Status: $status".header()
-	"Content-Type: $mime".header()
-	"Content-Length: $(out.str_len())".header()
-	headers.each v,,i => v.header()
-	_globals.cookie.each v2
-		"Set-Cookie: $v2".header()
-	"".header()
-	out.print()
-	xexit(0)
-	return str
-}
-char* static_file(char* path){
-	if path.has_word("? ../ /.. \\") => return NULL
-	if !path.str_start("/res/") => return NULL
-	ret="/web/".cat(path.str_trim("/")).file_read(,0)
-	if ret => return ret.http_out("200 OK",path.file_mime())
-	return NULL
-}
-
-char* str_url(char* in){
-	if !in||!*in => return in
-	bad=0
-	head=in
-	for ;*in;in++
-		if !is_alphanum(*in,"\"'-.[]*$%{}()@!~") => bad++
-	if !bad=> return head
-	ret=new_str(head.str_len()+bad*2)		
-	off=0
-	in=head
-	for ;*in;in++
-		if !is_alphanum(*in,"\"'-.[]*$%{}()@!~")
-			sprintf(ret+off,"%%%02X",(unsigned char)*in)
-			off+=3
-		else
-			ret[off]=*in
-			off++
-	return ret
-}
-char* url_str(char* in){
-	if !in => return NULL
-	int len=0
-	int fix=0
-	str=in
-	for(;*in;in++)
-		if *in=='+' => fix=1
-		else if *in=='%' => fix=1; len-=2
-	if !fix => return str
-	ret=new_str(str.str_len()+len)
-	int i=0
-	for(in=str;*in;in++,i++)
-		if *in=='+' => ret[i]=' '
-		else if *in=='%' => ret[i]=(++in).hex_char(); in++
-		else ret[i]=*in
-	return ret
-}
-char* map_amps(void* val,char* name=''){
-	if !val => return ''
-	if !val.is_map()
-		val=val.to_str()
-		return name ? name.str_url().."="..val.str_url() : ''
-	ret=''
-	if name => name.="."
-	val.each v,n
-		ret=ret.str_join("&",v.map_amps(name..n))
-	return ret
-}
-map* amps_map(char* in){
-	ret={}
-	in.str_split("&",0).each v,,i
-		pr=v.str_split("=",2)
-		key=pr[0].url_str()
-		if !key.strchr('.')
-			ret[key]=pr[1].url_str()
-			continue
-		keys=key.str_split(".")
-		lastkey=keys[keys.map_len()-1]
-		keys.vec_del(-1)
-		val=ret
-		keys.each k
-			nval=val[k]
-			if !nval.is_map() => nval={}; val[k]=nval
-			val=nval
-		val[lastkey]=pr[1].url_str()
-	return ret
-}
-map* parse_url(char* path){
-	ret={url: path}
-	two=path.str_split("?",2)
-	ret.path=two[0]
-	ret.get=two[1].amps_map()
-	return ret
-}
-char* url_host(char* url) => return url.regexp("://([^:/]+)")[1]
-map* sess_init(){
-	sid=env_vars().HTTP_COOKIE.header_map().sessid
-	if !sid => return NULL
-	sess="/tmp/sess.$sid".file_read(,0)
-	_globals.sess_id=sid
-	_globals.sess_str=sess
-	_globals.sess=sess.xjson_map()
-	return _globals.sess
-}
-void	sess_add(char* name, char* value) => _globals.sess[name]=value
-char*	sess_id()		=> return _globals.sess_id
-char*	sess_file()		=> return sess_id() ? "/tmp/sess.$(sess_id())" : NULL
-char*	sess_newid()	=> return rand_str(24)
-void cookie_set(char* name,char* value,char* path="/",char* expire=NULL){
-	xexpire=''
-	if expire => xexpire="; expires=$expire"
-	ss="$name=$value; path=$path$xexpire"
-	_globals.cookie[]=ss
-}
-void sess_delete(){
-	if !sess_file() => return
-	sess_file().remove()
-	:sessid.cookie_set(:NULL,,"Thu, 01 Jan 1970 00:00:00 GMT")
-}
-map* link_relative(map* links,char* url){
-	if(!links||!url) return links
-	prepad="../".str_times(url.str_char_count('/')+1)
-	links.each v,,i
-		if v.is_map()
-			v.link_relative(url)
-			continue
-		if(v.fox_at(0)=='/') continue
-		links[i]=prepad..v
-	return links
-}
-map* header_map(char* val){
-	if !val => return NULL
-	ret={}
-	val.str_split(";").each v,,i
-		if !v.strchr('=') => ret[]=v; continue
-		pair=v.str_split("=",2)
-		ret[pair[0].str_trim()]=pair[1].str_trim().str_unquote()
-	return ret
-}
-map* http_req(){
-	ret={}
-	env=env_vars()
-	sess_init()
-	_globals.css={}
-	_globals.js={}
-	if !env.REQUEST_METHOD
-		path=_globals.args[1]
-		char* home=cwd().sub_str((cwd()+1).char_at("/")+1).."/"
-		//char* home="https://sanjir.com"..cwd().sub_str((cwd()+1).char_at("/")+1).."/"
-		ret=(home..path).parse_url()
-		ret.method=:get
-		ret.remote=:localhost
-		ret.server=:localhost
-		ret.protocol=:http
-		ret.port="80"
-		ret.path={
-			full: ret.path
-			home: home
-			next: ret.path.sub_str(home.str_len()) or "/"
-		}
-		_globals.req=ret
-		return ret
-	ret=env.REQUEST_URI.parse_url()
-	ret.remote=env.REMOTE_ADDR
-	ret.server=env.HTTP_HOST
-	ret.protocol=env.REQUEST_SCHEME
-	ret.port=env.SERVER_PORT
-	char* home=env.SCRIPT_NAME.rtrim_upto('/',1)
-	ret.path={
-		full: ret.path
-		home: home
-		next: ret.path.sub_str(home.str_len()) or "/"
-	}
-	if env.REQUEST_METHOD===:GET
-		ret.method=:get
-		_globals.req=ret
-		return ret
-	if env.REQUEST_METHOD!==:POST
-		"Method $(env.REQUEST_METHOD) not supported".http_error("405 Method not supported")
-	ret.method=:post
-	size=env.CONTENT_LENGTH.str_int()
-	if !size => "Content-Lenght was not provided".http_error("411 Length Required")
-	if size>20000000 => "Request should be with less than 20MB data".http_error("413 Request Entity Too Large")
-	char line[1024]
-	header=new_blob()
-	done=0
-	done1=0
-	int toread=min(size-done,1024)
-	while done<size && (done1=STDIN_FILENO.read(line,toread))
-		if done1<=0 => "POST data read error at $done/$size bytes".http_error("500 Internal Server Error")
-		header=header.cat(line,done1)
-		done+=done1
-		toread=min(size-done,1024)
-	ret.post=header
-	_globals.req=ret
-	return ret
-}
-char* full_url(char* url=NULL) => return (_globals.req.protocol or :http).."://"..(_globals.req.server or :localhost)..show_port().."/"..url.str_ltrim("/")
-//char* full_path(char* url=NULL) => return "/"..url.str_ltrim("/")
-char* url_abs(char* abs, char* rel){
-	if !rel => return abs
-	if rel.str_start("./") => return abs..rel.sub_str(2)
-	if rel[0]!='.' => return abs..rel
-	srel=rel
-	level=0
-	while srel.str_start("../") => srel+=3; level++
-	base=abs.str_split("/")
-	if abs.strstr("://") => level=max(base.map_len()-level-1,3)
-	else level=max(base.map_len()-level-1,0)
-	ret=base.vec_sub(0,level).map_join("/")
-	return ret.."/"..srel
-}
-char* base_url(char* path=NULL) => return _globals.tabs.map_key(0).url_abs(path)
-char* home_url(char* path=NULL) => return _globals.req.path.home.url_abs(path)
-char* show_port(){
-	if !_globals.req.port => return ''
-	if _globals.req.protocol===:http && _globals.req.port==="80" => return ''
-	if _globals.req.protocol===:https && _globals.req.port==="443" => return ''
-	return ":".._globals.req.port
-}
-char* h(char* in){
-	return in.str_replace({
-	"&": "&amp;",
-	"<": "&gt;",
-	">": "&lt;",
-	"\"": "&quot;",
-	"'": "&apos;"
-	})
-}
 extern int _queries;
-char* page_html(map* data){
+char* default_page_html(map* data){
 	head=---
 	<!DOCTYPE html>
 	<html><head><meta charset='utf-8'>
@@ -379,7 +107,7 @@ char* page_html(map* data){
 		"@type": "WebSite",
 		"name": "Habib's Site",
 		"alternateName": "Sanjir Habib",
-		"url": "$(_globals.req.path.full.full_url())"
+		"url": "$(_globals.req.fullpath.full_url())"
 	}
 	</script>
 	<link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -423,7 +151,7 @@ char* page_html(map* data){
 
 	---
 }
-map* page_data(map* data){
+map* default_page_data(map* data){
 	data.title||="Habib's Site"
 	data.tab||=data.title
 	data.logo||="logo.jpg".home_url()
@@ -450,9 +178,7 @@ map* page_data(map* data){
 		data.header.="<meta property=\"$key\" content=\"$val\">\n"
 	if _globals.req.get._print => return data
 	data.footer=---
-	Run Time: $(run_time())ms=$(gc_time())GC+$(run_time()-total_time()-gc_time())Code+$(total_time())DB
-	Heap: $(_gcdata.max_mem.int_kb()). Stack: $(_gcdata.max_roots.int_str()), Total: $(max_mem().int_kb()).
-	GC: $(gc_runs())runs. Queries: $(_queries.int_str()).
+	Total: $(max_mem().int_kb()). $(mem_usage()) Queries: $(_queries.int_str()).
 	---
 	data.footer.=(_globals.js.map_len() and "<script>\n".._globals.js.map_join("\n").."</script>")
 	tabs=''
@@ -477,7 +203,10 @@ map* page_data(map* data){
 	ul.menu2 {margin-top:5em;}
 	---;
 	data.menu.each name, url
-		body.="<li><a class='menu' href='$url'>$name</a></li>\n"
+		if url.str_start("onclick:")
+			body.="<li><a class='menu' href='#' onclick='$(url.sub_str(8))'>$name</a></li>\n"
+		else
+			body.="<li><a class='menu' href='$url'>$name</a></li>\n"
 	if data.menus
 		data.menus.each menu, title
 			if !menu.map_len() => continue
@@ -510,8 +239,8 @@ map* page_data(map* data){
 	data.login=login
 	return data
 }
-void* not_found(char* path=NULL) => "The requested content $(path or _globals.req.path.full) was not found on the server.".http_out("404 Not Found"); return NULL
-int show_page(map* data) => data.page_data().page_html().http_out(); return 0
+char* not_found(char* path=NULL) => return "The requested content $(path or _globals.req.fullpath) was not found on the server.".http_out("404 Not Found")
+char* show_page(map* data) => return data.page_data().page_html().http_out()
 int is_post() => return _globals.req.method===:post
 map* post_data_multipart(){
 	if _globals.post => return _globals.post
@@ -538,7 +267,7 @@ char* name_tab(char* name){
 	return name
 }
 map* get(char* path, map* names=NULL){
-	ret=_globals.req.path.next.regexp("^"..path)
+	ret=_globals.req.path.regexp("^"..path)
 	if !ret => return NULL
 	ret2=_globals.paths
 	if !ret2 => _globals.paths={}; ret2=_globals.paths
@@ -546,12 +275,12 @@ map* get(char* path, map* names=NULL){
 		for i=1; i<ret.map_len() && i<=names.map_len(); i++
 			ret2[names.map_id(i-1)]=ret[i]
 	ret2.matched=ret[0]
-	ret2.end=_globals.req.path.next.regexp("^"..path.."$") ? "yes" : NULL
+	ret2.end=_globals.req.path.regexp("^"..path.."$") ? "yes" : NULL
 	return ret2
 }
-void show_body(char* body,map* page){
+char* show_body(char* body,map* page){
 	page.body=body
-	page.show_page()
+	return page.show_page()
 }
 int days_in_feb(int year){
 	if !(year%400) => return 29
@@ -628,37 +357,6 @@ map* tz_data(char* name,char* date=NULL){
 		dst =name.tz_dst(date)
 		utc =name.tz_utc(date)
 	}}
-}
-char* fts5_create(char* db=NULL){
-	ret=[
-	"drop table if exists search",
-	"create virtual table search using fts5(table,key,title,body,thumb)"
-	]
-	if db => ret.sqls_exec(db)
-	return ret.map_join(";\n")
-}
-map* merge_soft(map* strong, map* soft){
-	if !strong => strong={}
-	if !soft => return strong
-	soft.each val, key
-		if !key.is_int()
-			if strong.map_has_key(key) => continue
-		else key=''
-		strong[key]=val
-	return strong
-}
-char* param(map* change=NULL){
-	return change.merge_soft(_globals.req.get).map_amps()
-}
-void save_caller(){
-	refer=url_back()
-	req=_globals.req
-	if req.method!==:get || !refer || req.get._refer || refer.str_end(req.path) => return
-	req.get._refer=refer
-	"./?$(req.get.map_amps())".http_redirect()
-}
-char* url_back(){
-	return _globals.req.get._refer or env_vars().HTTP_REFERER.parse_url().path or home_url()
 }
 char* form_html(map* mp){
 	mp.vals.each val,key
@@ -759,146 +457,14 @@ map* form_gets(map* form){
 		if form.cols[key] => form.cols[key].value=val
 	return form
 }
-int show_form(map* data){
+char* show_form(map* data){
 	data.body=data.form_html()
 	return data.show_page()
 }
 int is_user(char* who) => return !who.str_len() || _globals.sess.user===who || _globals.sess.role===who
-void authorized(char* who) => if !who.is_user() => _globals.req.path.not_found()
-char* col_align(map* col){
-	if col.sql || col.list => return ''
-	if {{
-		text text
-		int
-	}}.map_type(col.type)===:text => return ''
-	return " style='text-align:right;'"
-}
-char* rows_data_html(map* in){
-	return ---
-	<table class='table table-condensed table-bordered table-striped'>
-	<thead>
-	<tr>$(in.head)</tr>
-	</thead>
-	<tbody>
-	<tr>$(in.body.map_join("</tr>\n<tr>"))</tr>
-	</tbody>
-	</table>
-
-	---;
-}
-map* rows_data(map* rows, map* cols){
-	head=''
-	cols.each val
-		head.="<th$(val.col_align())>$(val.label or val.name.str_title())</th>"
-	body={}
-	rows.each row
-		s=''
-		row.each val, key
-			s.="<td$(cols[key].col_align())>$(val)</td>"
-		body[row.row_id(cols)]=s
-	return {head: head, body: body}
-}
-char* row_id(map* row, map* cols) => return row.row_ids(cols).map_join("\t").str_url()
-map* row_ids(map* row, map* cols){
-	ret=cols.cols_pkeys()
-	ret.each name
-		ret[name]=row[name]
-	return ret
-}
-void crud(char* sql,char* db){
-	path=_globals.paths	
-	curr=path.matched
-	table=sql.sql_table()
-	if path.end
-		rows=sql.sql_rows(db)
-		cols=sql.sql_cols(db)		
-		data=rows.rows_data(cols)
-		data.head=---
-		<th style='text-align:center;'>
-		<div class="btn-group">
-		<button class="btn btn-mini">Action</button>
-		<button class="btn btn-mini dropdown-toggle" data-toggle="dropdown">
-		<span class="caret"></span>
-		</button>
-		<ul class="dropdown-menu">
-			<li><a href="add/">Add New</a></li>
-		</ul>
-		</div>		
-		</th>
-
-		---..data.head
-		data.body.each row,key
-			data.body[key]=---
-			<td style='text-align:center;'>
-			<div class="btn-group">
-			<button class="btn btn-mini dropdown-toggle" data-toggle="dropdown">
-			<span class="caret"></span>
-			</button>
-			<ul class="dropdown-menu">
-				<li><a href="id.$key/edit/">Edit</a></li>
-				<li><a href="id.$key/delete/">Delete</a></li>
-			</ul>
-			</div>		
-			</td>
-
-			---..row
-		data.rows_data_html().show_body({{
-			title =sql.sql_table().str_title().." List"
-			width =4
-		}})
-		return
-	if "$(curr)add/".get().end
-		:Add.name_tab()
-		cols=sql.sql_cols(db).del_keys([:lft,:rgt])
-		form={{
-			title ="Add New $(table.str_title())"
-			cols =cols
-			buttons
-				save -
-		}}
-		data=form.form_posted()
-		if data
-			data.row_insert(table, db)
-			url_back().http_redirect("Record Added")
-		form.form_gets().show_form()
-	"$(curr)id.([^/]+)/".get([:id])
-	if "$(curr)id.[^/]+/edit/".get().end
-		:Edit.name_tab()
-		table=sql.sql_table()
-		row=path.id.id_row(table, db)
-		cols=sql.sql_cols(db).del_keys([:lft,:rgt])
-		form={{
-			title ="Edit $(table.str_title())"
-			cols =cols
-			vals =row
-			buttons
-				save -
-		}}
-		data=form.form_posted()
-		if data
-			row.row_ids(table.tbl_cols(db)).id_update(table, db, data)
-			url_back().http_redirect("Record Updated")
-		form.show_form()
-	if "$(curr)id.[^/]+/delete/".get().end
-		:Delete.name_tab()
-		form={{
-			title Delete This Record?
-			buttons
-				delete -
-				cancel -
-		}}
-		data=form.form_posted()
-		if data.cancel
-			url_back().http_redirect(:Cancelled)
-		else if data.delete
-			path.id.id_delete(table,db)
-			url_back().http_redirect("Record Deleted")
-		form.show_form()
-	not_found()
-}
-map* del_keys(map* mp,map* keys){
-	keys.each key => mp.map_del(mp.map_has_key(key)-1).map_compact()
-	return mp
+char* authorized(char* who){
+	if !who.is_user() => return _globals.req.path.not_found()
+	return NULL
 }
 char* str_bare(char* in,char* accept=NULL){
 	if !in => return in
@@ -915,8 +481,7 @@ char* word_end(char* in,int len){
 	if !*ptr => return in
 	return in.sub_str(0,ptr-in)
 }
-void go_back(char* msg) => url_back().http_redirect(msg)
-int confirm(char* msg="Confirm?"){
+char* confirm(char* msg="Confirm?"){
 	form={{
 		title =msg
 		buttons
@@ -925,17 +490,9 @@ int confirm(char* msg="Confirm?"){
 	}}
 	data=form.form_posted()
 	if data.yes
-		return 1
-	if data => return 0
+		return "yes"
+	if data => return NULL
 	return form.show_form()
-}
-void retree(char* db){
-	rows=:section.sql_rows(db)
-	"delete from section".sql_exec(db)
-	rows.each row
-		row.map_del_key(:lft)
-		row.map_del_key(:rgt)
-		row.row_insert(:section,db)
 }
 char* html_text(char* in){
 	len=0
@@ -974,4 +531,206 @@ char* url_filename(char* url){
 	slash=url.rchar_at("/")
 	if slash<0 => return url
 	return url.sub_str(slash+1)
+}
+int init_html(char* name){
+	{{
+		title =name.str_title()
+		body =name
+		tabs
+			../ Home
+	}}.page_data().page_html().write_file(name..".html")
+	return 0
+}
+map* str_list(char* in){
+	if !in => return NULL
+	if !in.is_str() => return (map*)in
+	toks=in.str_tokenize(" ,\n\r\t=:")
+	name=''
+	val=''
+	ret={}
+	toks.each tok,,i
+		int isword=!" ,\n\r\t=:".str_chr(tok.is_str()[0])
+		if !isword
+			if name && tok.str_chr(',')
+				ret[name]=name.str_title()
+				name=NULL
+			continue
+		if !name
+			name=tok
+			continue
+		ret[name]=tok
+		name=NULL
+	if name
+		ret[name]=name.str_title()
+	return ret
+}
+map* row_cols(map* row){
+	ret={}
+	row.each v,n
+		ret[n]={{
+			type =data_type(n,v)
+			title =str_title(n)
+			name =n
+		}}
+	return ret
+}
+map* rows_cols(map* rows) => return rows ? rows[0].row_cols() : []
+char* val_format(char* val,char* type,map* op=NULL){
+	if op.list
+		list=op.list.sub_str(1,-1).str_list()
+		return list[val] or val
+//	else if type===:currency
+//		return val.taka()
+	else if type===:html
+		return val
+	else if type===:action
+		return val
+//	else if type===:daysec
+//		return val.hm12()
+	else if type===:password
+		return val.str_len() ? "****" : ''
+	else if type===:para
+		return val.str_replace("\n","<br/>")
+	else if type===:date
+		return val.date_human()
+//	else if type===:month
+//		return val.month_human()
+//	else if type===:int
+//		return val ? val.number_format() : ''
+	else if type===:percent
+		return val ? val.."%" : ''
+	else if type===:flat
+		return val && val.is_numeric() ? "F-$val" : val
+//	else if type===:balance
+//		return val.balance();
+	else if type===:phone
+		return val.sub_str(0,-6).."-"..val.sub_str(-6)
+	else if type===:gb
+		return ((int)((val.to_int()/1000000.0+0.5).floor())).int_str().." GB"
+	return val.html()
+}
+char* rows_sum(map* rows, map* cols){
+	sum={}
+	cols.each col,n
+		if col.sum => sum[n]=0	
+	if !sum.map_len() => return ''
+	rows.each row
+		row.each val,col
+			sum[col]=sum[col]+row[col].str_int()
+	ret="<tr class='total'>"
+	blanks=0
+	cols.each col,n
+		if sum[n] => break
+		blanks++
+	if blanks => ret.="<td colspan=$blanks class=total>Total</td>"
+	cols.each ,col,n
+		if n<blanks => continue
+		if !sum[col] => ret.="<td class=$(cols[col].type)>&nbsp;</td>"
+		else ret.="<td class='total $(cols[col].type)'>$(sum[col].val_format(cols[col].type))</td>"
+	ret.="</tr>"
+//	if(@$sum['debit']!=@$sum['credit']){
+//		$ret.="<tr>";
+//		if($blanks) $ret.="<td colspan=$blanks class=balance>Balance</td>";
+//		foreach(array_keys($cols) as $n=>$col){
+//			if($n<$blanks) continue;
+//			if($col!='debit' && $col!='credit') $ret.="<td>&nbsp;</td>";
+//			else if($sum['debit']>$sum['credit']){
+//				if($col=='debit')
+//					$ret.="<td class='currency'>".taka($sum['debit']-$sum['credit'])."</td>";
+//				else 
+//					$ret.="<td>Debit</td>";
+//			}
+//			else{
+//				if($col=='credit')
+//					$ret.="<td class='currency'>".taka($sum['credit']-$sum['debit'])."</td>";
+//				else 
+//					$ret.="<td>Credit</td>";
+//			}
+//		}
+//	}
+	return ret
+}
+char* table_close(char* in,char* tags="class='data'"){
+	tags&&=" $tags"
+	return "<table$tags>$in</table>"
+}
+char* html(char* in){
+	return in.str_tr({ "<" : "&gt;", ">" : "&lt;", "&" : "&amp;" })
+}
+//char* taka(char* val){
+//	$val=trim($val);
+//	if(!$val) return '';
+//	$neg='';
+//	if($val[0]=='-'){
+//		$neg='-';
+//		$val=substr($val,1);
+//	}
+//	$deci='';
+//	$val=explode('.',$val);
+//	if(count($val)==2){
+//		$deci='.'.$val[1];
+//		$val=$val[0];
+//	}
+//	else $val=$val[0];
+//	if(strlen($val)>7) $val=substr($val,0,-7).",".substr($val,-7,-5).",".substr($val,-5,-3).",".substr($val,-3);
+//	else if(strlen($val)>5) $val=substr($val,-7,-5).",".substr($val,-5,-3).",".substr($val,-3);
+//	else if(strlen($val)>3) $val=substr($val,-5,-3).",".substr($val,-3);
+//	return "Tk. ".$neg.$val.$deci;
+//}
+char* rows_list(map* rows, void* cols=NULL, void* callback=NULL){
+	map* rows_fmt=NULL
+	if cols.is_str() => cols=cols.str_cols()
+	if callback
+		rows_fmt=[]
+		rows.each row,,i
+			map* ret=((map*(*)(map*,int))(callback))(row,i)
+			if ret
+				rows_fmt[i]=ret
+	else
+		rows_fmt=rows
+	cols||=rows_fmt.rows_cols
+	// col definition can have link=<name of another col that contains link>
+	cols.each op, col
+		if op.link
+			rows_fmt.each row
+				row[col]="<a href='$(row[op.link])'>$(row[col])</a>"
+
+	blank=''
+	if !rows.map_len()
+		blank="<tr><td style='height:3em;vertical-align:center;text-align:center;' colspan=$(cols.map_len())>Blank</td></tr>"
+	ret=''
+	ret.=---
+	<tr>$(cols.cols_th())</tr>
+	<tr>$(rows_fmt.rows_td(cols).map_join("</tr><tr>"))</tr>
+	$blank
+	$(rows_fmt.rows_sum(cols))
+
+	---;
+	return ret
+}
+char* cols_th(map* cols){
+	ret=''
+	found=0
+	cols.each col
+		if col.title.str_len() => found++
+		ret.="<th class='$(col.type)'>$(col.title)</th>"
+	return found ? ret : ''
+}
+char* row_td(void* row,map* cols){
+	if !row.is_map() => return row
+	ret=''
+	cols.each col,n
+		cls=col.class
+		cls&&=" "..cls
+		style=''
+		if col.style
+			style=" style='$(col.style)'"
+		ret.="<td class='$(col.type)$cls'$style>$(row[n].val_format(col.type,col))</td>"
+	return ret
+}
+map* rows_td(map* rows, map* cols){
+	ret=[]
+	rows.each r
+		ret[]=r.row_td(cols)
+	return ret
 }

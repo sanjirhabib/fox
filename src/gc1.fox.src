@@ -1,0 +1,802 @@
+#line 2 "gc.fox"
+
+#include <core.h>
+#include <gc.h>
+
+#pragma fox cc -lfoxdeps
+
+typedef struct mempage {
+	int no;
+	int idx;
+	int block_size;
+	int blocks;
+	int free;
+	char* types;
+	char* page;
+	map chains;
+	int abandoned;
+} mempage;
+struct gcdata {
+	int total_pages;
+	void** stack_head;
+	void** globals;
+	int page_no;
+	long long max_used;
+	long long curr_used;
+	long long max_mem;
+	long long curr_mem;
+	mempage* pages;
+	int gcruns;
+	int gcwaste;
+	int inalloc;
+	int gctime;
+	int gcmax;
+	int max_roots;
+	struct timeval run_time;
+	struct timeval time;
+	size_t clockstart;
+	int total_time;
+};
+extern struct gcdata _gcdata;
+struct gcdata _gcdata={0};
+#define each_mem(pg,i) int i=0; for(mempage* pg=_gcdata.pages;i<_gcdata.total_pages;i++,pg=_gcdata.pages+i)
+
+int _total_time=0;
+size_t _clockstart=0;
+
+static int fox_gc(){
+//	puts("in gc")
+	pre_usage=mem_used()
+	// commenting off setjmp() doesn't make any diff even in -O3
+	jmp_buf regs={0}
+	setjmp(regs)
+	roots=root_ptrs()
+	_gcdata.max_roots=max(_gcdata.max_roots,roots->len)
+	for int i=0; i<roots->len; i++ => roots->vars[i].gc_mark()
+	int freed=gc_sweep()
+	_gcdata.gcruns++
+	percent=pre_usage ? freed*100/pre_usage : 100
+	if percent <=5 => _gcdata.gcwaste++
+//	puts("out gc")
+	return percent
+}
+int gc_runs() => return _gcdata.gcruns
+int gc_time() => return _gcdata.gctime/1000
+int gc_end(){
+	_globals=NULL;
+	_clockstart=0;
+	mempage* pg=_gcdata.pages
+	pg.each_mem(i)
+		pg->page.vmem_free()
+		pg->chains.vars.vmem_free()
+
+	_gcdata.pages.vmem_free()
+	memset(&_gcdata,0,sizeof(_gcdata))
+	return 0
+}
+static mempage* free_page(mempage* pg){
+	int idx=pg->idx
+	pg->page.vmem_free()
+	_gcdata.pages=_gcdata.pages.data_delete(pg->idx,mempage.sizeof(),_gcdata.total_pages)
+	_gcdata.total_pages--
+	reindex_pages()
+	return idx < _gcdata.total_pages ? &_gcdata.pages[idx] : NULL
+}
+int block_len(int block,mempage* pg){
+	if !pg => return 0
+	ret=1
+	for i=block+1;i<pg->blocks;i++
+		if pg->types[i] & (1<<6)
+			ret++
+		else break
+	return ret
+}
+int mem_size(void* ptr){
+	mempage* pg=ptr.ptr_page()
+	if !pg => return 0
+	block=ptr.ptr_block(pg)
+	assert(!(pg->types[block] & (1<<6)))
+	return pg->block_size*block.block_len(pg)
+}
+void* expand_inplace(char* ptr,char type,int size,int extra){
+	mempage* pg=ptr.ptr_page()
+	if pg->blocks==1
+		assert(ptr==pg->page)
+		newsize=size+extra
+		assert(newsize>pg->block_size)
+		if type==String
+			newsize*=2
+		newsize=(newsize+8-1) & ~(8-1) //roundup
+		pg->block_size=newsize
+		pg->page=pg->page.vmem_realloc(newsize+1)
+		pg->types=pg->page+newsize
+		pg->types[0]=type
+		memset(pg->page+size,0,newsize-size)
+		void* ret=pg->page
+		reindex_pages()
+		return ret
+	void* ret=chain_alloc(pg,extra,type,ptr+pg->block_size)
+	if !ret => return NULL
+	pg->types[ret.ptr_block(pg)]=type|(1<<6)
+	return ptr
+}
+static int size_blocks(size_t size,mempage* pg) => return (size + pg->block_size - 1) / pg->block_size
+void* fox_realloc(void* ptr,size_t size,int type){
+	assert(size)
+	assert(size<MAXMEM)
+	if !ptr
+		return size.fox_alloc(type)
+	void* head=ptr.ptr_head()
+	int oldsize=head.mem_size()
+	int offset=head ? (char*)ptr-(char*)head : 0
+	size+=offset
+	if head
+		if oldsize>=size
+			return ptr
+		void* ret=head.expand_inplace(type,oldsize,size-oldsize)
+		if ret => return ret+offset	
+	void* ret=size.fox_alloc(type)
+	ret.assert()
+	assert(oldsize || type==String)
+	oldsize ? ret.memcpy(head,oldsize) : ret.memcpy(ptr,ptr.strlen()+1)
+	return ret+offset
+}
+void* fox_alloc(size_t size,int type){
+	if size<=0 => return NULL
+	if !_gcdata.stack_head => "GC not started!!!".printf(); exit(-1);
+	if _gcdata.inalloc => "fox_error!!! Recursive fox_alloc() call".printf(); exit(-1);
+	_gcdata.inalloc=1
+	assert(size<MAXMEM)
+	struct timeval gc_start=microtime()
+	void* ret=size._xalloc(type)
+	if !ret => "%ld byte allocation failed.".printf(size); exit(-1)
+	int time=gc_start.elapsed()
+	_gcdata.gctime+=time
+	_gcdata.gcmax=max(_gcdata.gcmax,time)
+	assert(!((char*)ret)[size-1])
+	_gcdata.inalloc=0
+	return ret
+}
+static void* new_alloc(size_t size,int type){
+	int bsize=size.block_size()
+	if !bsize => return size.new_page(1).page_alloc(size,type)
+	return bsize.new_page(max(ceil_pow2((mem_used(bsize,type)+size*2))/bsize,64*1024/bsize)).page_alloc(size,type)
+}
+static void* _xalloc(size_t size,int type){
+	if !_gcdata.pages => return size.new_alloc(type)
+	char* ret=NULL
+	if size>256*256*16
+		fox_gc()
+		pg.each_mem(mem_i3) if((ret=pg.page_alloc(size,type))) return ret
+		return size.new_alloc(type)
+	int full=0
+	pg.each_mem(mem_i){
+		if((ret=pg.page_alloc(size,type,&full))) return ret
+	}
+	if !full => return size.new_alloc(type)
+	freed=fox_gc()
+	if freed <=5 => return size.new_alloc(type)
+	pg.each_mem(mem_i2) if((ret=pg.page_alloc(size,type))) return ret
+	return size.new_alloc(type)
+}
+static int block_size(int size){
+	if size <= 256 => return 16
+	if size <= 256*16 => return 256
+	if size <= 256*256 => return 256*16
+	return 0
+}
+void start_time() => _gcdata.time=microtime()
+void end_time() => _total_time+=_gcdata.time.elapsed()
+int run_time() => return _gcdata.run_time.elapsed()/1000
+int total_time() => return _total_time/1000
+static void time_max(){
+	int curr=_gcdata.time.elapsed()
+	_total_time=max(_total_time,curr)
+}
+struct timeval microtime(){
+	struct timeval ret={0}
+	gettimeofday(&ret,NULL)
+	return ret
+}
+static int elapsed(struct timeval from){
+	struct timeval upto=microtime()
+	return (upto.tv_sec-from.tv_sec)*1000000+(upto.tv_usec-from.tv_usec)
+}
+struct vmem {
+	unsigned char* head;
+	struct vmem_type* type;
+	int blocks;
+	int header;
+};
+struct vmem_type {
+	unsigned char type : 4;
+	unsigned char mark : 1;
+};
+struct vmem mem={0};
+int vmem_init(int max){
+	mem.blocks=max/4096
+	mem.header=mem.blocks/4096*2
+	mem.head=mmap(0, max, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0)
+	if mem.head==MAP_FAILED => "Memory initialization failed".fox_error()
+	mem.type=(struct vmem_type*) (mem.head+mem.blocks/4096)
+	memset(mem.head,0,mem.header*4096)
+}
+int vmem_no(unsigned char* ptr) => return (ptr-mem.head)/4096
+int size_vmems(size_t size) => return size/4096+(size%4096 ? 1 : 0)
+void* ptr_vmem(void* ptr) => return (void*)(*(size_t*)&ptr & ~0xFFF)
+int vmem_len(int no){
+	int ret=mem.head[no]
+	while mem.head[no]==255
+		no+=255
+		ret+=mem.head[no]
+	return ret
+}
+int ptr_type2(void* ptr) => return mem.type[ptr.ptr_vmem().vmem_no()].type
+void* vmem_realloc(unsigned char* ptr,size_t size){
+	if !ptr => return size.vmem_alloc()
+	if ptr<mem.head+mem.header*4096 || ptr>mem.head+mem.blocks*4096
+		"vmem_realloc() called on bad ptr".fox_error()
+		xexit(-1)
+		return ptr
+	no=ptr.vmem_no()
+	len=no.vmem_len()
+	int type=mem.type[no].type
+	int extra=size-len*4096
+	if extra<=0 => return ptr
+	blocks=extra.size_vmems()
+	for int i=0; i<blocks; i++
+		if mem.head[no+len+i]
+			ret=size.vmem_alloc(type)
+			ret.memcpy(ptr,len*4096)
+			ptr.vmem_free()
+			return ret
+	newlen=len+blocks
+	last=no+newlen-1
+	(ptr+len*4096).memset(0,blocks*4096)
+	while newlen--
+		mem.head[last-newlen]=min(255,newlen+1)
+		mem.type[last-newlen].type=type
+	return ptr
+}
+void vmem_free(unsigned char* ptr){
+	if ptr<mem.head+mem.header*4096 || ptr>mem.head+mem.blocks*4096 => return
+	no=ptr.ptr_vmem().vmem_no()
+	len=no.vmem_len()
+	for int i=0; i<len; i++
+		mem.head[no+i]=0
+}
+void* vmem_alloc(size_t size, int type=0){
+	if size<=0 => return NULL
+	blocks=size.size_vmems()
+	found=0
+	for int i=mem.header; i<mem.blocks; i++
+		if !mem.head[i]
+			found++
+		else
+			found=0
+			i+=mem.head[i]-1
+		if found>=blocks
+			while found--
+				mem.head[i-found]=min(255,found+1)
+				mem.type[i-found].type=type
+			void* ret=mem.head+(i-blocks+1)*4096
+			ret.memset(0,blocks*4096)
+			return ret
+	"vmem_alloc() failed to alloc memeory!".fox_error()
+	return NULL
+}
+map* init_gc(void** sptr){
+	(32*4096*4096).vmem_init() //1gb max
+	_gcdata.stack_head=sptr
+	_clockstart=clock_cycles()
+	_gcdata.run_time=microtime()
+	_globals={}
+	return _globals
+}
+map* gc_reset(){
+	void** head=_gcdata.stack_head
+	map* args=_globals.args
+	int argc=args->len
+	void** argv=args->vars
+	void** globals=_gcdata.globals
+	_globals=NULL;
+	_clockstart=0;
+	mempage* pg=_gcdata.pages
+	pg.each_mem(i)
+		pg->page.vmem_free()
+		pg->chains.vars.vmem_free()
+
+	_gcdata.pages.vmem_free()
+	memset(&_gcdata,0,sizeof(_gcdata))
+
+	_gcdata.stack_head=head
+	_gcdata.globals=globals
+	_globals={}
+	*globals=_globals
+	ret=[]
+	ret->len=argc
+	ret->vars=argv
+	_globals.args=ret
+	return ret
+}
+void* ptr_head(void* ptr){
+	mempage* pg=ptr.ptr_page()
+	if !pg => return NULL
+	return ptr.ptr_block(pg).block_head(pg).block_ptr(pg)
+}
+int block_head(int no,mempage* pg){
+	while pg->types[no] & (1<<6) => assert(no>0); no--
+	return no
+}
+static int cmp_page(const void* pg1,const void* pg2){
+	if ((mempage*)pg1)->page<((mempage*)pg2)->page => return -1
+	return 1
+}
+static void reindex_pages(){
+	char* lastpage=NULL
+	qsort(_gcdata.pages,_gcdata.total_pages,sizeof(mempage),cmp_page)
+	pg.each_mem(mem_i){
+		pg->idx=mem_i
+		assert(!lastpage || pg->page>lastpage)
+		lastpage=pg->page
+	}
+}
+static mempage* no_page(int no){
+	pg.each_mem(idx) => if pg->no==no => return pg
+	assert(0)
+	return NULL
+}
+static struct mempage* new_page(int block_size,int blocks){
+//	printf("\nGC Page: %d * %d = %d\n",block_size,blocks,block_size*blocks)
+	size=block_size*blocks
+	char* page=(size+blocks).vmem_alloc()
+	_gcdata.pages=vmem_realloc(_gcdata.pages,(_gcdata.total_pages+1)*sizeof(mempage))
+	_gcdata.pages=_gcdata.pages.data_insert(_gcdata.total_pages,sizeof(mempage),_gcdata.total_pages)
+	mempage* ret=&_gcdata.pages[_gcdata.total_pages]
+	_gcdata.total_pages++
+	ret->page=page
+	int no=ret->no=_gcdata.page_no++
+	reindex_pages()
+	ret=no.no_page()
+	assert(page && !is_num(page))
+	ret->blocks=blocks
+	ret->free=blocks
+	ret->block_size=block_size
+	ret->types=ret->page+size
+	memset(ret->types,0,blocks)
+	ret.index_free_space()
+	_gcdata.curr_mem+=size+blocks*sizeof(char)
+	_gcdata.max_mem=max(_gcdata.max_mem,_gcdata.curr_mem)
+	return ret
+}
+static int comp_iptr(const void* sp1,const void* sp2){
+	// -1: move sp1 left, +1: move right
+	int* i1=*(int**)sp1
+	int* i2=*(int**)sp2
+	if *i1 > *i2 => return -1
+	if *i1 < *i2 => return 1
+	if i1 > i2 => return 1
+	if i1 < i2 => return -1
+	return 0
+}
+static mempage* index_free_space(mempage* pg){
+	if pg->blocks==1 => return pg
+	int free_len=0
+	int maxchain=max(pg->blocks/20,1)
+	no=0
+	int** chains=vmem_realloc(pg->chains.vars,maxchain*sizeof(int*))
+	for i=0;i<=pg->blocks;i++
+		if i<pg->blocks && !pg->types[i]
+			free_len++
+		else if free_len
+			if free_len<MIN_CHAIN
+				free_len=0
+				*(int*)(pg->page+(i-1)*pg->block_size)=free_len
+				continue
+			if no>=maxchain
+				maxchain*=2
+				chains=chains.vmem_realloc(maxchain*sizeof(int*)*2)
+			chains[no]=(int*)(pg->page+(i-free_len)*pg->block_size)
+			*chains[no]=free_len
+			no++
+			free_len=0
+	assert(free_len==0)
+	qsort(chains,no,sizeof(int*),comp_iptr)
+	pg->chains.len=no
+	pg->chains.vars=(void**)chains
+	return pg
+}
+static void* chain_alloc(mempage* pg, int size, int type, char* ptr=NULL){
+	blocks=size.size_blocks(pg)
+	chainid=-1
+	lo=-1
+	int hi=pg->chains.len
+	if !ptr
+		while hi-lo>1
+			chainid=(hi+lo)/2
+			if blocks==*(int*)(pg->chains.vars[chainid]) => break
+			else if blocks<*(int*)(pg->chains.vars[chainid]) => lo=chainid
+			else hi=chainid
+		if hi-lo<2
+			if lo==-1 => return NULL
+			else chainid=lo
+		assert(chainid>=0)
+		assert(chainid<pg->chains.len)
+		ptr=pg->chains.vars[chainid]
+		assert(*(int*)ptr>=blocks)
+	else
+		if ptr<pg->page || ptr>=pg->types => return NULL
+		if ptr.ptr_type() => return NULL
+		if *(int*)ptr<blocks => return NULL
+		if *(int*)ptr>=MIN_CHAIN
+			while hi-lo>1
+				int mid=(hi+lo)/2
+				match=comp_iptr(&ptr,&(pg->chains.vars[mid]))
+				if !match
+					chainid=mid
+					break
+				else if match<0 => hi=mid
+				else lo=mid
+			assert(chainid>=0)
+	if chainid>=0
+		pg->chains.vars=pg->chains.vars.data_delete(chainid,sizeof(int*),pg->chains.len)
+		pg->chains.len--
+	int rest=*(int*)ptr-blocks
+	assert(rest>=0)
+	void* shifted=ptr+pg->block_size*blocks
+	if rest
+		*(int*)shifted=rest
+	if rest>=MIN_CHAIN
+		assert(chainid>=0)
+		lo=-1
+		hi=pg->chains.len
+		while hi-lo>1
+			int mid=(hi+lo)/2
+			if comp_iptr(&shifted,&(pg->chains.vars[mid]))==1 => lo=mid
+			else hi=mid
+		assert(hi>=0 && hi<=pg->chains.len)
+		if hi => assert(*(int*)shifted<=*(int*)(pg->chains.vars[hi-1]))
+		if hi<pg->chains.len => assert(*(int*)shifted>=*(int*)(pg->chains.vars[hi]))
+		pg->chains.vars=pg->chains.vars.data_insert(hi,sizeof(int*),pg->chains.len)
+		pg->chains.vars[hi]=shifted
+		pg->chains.len++
+	block=ptr.ptr_block(pg)
+	pg->types[block]=type
+	type |= (1<<6)
+	for int i=1;i<blocks;i++
+		assert(!pg->types[block+i])
+		pg->types[block+i]=type
+	pg->free-=blocks
+	memset(ptr,0,blocks*pg->block_size)
+	return ptr
+}
+static void* page_alloc(mempage* pg,int size,int type,int* full=NULL){
+	if pg->blocks==1
+		if !pg->free || size>pg->block_size || size<pg->block_size*.4 => return NULL
+		pg->types[0]=type
+		pg->free=0
+		memset(pg->page,0,size);
+		return pg->page
+
+	int block_size=pg->block_size
+	int blocks=(size+block_size-1)/block_size
+	if !blocks
+		"Block size: %d, blocks=%d\n".printf(size,blocks);
+		stack_dump_direct()
+	blocks.assert()
+
+	if block_size>16 && size<block_size/2
+		return NULL
+	if block_size<1024*4 && blocks>32
+		return NULL
+	if blocks > 0.5 * pg->blocks
+		return NULL
+
+	if full && (block_size==16 || size>=block_size) && (block_size==1024*4||blocks<16) && blocks<0.4*pg->blocks => (*full)++
+	return pg.chain_alloc(size,type)
+}
+static int gc_sweep(){
+	_gcdata.curr_used=0
+	ret=0
+	pg.each_mem(mem_i){
+		ret+=pg.sweep_page()
+		if pg->free==pg->blocks
+			pg->abandoned++
+			if pg->abandoned>2
+				pg.free_page()
+				mem_i--
+				continue
+		else
+			pg->abandoned=0
+		_gcdata.curr_used+=(pg->blocks-pg->free)*pg->block_size
+		pg.index_free_space()
+	}	
+	_gcdata.max_used=max(_gcdata.curr_used,_gcdata.max_used)
+	return ret
+}
+int mem_used(int block_size=0,int type=0){
+	ret=0
+	pg.each_mem(mem_i){
+		if (!block_size || block_size==pg->block_size)// && (!type || type==pg->type)
+			ret+=(pg->blocks-pg->free)*pg->block_size
+	}
+	return ret
+}
+mempage* ptr_page(void* ptr){
+	if !ptr || !_gcdata.total_pages || (char*)ptr<_gcdata.pages[0].page || (char*)ptr>_gcdata.pages[_gcdata.total_pages-1].types => return NULL
+	int lo=-1
+	int up=_gcdata.total_pages
+	while up-lo>1
+		int mid=(lo+up)/2
+		if ptr>=(void*)_gcdata.pages[mid].page && ptr<(void*)_gcdata.pages[mid].types
+			return &_gcdata.pages[mid]
+		else if ptr<(void*)_gcdata.pages[mid].page
+			up=mid
+		else
+			lo=mid
+	return NULL
+}
+static void* block_ptr(int block,mempage* pg) => return pg->page+pg->block_size*block
+int ptr_block(void* ptr,mempage* pg) => return ((char*)ptr-pg->page)/pg->block_size
+int ptr_type(void* ptr){
+	if !ptr => return Null
+	if ptr.is_i() => return Int
+	if ptr.is_f() => return Double
+	mempage* pg=ptr.ptr_page()
+	if !pg => return String
+	return pg->types[ptr.ptr_block(pg)] & 31
+}
+static int gc_mark(void* ptr){
+	if !ptr => return 0
+	mempage* pg=ptr.ptr_page()
+	if !pg => return 0
+	int head=ptr.ptr_block(pg).block_head(pg)
+	int len=head.block_len(pg)
+	if pg->types[head] & (1<<7) => return 1
+	int type=pg->types[head]
+	for int i=0; i<len; i++ => pg->types[head+i] |= (1<<7)
+	ptr=head.block_ptr(pg)
+	if type==Cell
+		void** pairs=(void**) ptr
+		size=ptr.mem_size()/sizeof(void*)
+		for i=0;i<size;i++
+			gc_mark(pairs[i])
+	else if type==Cell2
+		Mapcell* pairs=(Mapcell*)ptr
+		size=ptr.mem_size()/Mapcell.sizeof()
+		for i=0;i<size;i++
+			if !pairs[i].id.is_num() => gc_mark(pairs[i].id)
+			gc_mark(pairs[i].val)
+	else if type==Map => gc_mark(((map*)ptr)->pairs)
+	else if type==Vector => gc_mark(((map*)ptr)->vars)
+	else if type==Index||type==Keys => assert(0)
+	return 1
+}
+static int sweep_page(mempage* pg){
+	ret=0
+	pg->free=0
+	for i=0;i<pg->blocks;i++
+		if !(pg->types[i] & (1<<7))
+			if pg->types[i]
+				if (pg->types[i] & 31) !=Tail => ret++
+				pg->types[i]='\0'
+				memset(pg->page+i*pg->block_size,0,pg->block_size)
+			pg->free++
+			continue
+		else
+			pg->types[i] &= ~(1<<7)
+	return ret*pg->block_size
+}
+static void* data_delete(void* data,int idx,int size,int len) => return data.data_shift(idx+1,-1,size,len)
+static void* data_insert(void* data,int idx,int size,int len){
+	data.data_shift(idx,1,size,len)
+	memset((char*)data+idx*size,0,size)
+	return data
+}
+static void* data_shift(void* data,int idx,int shift,int size,int len){
+	if idx>=len => return data
+	memmove((char*)data+(idx+shift)*size,(char*)data+idx*size,(len-idx)*size)
+	return data
+}
+static size_t clock_cycles(){
+#ifdef __arm__
+	return 0
+#else
+	unsigned int lo,hi;
+	asm volatile (:rdtsc : "=a" (lo), "=d" (hi));
+	return ((size_t)hi << 32) | lo;
+#endif
+}
+int page_map(mempage* pg){
+	if pg->blocks==1
+		"[---- %d KB / %d KB ----]\n".printf(pg->free * pg->block_size / 1024,pg->block_size/1024)
+		return 0
+	
+	"[".printf()
+	int skip=pg->blocks/80
+	int cont=0
+	for int i=0;i<pg->blocks;i++
+		char type=pg->types[i]
+		if skip && i%skip => continue
+		if type & (1<<6)
+			"=".printf()
+			continue
+		type &=(31)
+		if !type => ".".printf()
+		else if type==String => :s.printf()
+		else if type==Blob => :s.printf()
+		else if type==Map => :m.printf()
+		else if type==Vector => :v.printf()
+		else if type==Cell => :v.printf()
+		else if type==Cell2 => :m.printf()
+		else if type==Tail => :t.printf()
+		else "?".printf()
+	"]:%d %d*%d=%d KB/%d%%\n".printf(pg->no, pg->blocks,pg->block_size,pg->block_size * pg->blocks / 1024,(pg->blocks-pg->free)*100/pg->blocks)
+	return 0
+}
+int dump_chain(mempage* pg,int line){
+	"________________ line=%d, page=%d, free=%d/%d\n".printf(line,pg->no,pg->free,pg->blocks)
+	for int i=0; i<pg->chains.len; i++
+		"%d => %p\n".printf(*(int*)(pg->chains.vars[i]),pg->chains.vars[i])
+	"----------------\n".printf()
+	assert(0)
+//	"Chain fox_error".fox_error()
+	return 0
+}
+int check_chains(mempage* pg,int line=__LINE__){
+	for int i=1; i<pg->chains.len; i++
+		if *(int*)(pg->chains.vars[i])<MIN_CHAIN
+			pg.dump_chain(line)
+		if !(*(int*)(pg->chains.vars[i])<=*(int*)(pg->chains.vars[i-1]))
+			pg.dump_chain(line)
+		if *(int*)(pg->chains.vars[i])==*(int*)(pg->chains.vars[i-1])
+			if !(pg->chains.vars[i]>pg->chains.vars[i-1])
+				pg.dump_chain(line)
+//	"sort ok on %d points\n".printf(pg->chains.len)
+	return 0
+}
+int page_maps(char* title=""){
+	"%s\n".printf(title)
+	pg.each_mem(mem_i) pg.page_map()
+	return 0
+}
+char* ptr_id(void* ptr){
+	static char temp[128];
+	mempage* pg=ptr.ptr_page()
+	if !pg => return ptr
+	int block=ptr.ptr_block(pg)
+	type=ptr.ptr_type()
+	if type
+		int len=block.block_len(pg)
+		int head=block.block_head(pg)
+		int pre=block-head
+		sprintf(temp,"%d#%d+%d-%d*%d[%s]",pg->no,block,len,pre,pg->block_size,ptr.ptr_name())
+		return temp
+	sprintf(temp,"%d#%d+%d [%s]",pg->no,block,pg->block_size,ptr.ptr_name())
+	return temp
+}
+char* mem_usage(){
+	runtime=run_time()
+	totaltime=total_time()
+	gctime=gc_time()
+	codetime=runtime-totaltime-gctime
+	return "Memory:%s-%s [%d%% garbage], Pages: %d/%d, GC runs=%d-%d, Time=%d[gc]+%d[code]=%d ms [%d%% gc] GC Max: %d msec, Root Objs: %d".mstr(
+		_gcdata.max_mem.int_kb(),
+		max_mem().int_kb(),
+		(_gcdata.max_mem-_gcdata.max_used)*100/_gcdata.max_mem,
+		_gcdata.total_pages,
+		_gcdata.page_no,
+		_gcdata.gcruns,
+		_gcdata.gcwaste,
+		gctime,
+		codetime,
+		runtime,
+		gctime*100/(codetime+gctime),
+		_gcdata.gcmax/1000,
+		_gcdata.max_roots
+	)
+}
+//static int copy_page(mempage* from,mempage* to){
+//	for i1=0;i1<from->blocks;i1++
+//		char type1=from->types[i1]
+//		type1 &= (31)
+//		if !type1 => continue
+//		len=1
+//		while(from->types[i1+len] & (1<<6)) len++
+//		size=len*from->block_size
+//		void* ptr=from->page+i1*from->block_size
+//		void* ret=to.page_alloc(size,type1)
+//		ret.assert()
+//		ret.memcpy(ptr,size)
+//		*(void**)ptr=ret
+//		assert(ret.ptr_type()==type1 && ret.mem_size()>=size)
+//		i1+=len-1
+//	
+//	from.rewrite_ptrs()
+//	"End copy mempage".printf()
+//	return 0
+//}
+//void rewrite_ptr(mempage* pg,void** ptr){
+//	if *ptr<(void*)pg->page||*ptr>(void*)pg->types => return
+//	off=ptr_block(*ptr,pg)
+//	if !(pg->types[off] & (1<<6))
+//		*ptr=**(void***)ptr
+//		return
+//	len=1
+//	while(len<=off && (pg->types[off-len] & (1<<6))) len++
+//	assert(len<=off)
+//	head=pg->page+(off-len)*pg->block_size
+//	*ptr=*(char**)head+((char*)*ptr-head)
+//}
+//void rewrite_ptrs(mempage* old){
+//	pg.each_mem(mem_i){
+//		if pg==old => continue
+//		for i=0;i<pg->blocks;i++
+//			if !pg->types[i] || pg->types[i] & (1<<6) => continue
+//			char type=pg->types[i] & (31)
+//			if type<Map => continue
+//			len1=1
+//			while(pg->types[i+len1] & (1<<6)) len1++
+//			size1=len1*pg->block_size
+//			void* data=pg->page+i*pg->block_size
+//			void* ptr=NULL
+//			if type==Map||type==Vector => old.rewrite_ptr((void**)&(((map*)data)->vars))
+//			else if type==Cell
+//				void** vars=(void**)data
+//				size1/=sizeof(void*)
+//				for(i=0;i<size1;i++) old.rewrite_ptr((void**)&(vars[i]))
+//			else if type==Cell2
+//				Mapcell* pairs=(Mapcell*)data
+//				size1/=Mapcell.sizeof()
+//				for i=0;i<size1;i++
+//					old.rewrite_ptr((void**)&(pairs[i].val))
+//					old.rewrite_ptr((void**)&(pairs[i].id))
+//			i+=len1-1
+//	}	
+//	void** sp=NULL
+//	root_ptrs().each v,,i => old.rewrite_ptr(v)
+//	memset(old->types,0,old->blocks)
+//
+//	old->free=old->blocks
+//	memset(old->types,0,old->blocks)
+//}
+void* is_ptr(void* v){
+	if !v || !_gcdata.total_pages || (char*)v<_gcdata.pages[0].page || (char*)v>_gcdata.pages[_gcdata.total_pages-1].types => return NULL
+	return v
+}
+map* root_ptrs(){
+	void* stack_end=_globals
+	static map ret={0}
+	void* ptr=(void*)&stack_end
+	if !_gcdata.stack_head => "gc_start() was not called fox_at start of application".printf(); exit(-1)
+	int size=((void*)_gcdata.stack_head-ptr)/sizeof(void*)
+	ret.vars=size<0 ? _gcdata.stack_head : ptr
+	ret.len=size.abs()+1
+	ret.type=Vector
+	return &ret
+}
+int mem_total(){
+	ret=0
+	pg.each_mem(mem_i) => ret+=pg->blocks*pg->block_size
+	return ret
+}
+int mem_free(){
+	ret=0
+	pg.each_mem(mem_i) => ret+=pg->free*pg->block_size
+	return ret
+}
+void gc_benchmark(){
+	ret={}
+	for i=0;i<5000000;i++
+		ret["id."..(i%500000)]="val."..i
+	ret.map_len().px()
+	ret["id.10000"].px()
+	mem_usage().px()
+}
+void benchmark_gc(){
+	ret=[]
+	for i=0;i<1000000;i++
+		ret[i%200000]=1023.new_str()
+	ret.map_len().dx()
+	mem_usage().dx()
+}

@@ -1,0 +1,282 @@
+#line 2 "src/http.fox"
+
+#include <core.h>
+#include <http.h>
+
+void go_back(char* msg) => url_back().http_redirect(msg)
+char* http_moved(char* url) => return NULL.http_out("301 Moved Permanently","text/html",["Location: $url"])
+char* http_redirect(char* url,char* msg=''){
+	if msg => _globals.sess.msg=msg
+	return NULL.http_out("302 Moved Temporarily","text/html",["Location: $url"])
+}
+char* http_error(char* msg,char* status) => return msg.http_out(status)
+char* file_mime(char* path){
+	_globals.mime.each v,k,i
+		if(path.str_end(k)) return v
+	return NULL
+}
+char* header(char* str) => return str.."\r\n"
+char* http_out(char* str=NULL,char* status="200 OK",char* mime="text/html; charset=utf-8",map* headers=NULL){
+	if _globals.error
+		status="500 Internal Server Error"
+		mime="text/html; charset=utf-8"
+		str=_globals.error
+	else
+		sess=_globals.sess.json()
+		if sess==="{}" => sess=NULL
+		if _globals.sess_str!==sess
+			_globals.sess=NULL
+			_globals.sess_str=NULL
+			sid=_globals.sess_id
+			if !sid && sess
+				sid=sess_newid()
+				:sessid.cookie_set(sid)
+			if !sess && sid
+				if "/tmp/sess.$sid".is_file() => "/tmp/sess.$sid".unlink()
+			else if sess && sid
+				sess.write_file("/tmp/sess.$sid",0,0)
+	out=_globals.out..str
+	ret="Status: $status".header()
+	ret.="Content-Type: $mime".header()
+	ret.="Content-Length: $(out.str_len())".header()
+	headers.each v,,i => ret.=v.header()
+	_globals.cookie.each v2
+		ret.="Set-Cookie: $v2".header()
+	ret.="".header()
+	ret.=out
+	return ret
+}
+char* static_file(char* path){
+	if path.has_word("? ../ /.. \\") => return NULL
+	if !path.str_start("/res/") => return NULL
+	ret="/web/".cat(path.str_trim("/")).file_read(,0)
+	if ret => return ret.http_out("200 OK",path.file_mime())
+	return NULL
+}
+
+map* sess_init(){
+	sid=env_vars().HTTP_COOKIE.header_map().sessid
+	if !sid => return NULL
+	sess="/tmp/sess.$sid".file_read(,0)
+	_globals.sess_id=sid
+	_globals.sess_str=sess
+	_globals.sess=sess.xjson_map()
+	return _globals.sess
+}
+void	sess_add(char* name, char* value) => _globals.sess[name]=value
+char*	sess_id()		=> return _globals.sess_id
+char*	sess_file()		=> return sess_id() ? "/tmp/sess.$(sess_id())" : NULL
+char*	sess_newid()	=> return rand_str(24)
+void cookie_set(char* name,char* value,char* path="/",char* expire=NULL){
+	xexpire=''
+	if expire => xexpire="; expires=$expire"
+	ss="$name=$value; path=$path$xexpire"
+	_globals.cookie[]=ss
+}
+void sess_delete(){
+	if !sess_file() => return
+	sess_file().remove()
+	:sessid.cookie_set(:NULL,,"Thu, 01 Jan 1970 00:00:00 GMT")
+}
+map* link_relative(map* links,char* url){
+	if(!links||!url) return links
+	prepad="../".str_times(url.str_char_count('/')+1)
+	links.each v,,i
+		if v.is_map()
+			v.link_relative(url)
+			continue
+		if(v.fox_at(0)=='/') continue
+		links[i]=prepad..v
+	return links
+}
+map* header_map(char* val){
+	if !val => return NULL
+	ret={}
+	val.str_split(";").each v,,i
+		if !v.strchr('=') => ret[]=v; continue
+		pair=v.str_split("=",2)
+		ret[pair[0].str_trim()]=pair[1].str_trim().str_unquote()
+	return ret
+}
+map* http_req(char* home){
+	ret={}
+	_globals.env=NULL
+	env=env_vars()
+	sess_init()
+	_globals.css={}
+	_globals.js={}
+	if !env.REQUEST_METHOD
+		path=_globals.args[1]
+		ret=(home..path).parse_url()
+		ret.method=:get
+		ret.remote=:localhost
+		ret.server=:localhost
+		ret.protocol=:http
+		ret.port="80"
+		ret.fullpath=ret.path
+		ret.home=home
+		ret.path=ret.fullpath.sub_str(home.str_len()) or ""
+		_globals.req=ret
+		return ret
+	ret=env.REQUEST_URI.parse_url()
+	ret.remote=env.REMOTE_ADDR
+	ret.server=env.HTTP_HOST
+	ret.protocol=env.REQUEST_SCHEME
+	ret.port=env.SERVER_PORT
+	ret.fullpath=ret.path
+	ret.home=home
+	ret.path=ret.fullpath.sub_str(home.str_len()) or ""
+	if env.REQUEST_METHOD===:GET
+		ret.method=:get
+		_globals.req=ret
+		return ret
+	if env.REQUEST_METHOD!==:POST
+		"Method $(env.REQUEST_METHOD) not supported".http_error("405 Method not supported")
+	ret.method=:post
+	size=env.CONTENT_LENGTH.str_int()
+	if !size => "Content-Lenght was not provided".http_error("411 Length Required")
+	if size>20000000 => "Request should be with less than 20MB data".http_error("413 Request Entity Too Large")
+	char line[1024]
+	header=new_blob()
+	done=0
+	done1=0
+	int toread=min(size-done,1024)
+	while done<size && (done1=STDIN_FILENO.read(line,toread))
+		if done1<=0 => "POST data read error at $done/$size bytes".http_error("500 Internal Server Error")
+		header=header.cat(line,done1)
+		done+=done1
+		toread=min(size-done,1024)
+	ret.post=header
+	_globals.req=ret
+	return ret
+}
+char* full_url(char* url=NULL) => return (_globals.req.protocol or :http).."://"..(_globals.req.server or :localhost)..show_port().."/"..url.str_ltrim("/")
+char* url_abs(char* abs, char* rel){
+	if !rel => return abs
+	if rel.str_start("./") => return abs..rel.sub_str(2)
+	if rel[0]!='.' => return abs..rel
+	srel=rel
+	level=0
+	while srel.str_start("../") => srel+=3; level++
+	base=abs.str_split("/")
+	if abs.strstr("://") => level=max(base.map_len()-level-1,3)
+	else level=max(base.map_len()-level-1,0)
+	ret=base.vec_sub(0,level).map_join("/")
+	return ret.."/"..srel
+}
+char* base_url(char* path=NULL) => return _globals.tabs.map_key(0).url_abs(path)
+char* home_url(char* path=NULL) => return _globals.req.home.url_abs(path)
+char* show_port(){
+	if !_globals.req.port => return ''
+	if _globals.req.protocol===:http && _globals.req.port==="80" => return ''
+	if _globals.req.protocol===:https && _globals.req.port==="443" => return ''
+	return ":".._globals.req.port
+}
+char* h(char* in){
+	return in.str_replace({
+	"&": "&amp;",
+	"<": "&gt;",
+	">": "&lt;",
+	"\"": "&quot;",
+	"'": "&apos;"
+	})
+}
+
+char* str_html(char* in){
+	if !in.str_len() => return ""
+	chars="<>\"'&"
+	into=["&lt;","&gt;","&quot;","&#039;","&amp;"]
+	ret=''
+	for ;*in;in++
+		char* match=chars.strchr(*in)
+		if !match => ret=ret.cat_char(*in)
+		else ret.=into[match-chars]
+	return ret
+}
+char* str_url(char* in){
+	if !in||!*in => return in
+	bad=0
+	head=in
+	for ;*in;in++
+		if !is_alphanum(*in,"\"'-.[]*$%{}()@!~") => bad++
+	if !bad=> return head
+	ret=new_str(head.str_len()+bad*2)		
+	off=0
+	in=head
+	for ;*in;in++
+		if !is_alphanum(*in,"\"'-.[]*$%{}()@!~")
+			sprintf(ret+off,"%%%02X",(unsigned char)*in)
+			off+=3
+		else
+			ret[off]=*in
+			off++
+	return ret
+}
+char* url_str(char* in){
+	if !in => return NULL
+	int len=0
+	int fix=0
+	str=in
+	for(;*in;in++)
+		if *in=='+' => fix=1
+		else if *in=='%' => fix=1; len-=2
+	if !fix => return str
+	ret=new_str(str.str_len()+len)
+	int i=0
+	for(in=str;*in;in++,i++)
+		if *in=='+' => ret[i]=' '
+		else if *in=='%' => ret[i]=(++in).hex_char(); in++
+		else ret[i]=*in
+	return ret
+}
+char* map_amps(void* val,char* name=''){
+	if !val => return ''
+	if !val.is_map()
+		val=val.to_str()
+		return name ? name.str_url().."="..val.str_url() : ''
+	ret=''
+	if name => name.="."
+	val.each v,n
+		ret=ret.str_join("&",v.map_amps(name..n))
+	return ret
+}
+map* amps_map(char* in){
+	ret={}
+	in.str_split("&",0).each v,,i
+		pr=v.str_split("=",2)
+		key=pr[0].url_str()
+		if !key.strchr('.')
+			ret[key]=pr[1].url_str()
+			continue
+		keys=key.str_split(".")
+		lastkey=keys[keys.map_len()-1]
+		keys.vec_del(-1)
+		val=ret
+		keys.each k
+			nval=val[k]
+			if !nval.is_map() => nval={}; val[k]=nval
+			val=nval
+		val[lastkey]=pr[1].url_str()
+	return ret
+}
+map* parse_url(char* path){
+	ret={url: path}
+	two=path.str_split("?",2)
+	ret.path=two[0]
+	ret.get=two[1].amps_map()
+	return ret
+}
+//char* url_host(char* url) => return url.regexp("://([^:/]+)")[1]
+char* param(map* change=NULL){
+	return change.merge_soft(_globals.req.get).map_amps()
+}
+void save_caller(){
+	refer=url_back()
+	req=_globals.req
+	if req.method!==:get || !refer || req.get._refer || refer.str_end(req.path) => return
+	req.get._refer=refer
+	"./?$(req.get.map_amps())".http_redirect()
+}
+char* url_back(){
+	return _globals.req.get._refer or env_vars().HTTP_REFERER.parse_url().path or home_url()
+}

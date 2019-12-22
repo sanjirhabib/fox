@@ -1,4 +1,10 @@
-#include <fox.h>
+#line 2 "src/map.fox"
+
+#include <core.h>
+#include <map.h>
+#include <playground.h>
+#include <dir.h>
+#include <foxstring.h>
 
 map* xadd(map* mp, void* ...){
 	type=mp.ptr_type()
@@ -136,11 +142,13 @@ map* str_vec(void* str){
 map* str_map(char* str,int type=Map){
 	if str.is_map() => return str.is_map()
 	if !str.str_len() => return str.xjson_map(type)
-	ret=str.cache(:str_map)
-	if ret => return ret
+//	ret=str.cache(:str_map)
+//	if ret => return ret
+	map* ret=NULL
 	if (!str.strchr('\n') && !str.strchr('\r')) => ret=str.xjson_map(type)
 	else ret=str.block_map(str.block_level(),type)
-	return str.cache(:str_map,ret)
+	return ret
+//	return str.cache(:str_map,ret)
 }
 map* vec_del(map* mp,int from,int len=1){
 	if !mp.map_len() => return NULL
@@ -423,3 +431,273 @@ map* vec_rdup(map* mp){
 	return ret
 }
 map* set_map(void* val,map* mp,int idx) => return set(mp,idx,val)
+char* skip_word(char* in,char* seperators=" \t\r\n,"){
+	if !in || !*in => return in
+	term='\0'
+	counter=0
+	opener='\0'
+	if "[({".strchr(*in) => opener=*in;
+	if "\"'`".strchr(*in) => term=*in; in++
+	else if *in=='[' => term=']'; in++
+	else if *in=='(' => term=')'; in++
+	else if *in=='{' => term='}'; in++
+	while *in
+		if opener
+			if "\"'`".strchr(*in) => in=in.skip_word(seperators); continue
+			else if *in==opener => counter++
+		if *in==term
+			if !counter => in++; break
+			counter--
+		else if !term && seperators.strchr(*in) => break
+		else if *in=='\\' && in[1] => in++
+		in++
+	return in
+}
+void* read_value(char** str, char* sep){
+	if **str=='{'||**str=='[' => return xjson_map_recurse(str)
+	from=*str
+	*str=from.skip_word(sep)
+	ret=from.sub_str(0,*str-from)
+	return ret ? ret : :null
+}
+char* read_upto(char** in,char* terminators){
+	str=*in
+	isquote=0
+	if *str=='"' => terminators="\""; str++
+	else if *str=='\'' => terminators="'"; str++
+	while(*str && !terminators.strchr(*str))
+		if *str=='\\' && str[1] => str++
+		str++
+	if (*terminators=='\'' || *terminators=='"') && *str==*terminators => str++
+	from=*in
+	*in=str
+	return from.sub_str(0,str-from)
+}
+map* map_add_pair(map* mp,void* name,void* value,int type){
+	if !name && !value => return mp	
+
+	if name===:null => name=NULL
+	else if name.is_numeric() => name=(name.to_int()+1).int_var()
+	else name=name.str_unquote()
+
+	if name && value && *(char*)value==':'
+		if !mp.map_len()
+			return mp.xadd(:type,value.sub_str(1),:name,name)
+		else
+			char* str=value
+			str++
+			thealpha=read_alpha(&str)
+			value={type: thealpha,name: name}.map_merge(xjson_map(str+1,Index))
+
+	if value===:null => value=NULL
+	else if value.is_numeric()
+		if value.str_chr('.')
+			value=value.str_double().double_var()
+		else
+			value=value.to_int().int_var()
+	else value=value.str_unquote()
+
+	if type==Vector => return mp[]=value
+	return mp[name]=value
+}
+map* block_map(char** from,int inlevel,int maptype){
+	if !from => return NULL
+	map* ret=NULL
+	if maptype==Vector => ret=[]
+	else ret={}
+	str=*from
+	if !str.str_len() => return NULL
+	level=0
+	iscomment=0
+	blk=''
+	name=''
+	val=''
+	for ;*str;str++
+		if *str=='\n'||*str=='\r'
+			ret.add_name_val(str,name,val,maptype)
+			level=0
+			iscomment=0
+			blk=NULL
+			continue
+		if !name && !val
+			if iscomment => continue
+			if !blk => blk=str
+			if *str=='/' && str[1]=='/' => str++; iscomment=1; continue
+			if *str=='\t' => level++; continue
+			if level<inlevel
+				*from=blk
+				return ret
+			if level>inlevel
+				s=ret[ret->len-1].is_str()
+				if s==="|" => read_as_block(&blk,inlevel+1).set_map(ret,ret->len-1)
+				else if s && s.str_start("---") => read_as_block(&blk,inlevel+1,s).set_map(ret,ret->len-1)
+				else if ret[ret->len-1].ptr_type()==Vector => block_map(&blk,inlevel+1,Vector).set_map(ret,ret->len-1)
+				else if ret[ret->len-1].ptr_type()==Map => block_map(&blk,inlevel+1,Map).set_map(ret,ret->len-1)
+				else if maptype==Vector
+					continue
+				else
+					if (s.str_len() && ret.map_key(ret->len-1).is_int()) => ret.change_key(ret->len-1,s)
+					block_map(&blk,inlevel+1,maptype).set_map(ret,ret->len-1)
+				str=blk-1
+				level=0
+				iscomment=0
+				blk=NULL
+				name=NULL
+				val=NULL
+				continue
+			
+			if maptype!=Vector && *str=='=' => val=str+1; continue
+			name=str
+		
+		if !val
+			if *str=='\\' => str++; continue
+			if maptype!=Vector && *str=='='
+				name=name.sub_str(0,str-name)
+				val=str+1
+				continue
+			continue
+		continue
+	ret.add_name_val(str,name,val,maptype)
+	*from=str
+	return ret
+}
+char* read_num(char** in){
+	str=*in
+	deci=0
+	str++
+	while *str && ((*str>='0' && *str<='9')||(*str=='.' && !deci++ && !str[1].is_alpha()))
+		str++
+	from=*in
+	*in=str-1
+	return from.sub_str(0,str-from)
+}
+char* read_alpha(char** in){
+	str=*in
+	str++
+	while(*str && is_alphanum(*str)) str++
+	from=*in
+	*in=str-1
+	return from.sub_str(0,str-from)
+}
+static map* add_name_val(map* mp,char* str,char** name,char** val,int type){
+	name1=*name
+	val1=*val
+	if !name1 && !val1 => return mp
+	*name=NULL
+	*val=NULL
+	void* v=NULL
+	if type==Vector
+		s=name1.sub_str(0,str-name1).str_trim()
+		return mp[]=s.marked_str()
+	
+	if(val1)
+		name1=name1.str_trim(" \t")
+		name1=name1.str_replace("\\=","=")
+		if !name1.str_len() => name1=NULL
+		v=val1.sub_str(0,str-val1).marked_str(name1)
+	else if name1 => v=name1.sub_str(0,str-name1).marked_str(); name1=NULL
+	if type==Index && !name1.str_len() => name1=v.to_str()
+	else if type==Keys && !name1
+		name1=v.to_str()
+		v=NULL
+	mp.map_add(name1,v)
+	return mp
+}
+static char* read_as_block(char** from,int level,char* terminator="-"){
+	str=*from
+	ret=''
+	while *str
+		if str.str_start("//") => str+=str.line_len(); continue
+		tabs=str.str_level()
+		len=str.line_len()
+		if tabs>=level||str.line_isempty()
+			ret.=len-level>0 ? str.sub_str(level,len-level) : "\n"
+		else break
+		str+=len
+	if str.sub_str(str.str_level(),str.line_len()-str.str_level()).str_trim()===terminator
+		len2=str.line_len()
+		str+=len2
+	*from=str
+	if ret.str_len() && ret[ret.str_len()-1]=='\n' => ret=ret.sub_str(0,-1)
+	return ret
+}
+static void* marked_str(char* str,char* name=NULL){
+	if !str => return NULL
+	str=str.str_trim(" \t")
+	if str==="\"\"" => return ""
+	if !str.str_len() => return NULL
+	if str===:NULL
+		return NULL
+
+	if str[0]=='{'
+		if str[str.str_len()-1]=='}' => str[str.str_len()-1]='\0'
+		mp=xjson_map(str+1,Map)
+		return mp
+	
+	if str.is_numeric() => return str.stoi().int_var()
+	if str[0]=='['
+		if str[str.str_len()-1]==']' => str[str.str_len()-1]='\0'
+		mp=xjson_map(str+1,Vector)
+		return mp
+	
+	if str[0]=='\\' => return str.sub_str(1)
+	if str[0]==':'
+		str++
+		thealpha=read_alpha(&str)
+		return {type: thealpha,name: name}.map_merge(xjson_map(str+1,Index))
+	return str
+}
+int cmp_ptr_reverse(const void* ptr1, const void* ptr2) => return ptr2.cmp_ptr(ptr1)
+int cmp_ptr(const void* ptr1,const void* ptr2){
+	void* p1=(void*)ptr1
+	void* p2=(void*)ptr2
+	if p1==p2 => return 0
+	if p1.is_i() && p2.is_i()
+		return p1.is_int() < p2.is_int() ? -1 : 1
+	if p1.is_str() && p2.is_str()
+		if !p1 => return -1
+		if !p2 => return 1
+		return p1.strcmp(p2)
+	return 0
+}
+int cmp_cons_reverse(const void* ptr1, const void* ptr2) => return ptr2.cmp_cons(ptr1)
+int cmp_cons(const void* ptr1, const void* ptr2){
+	return ((Mapcell*)ptr1)->val.cmp_ptr(((Mapcell*)ptr2)->val)
+}
+map* map_sort(map* mp,int reverse=0){
+	if !mp => return mp
+	if reverse
+		if mp.is_vec() => mp.qsort(mp->len,sizeof(void*),cmp_ptr_reverse); return mp
+		mp->pairs.qsort(mp->len,sizeof(Mapcell),cmp_cons_reverse)	
+	else
+		if mp.is_vec() => mp.qsort(mp->len,sizeof(void*),cmp_ptr); return mp
+		mp->pairs.qsort(mp->len,sizeof(Mapcell),cmp_cons)	
+	mp.map_reindex()
+	return mp
+}
+map* vec_map(map* in){
+	if !in.is_vec() => return in
+	ret={}
+	in.each val
+		ret[val]=val
+	return ret
+}
+map* to_vec(void* val){
+	mp=[]
+	mp[]=val
+	return mp
+}
+map* del_keys(map* mp,map* keys){
+	keys.each key => mp.map_del(mp.map_has_key(key)-1).map_compact()
+	return mp
+}
+map* merge_soft(map* strong, map* soft){
+	if !strong => strong={}
+	if !soft => return strong
+	soft.each val, key
+		if !key.is_int()
+			if strong.map_has_key(key) => continue
+		else key=''
+		strong[key]=val
+	return strong
+}

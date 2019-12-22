@@ -1,76 +1,35 @@
-#include <fox.h>
+#line 2 "src/hijristr.fox"
 
+#include <core.h>
+#include <astro.h>
+#include <dir.h>
+#include <tsv.h>
+
+#include <astrostr.h>
+
+#pragma fox cc -lastro
+
+
+double hijri_month_length(int lun, char* cal){
+	return hijri_month_start(lun+1, cal)-hijri_month_start(lun, cal);
+};
+double hijri_month_start(int lun,char* cal){
+	char* name=xstr("/data/", cal, ".hijri.cache", End);
+	if(!is_file(name)) {return 0;};
+	FILE* fp=fopen(name,"r");
+	if(!fp) {return 0;};
+	fseek(fp,lun*10,SEEK_SET);
+	char* ret=read_line(fp);
+	fclose(fp);
+	return to_double(ret);
+};
 void hijri_month_cache_bd(){
-	for(int i=0;i<2000*12;i++) {printf("%09.1f\n",hijri_month_start_bd2(i));};
+	for(int i=0;i<2000*12;i++) {printf("%09.1f\n",hijri_month_start_bd(i));};
 };
-void hijri_month_cache(){
-	for(int i=0;i<2000*12;i++) {printf("%09.1f\n",hijri_month_start2(i));};
+void hijri_month_cache_en(){
+	for(int i=0;i<2000*12;i++) {printf("%09.1f\n",hijri_month_start_en(i));};
 };
-
-double dhaka_lng(){return 90+25.0/60.0;}; //90d 25m
-double dhaka_lat(){return 23+48.0/60.0;}; //23d 48m
-double kaba_lng(){return 39.8262013;};
-double kaba_lat(){return 21.4224945;};
-double qibla_direction(double lng, double lat){
-	return bearing(lng, lat, kaba_lng(), kaba_lat());
-};
-double kaba_sun_set(double jd){ return sun_set(jd,kaba_lng(),kaba_lat());};
-double kaba_moon_set(double jd){ return moon_set(jd,kaba_lng(),kaba_lat());};
-double hijri_month_length(int lun){
-	return hijri_month_start(lun+1)-hijri_month_start(lun);
-};
-double hijri_month_length_bd(int lun){ return hijri_month_start_bd(lun+1)-hijri_month_start_bd(lun); };
-double hijri_month_start3(int lun){
-	char* name="/data/hijri.cache";
-	if(!is_file(name)) {return 0;};
-	FILE* fp=fopen(name,"r");
-	if(!fp) {return 0;};
-	fseek(fp,lun*10,SEEK_SET);
-	char* ret=read_line(fp);
-	fclose(fp);
-	return to_double(ret);
-};
-double hijri_month_start_bd3(int lun){
-	char* name="/data/bd.hijri.cache";
-	if(!is_file(name)) {return 0;};
-	FILE* fp=fopen(name,"r");
-	if(!fp) {return 0;};
-	fseek(fp,lun*10,SEEK_SET);
-	char* ret=read_line(fp);
-	fclose(fp);
-	return to_double(ret);
-};
-double hijri_month_start_bd(int lun){
-	double cache=hijri_month_start_bd3(lun);
-	if(cache) {return cache;};
-	return hijri_month_start_bd2(lun);
-};
-double hijri_month_start(int lun){
-	double cache=hijri_month_start3(lun);
-	if(cache) {return cache;};
-	return hijri_month_start2(lun);
-};
-double hijri_month_start_bd2(int lun){
-	double jd=lunation_date(lun); // lng and lat is for patuakhali, the most visible place in bd.
-	double lng=90.381;
-	double lat=22.007;
-	jd=yallop_best_time(jd,lng,lat);
-	while(yallop_q(jd,lng,lat)<.2) {jd=yallop_best_time(jd+1,lng,lat);};
-	double ret=jday(jd)+1;
-	return ret;
-};
-double kaba_tz(){ return 3; };
-double hijri_month_start75(int lun){
-	double jd=lunation_date(lun);
-	if(lun>1370*12){
-		double jd2=kaba_sun_set(jd);
-		double diff=(jd2-jd)*24;
-		if(diff<7.5) {return jday(jd2)+2;};
-		return jday(jd2)+1;
-	};
-	return 0;
-};
-double hijri_month_start2(int lun){
+double hijri_month_start_en(int lun){
 	double jd=lunation_date(lun);
 	if(lun>1370*12){
 		double jd2=kaba_sun_set(jd);
@@ -85,59 +44,60 @@ double hijri_month_start2(int lun){
 	double ret=jday(jd)+1;
 	return ret;
 };
-double hijri_lunation_bd(double jd){
+double hijri_month_start_bd(int lun){
+	double jd=lunation_date(lun); // lng and lat is for patuakhali, the most visible place in bd.
+	double lng=90.381;
+	double lat=22.007;
+	jd=yallop_best_time(jd,lng,lat);
+	while(yallop_q(jd,lng,lat)<.2) {jd=yallop_best_time(jd+1,lng,lat);};
+	double ret=jday(jd)+1;
+	return ret;
+};
+double hijri_month_start75(int lun){
+	double jd=lunation_date(lun);
+	if(lun>1370*12){
+		double jd2=kaba_sun_set(jd);
+		double diff=(jd2-jd)*24;
+		if(diff<7.5) {return jday(jd2)+2;};
+		return jday(jd2)+1;
+	};
+	return 0;
+};
+double hijri_lunation(double jd, char* cal){
 	jd=jday(jd);
 	double lun=lunation(jd);
-	if(jd<hijri_month_start_bd(lun)) {return lun-1;};
-	if(jd>hijri_month_start_bd(lunation(lun+1))) {return lun+1;};
+	if(jd<hijri_month_start(lun, cal)) {return lun-1;};
+	if(jd>hijri_month_start(lunation(lun+1), cal)) {return lun+1;};
 	return lun;
 };
-char* hijri_date_bd(double jd){
+char* hijri_date(double jd, double tz, char* cal){
 	if(!jd) {jd=jd_now();};
-	jd+=6/24;
-	return mstr("%04d-%02d-%02d",hijri_year(hijri_lunation_bd(jd)),hijri_month(hijri_lunation_bd(jd)),hijri_day_bd(jd), End);
-};
-double hijri_lunation(double jd){
-	jd=jday(jd);
-	double lun=lunation(jd);
-	if(jd<hijri_month_start(lun)) {return lun-1;};
-	if(jd>hijri_month_start(lunation(lun+1))) {return lun+1;};
-	return lun;
-};
-double current_hijri_month_bd(){
-	return hijri_month(hijri_lunation_bd(jd_now()));
-};
-double current_hijri_month(){
-	double jd=jd_now();
-	double lun=hijri_lunation(jd);
-	return hijri_month(lun);
-};
-double current_hijri_year(){
-	double jd=jd_now();
-	double lun=hijri_lunation(jd);
-	return hijri_year(lun);
-};
-double jd_now(){ return jd(NULL,0); };
-char* hijri_now(double tz){return hijri_date(jd_now(),tz);};
-char* hijri_now_bd(double tz){return hijri_date_bd(jd_now());};
-double hijri_day_bd(double jd){
-	double lun=hijri_lunation_bd(jd);
-	double jd0=hijri_month_start_bd(lun);
-	double day=jday(jd)-jd0+1;
-	return day;
-};
-double hijri_day(double jd){
-	double lun=hijri_lunation(jd);
-	double jd0=hijri_month_start(lun);
-	double day=jday(jd)-jd0+1;
-	return day;
-};
-double hijri2jd(int y, int m, int d){
-	return hijri_month_start(y*12+m)+d-1;
-};
-char* hijri_date(double jd,double tz){
 	jd+=tz/24;
-	return mstr("%04d-%02d-%02d",hijri_year(hijri_lunation(jd)),hijri_month(hijri_lunation(jd)),hijri_day(jd), End);
+	return mstr("%04d-%02d-%02d",hijri_year(hijri_lunation(jd, cal)),hijri_month(hijri_lunation(jd, cal)),(int)hijri_day(jd, cal), End);
+};
+double current_hijri_month(char* cal){
+	return hijri_month(hijri_lunation(jd_now(),cal));
+};
+double current_hijri_year(char* cal){
+	return hijri_year(hijri_lunation(jd_now(),cal));
+};
+double dhaka_lng(){return 90+25.0/60.0;}; //90d 25m
+double dhaka_lat(){return 23+48.0/60.0;}; //23d 48m
+double kaba_lng(){return 39.8262013;};
+double kaba_lat(){return 21.4224945;};
+double qibla_direction(double lng, double lat){
+	return bearing(lng, lat, kaba_lng(), kaba_lat());
+};
+double kaba_sun_set(double jd){ return sun_set(jd,kaba_lng(),kaba_lat());};
+double kaba_moon_set(double jd){ return moon_set(jd,kaba_lng(),kaba_lat());};
+double kaba_tz(){ return 3; };
+double jd_now(){ return jd(NULL,0); };
+char* hijri_now(double tz, char* cal){return hijri_date(jd_now(),tz, cal);};
+double hijri_day(double jd, char* cal){
+	return jday(jd)-hijri_month_start(hijri_lunation(jd, cal),cal)+1;
+};
+double hijri2jd(int y, int m, int d, char* cal){
+	return hijri_month_start(y*12+m, cal)+d-1;
 };
 double jd(char* date,double tz){
 	if(!date){ return time(0)/86400.-10957.5; };
@@ -178,7 +138,6 @@ char* jd_str(double jd, double tz){
 	char ret[32];
 	return mstr("%04d-%02d-%02d %02d:%02d:%02d%s",y,m,dm,h,min,(int)s,tzstr, End);
 };
-double frac(double val){ return val>0 ? val-(int)val : -(val-(int)(val)); };
 char* jdstring_ar(double jd, double tz){
 	map* ret=str_split(map_id(str_split(jd_str(jd,tz)," ",0),0),"-",0);
 	return xstr(to_str(int_var(to_int(map_id(ret,0))),"",0),"-",month_ar(to_int(map_id(ret,1))),map_id(ret,2), End);
@@ -190,7 +149,7 @@ char* jdstring_bg(double jd, double tz){
 char* date_only(char* in){ return sub_str(in,0,10); };
 char* jd_human(double jd, double tz){
 	map* ret=str_split(map_id(str_split(jd_str(jd,tz)," ",0),0),"-",0);
-	return xstr(to_str(int_var(to_int(map_id(ret,0))),"",0),"-",month_en(to_int(map_id(ret,1))),map_id(ret,2), End);
+	return xstr(map_id(ret,2), "-", month_en(to_int(map_id(ret,1))), "-", map_id(ret,0), End);
 };
 char* wday_en(int val){
 	map* ret=xvec("Saturday","Sunday","Monday","Tuesday","Wednesday","Thursday","Friday", End);
@@ -211,7 +170,7 @@ char* month_bg(int val){
 	return map_id(ret,val-1);
 };
 char* ar_wday(int wday){
-	map* ret=xvec("الأحد","الإثنين","الثلاثاء","الأربعاء","wday_ar","الجمعة","السبت", End);
+	map* ret=xvec("الأحد","الإثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت", End);
 	if(!wday) {wday=7;};
 	return map_id(ret,wday-1);
 };
@@ -226,11 +185,6 @@ char* month_ar(int month){
 };
 char* month_en(int val){
 	map* ret=xvec("January","February","March","April","May","June","July","August","September","October","November","December", End);
-	if(!val) {return NULL;};
-	return map_id(ret,val-1);
-};
-char* month_en3(int val){
-	map* ret=xvec("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec", End);
 	if(!val) {return NULL;};
 	return map_id(ret,val-1);
 };
@@ -281,19 +235,19 @@ char* hijri_month_name_ar(int v){
 };
 char* hijri_month_name(int v){
 	map* months=xvec(
-		"muharram",
-		"safar",
-		"rabi al-awwal",
-		"rabi al-thani",
-		"jumada al-awwal",
-		"jumada al-thani",
-		"rajab",
-		"shaban",
-		"ramadan",
-		"shawwal",
-		"dhu al-qidah",
-		"dhu al-hijjah"
-	, End);
+		"Muharram",
+		"Safar",
+		"Rabi al-awwal",
+		"Rabi al-thani",
+		"Jumada al-awwal",
+		"Jumada al-thani",
+		"Rajab",
+		"Shaban",
+		"Ramadan",
+		"Shawwal",
+		"Dhu al-Qidah",
+		"Dhu al-Hijjah",
+	End);
 	if(!v) {return NULL;};
 	return map_id(months,v-1);
 };
@@ -346,7 +300,7 @@ char* bearing_name(double lng1, double lat1, double lng2, double lat2){
 	char* names[]={"N","NE","E","SE","S","SW","W","NW","N"};
 	return names[direct];
 };
-static double hue_2_rgb(double v1, double v2, double v_h){
+double hue_2_rgb(double v1, double v2, double v_h){
 	if(v_h){ v_h = v_h < 0 ? v_h+1 : v_h-1; };
 	if(6 * v_h < 1){ return v1 + (v2 - v1) * 6 * v_h; };
 	if(2 * v_h < 1){ return v2; };

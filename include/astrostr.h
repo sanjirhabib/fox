@@ -1,69 +1,64 @@
-#include <fox.h>
-void hijri_month_cache_bd();
-void hijri_month_cache();
-double dhaka_lng();
-double dhaka_lat();
-double kaba_lng();
-double kaba_lat();
-double qibla_direction(double lng, double lat);
-double kaba_sun_set(double jd);
-double kaba_moon_set(double jd);
-double hijri_month_length(int lun);
-double hijri_month_length_bd(int lun);
-double hijri_month_start3(int lun);
-double hijri_month_start_bd3(int lun);
-double hijri_month_start_bd(int lun);
-double hijri_month_start(int lun);
-double hijri_month_start_bd2(int lun);
-double kaba_tz();
-double hijri_month_start75(int lun);
-double hijri_month_start2(int lun);
-double hijri_lunation_bd(double jd);
-char* hijri_date_bd(double jd);
-double hijri_lunation(double jd);
-double current_hijri_month_bd();
-double current_hijri_month();
-double current_hijri_year();
-double jd_now();
-char* hijri_now(double tz);
-char* hijri_now_bd(double tz);
-double hijri_day_bd(double jd);
-double hijri_day(double jd);
-double hijri2jd(int y, int m, int d);
-char* hijri_date(double jd, double tz);
-double jd(char* date, double tz);
-char* jd_str(double jd, double tz);
-double frac(double val);
-char* jdstring_ar(double jd, double tz);
-char* jdstring_bg(double jd, double tz);
-char* date_only(char* in);
-char* jd_human(double jd, double tz);
-char* wday_en(int val);
-char* wday_en3(int val);
-char* month_bg3(int val);
-char* month_bg(int val);
-char* ar_wday(int wday);
-char* wday_bg(int wday);
-char* month_ar(int month);
-char* month_en(int val);
-char* month_en3(int val);
-char* astro_nth(int n);
-int cemonth(int ym);
-int ceyear(int ym);
-char* hijri_month_name_bg(int v);
-char* hijri_month_name_ar(int v);
-char* hijri_month_name(int v);
-int jd_wday(double jd, double tz);
-double tz();
-void rgb2hsl(int r, int g, int b, double* out_h, double* out_s, double* out_l);
-double jday(double jd);
-char* bearing_name3(double lng1, double lat1, double lng2, double lat2);
-char* bearing_name(double lng1, double lat1, double lng2, double lat2);
-static double hue_2_rgb(double v1, double v2, double v_h);
-void hsl2rgb(double h, double s, double l, int* ret_r, int* ret_g, int* ret_b);
-map* salat_time(double jd, double lng, double lat);
-double esha(double jd, double lng, double lat);
-double fajar18(double jd, double lng, double lat);
-double noon(double jd, double lng, double lat);
-double asar2(double jd, double lng, double lat);
-double asar1(double jd, double lng, double lat);
+#pragma once
+#include <core.h>
+#include <astro.h>
+#include <dir.h>
+#include <tsv.h>
+#pragma fox module astrostr
+#pragma fox cc -lastro
+double hijri_month_length(int lun, char* cal); //astrostr.fox
+double hijri_month_start(int lun, char* cal); //astrostr.fox
+void hijri_month_cache_bd(); //astrostr.fox
+void hijri_month_cache_en(); //astrostr.fox
+double hijri_month_start_en(int lun); //astrostr.fox
+double hijri_month_start_bd(int lun); //astrostr.fox
+double hijri_month_start75(int lun); //astrostr.fox
+double hijri_lunation(double jd, char* cal); //astrostr.fox
+char* hijri_date(double jd, double tz, char* cal); //astrostr.fox
+double current_hijri_month(char* cal); //astrostr.fox
+double current_hijri_year(char* cal); //astrostr.fox
+double dhaka_lng(); //astrostr.fox
+double dhaka_lat(); //astrostr.fox
+double kaba_lng(); //astrostr.fox
+double kaba_lat(); //astrostr.fox
+double qibla_direction(double lng, double lat); //astrostr.fox
+double kaba_sun_set(double jd); //astrostr.fox
+double kaba_moon_set(double jd); //astrostr.fox
+double kaba_tz(); //astrostr.fox
+double jd_now(); //astrostr.fox
+char* hijri_now(double tz, char* cal); //astrostr.fox
+double hijri_day(double jd, char* cal); //astrostr.fox
+double hijri2jd(int y, int m, int d, char* cal); //astrostr.fox
+double jd(char* date, double tz); //astrostr.fox
+char* jd_str(double jd, double tz); //astrostr.fox
+char* jdstring_ar(double jd, double tz); //astrostr.fox
+char* jdstring_bg(double jd, double tz); //astrostr.fox
+char* date_only(char* in); //astrostr.fox
+char* jd_human(double jd, double tz); //astrostr.fox
+char* wday_en(int val); //astrostr.fox
+char* wday_en3(int val); //astrostr.fox
+char* month_bg3(int val); //astrostr.fox
+char* month_bg(int val); //astrostr.fox
+char* ar_wday(int wday); //astrostr.fox
+char* wday_bg(int wday); //astrostr.fox
+char* month_ar(int month); //astrostr.fox
+char* month_en(int val); //astrostr.fox
+char* astro_nth(int n); //astrostr.fox
+int cemonth(int ym); //astrostr.fox
+int ceyear(int ym); //astrostr.fox
+char* hijri_month_name_bg(int v); //astrostr.fox
+char* hijri_month_name_ar(int v); //astrostr.fox
+char* hijri_month_name(int v); //astrostr.fox
+int jd_wday(double jd, double tz); //astrostr.fox
+double tz(); //astrostr.fox
+void rgb2hsl(int r, int g, int b, double* out_h, double* out_s, double* out_l); //astrostr.fox
+double jday(double jd); //astrostr.fox
+char* bearing_name3(double lng1, double lat1, double lng2, double lat2); //astrostr.fox
+char* bearing_name(double lng1, double lat1, double lng2, double lat2); //astrostr.fox
+double hue_2_rgb(double v1, double v2, double v_h); //astrostr.fox
+void hsl2rgb(double h, double s, double l, int* ret_r, int* ret_g, int* ret_b); //astrostr.fox
+map* salat_time(double jd, double lng, double lat); //astrostr.fox
+double esha(double jd, double lng, double lat); //astrostr.fox
+double fajar18(double jd, double lng, double lat); //astrostr.fox
+double noon(double jd, double lng, double lat); //astrostr.fox
+double asar2(double jd, double lng, double lat); //astrostr.fox
+double asar1(double jd, double lng, double lat); //astrostr.fox

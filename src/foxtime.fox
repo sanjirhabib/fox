@@ -1,0 +1,45 @@
+#line 2 "src/foxtime.fox"
+
+#include <core.h>
+#include <foxtime.h>
+
+char* time_ago(char* stime){
+	int secs=time(0)-stime.str_time()
+	if secs < 0 => secs*=-1
+	if(secs<120) return "a minute"
+	secs/=60
+	if(secs<60) return "$secs minutes"
+	secs/=60;
+	if(secs<2) return "an hour"
+	if(secs<24) return "$secs hours"
+	secs/=24;
+	if(secs<2) return "a day"
+	if(secs<30) return "$secs days"
+	if(secs<60) return "a month"
+	if(secs<365) return "$(secs/30) months"
+	secs/=365;
+	if(secs<2) return "a year"
+	return "$secs years"
+}
+time_t str_time(char* in){
+	if !in => return time(0)
+	struct tm tm={0}
+	tm.tm_year=in.sub_str(0,4).atoi()-1900
+	tm.tm_mon=in.sub_str(5,2).atoi()-1
+	tm.tm_mday=in.sub_str(8,2).atoi()
+	if in.str_len()==19
+		tm.tm_hour=in.sub_str(11,2).atoi()
+		tm.tm_min=in.sub_str(14,2).atoi()
+		tm.tm_sec=in.sub_str(17,2).atoi()
+	return mktime(&tm)
+}
+char* time_str(time_t timer=0){
+	char buffer[20]
+	if !timer => timer=time(0)
+	strftime(buffer,20, "%Y-%m-%d %H:%M:%S",localtime(&timer))
+	return buffer.str_dup()
+}
+char* today() => return time_str().sub_str(0,10)
+char* now() => return time_str().sub_str(11,8)
+int this_year() => return time_str().sub_str(0,4).str_int()
+char* datetime() => return time_str()

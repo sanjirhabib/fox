@@ -1,5 +1,7 @@
-#include <fox.h>
-void* px(void* str, int newline);
-void xexit(int val);
-void* fox_error(char* msg, int dump);
-void* call_php(map* params, char* func);
+#pragma once
+#include <core.h>
+#pragma fox module cmd
+void* px(void* str, int newline); //cmd.fox
+void xexit(int val); //cmd.fox
+void* fox_error(char* msg, int dump); //cmd.fox
+void* call_php(map* params, char* func); //cmd.fox

@@ -1,5 +1,19 @@
-#line 2 "/web/fox/generator.fox"
-#include <fox.h>
+#line 2 "src/generator.fox"
+#include <core.h>
+#include <generator.h>
+#include <foxtime.h>
+#include <playground.h>
+#include <cmd.h>
+#include <dir.h>
+#include <tsv.h>
+#include <map.h>
+#include <foxparser.h>
+#include <cmdline.h>
+
+//extern void* (*invoke)(map* v,char* name);
+//extern map* (*reflect)();
+void* (*invoke)(map* v,char* name)=NULL;
+map* (*reflect)()=NULL;
 
 #define MAXMEM 40*1024*1024
 #define MIN_CHAIN 1
@@ -8,11 +22,15 @@ int _iscmd=0;
 int cgi(char* infile, char* xfiles, char* profile, char* outfile,char* opts,int keepfiles){
 	return cc(infile,xfiles, profile, outfile, opts, keepfiles);
 };
-static char* fox_meta(char* infile, char* name,char* outfile){
+static char* fox_meta(char* infile, char* name, map* depends, char* outfile){
 	map* funcs=funcs_nonstatic(file_funcs(infile,0));
 	map* macros=c_macros(infile);
 	map* structs=c_structs(infile);
-
+	for(int next1=next(depends,-1,NULL,NULL); has_id(depends,next1); next1++){ void* file=map_id(depends,next1);
+		funcs=map_merge(funcs_nonstatic(file_funcs((xstr(file,".fox", End)),0)),funcs);
+		macros=map_merge(c_macros((xstr(file,".fox", End))),macros);
+		structs=map_merge(c_structs((xstr(file,".fox", End))),structs);
+	};
 	char* prefix=xstr(name,"_", End);
 	return write_file(x_c(xstr("", 
 	"/* This is a generated file. To change it, edit function fox_meta() in generator.fox */\n", 
@@ -34,136 +52,76 @@ static char* fox_meta(char* infile, char* name,char* outfile){
 	"", 
 	"", End)),outfile,0,1);
 };
-static char* fox_cs(char* name,map* depends){
-	char* fox=xstr(name,".fox", End);
-//	structs=fox.file_read().c_structs()
-//	structs.px()
-//	sstructs=''
-	map* func=file_funcs(fox,0);
-	map_merge(func,x_funcs(meta_h(name),stoi(xstr(name,"_meta.c", End)),NULL));
-	map_merge(map_val(map_val(map_val(_globals,"cache"),"reflect"),"funcs"),func);
-	fox_c(fox,xstr(name,".c", End));
-	write_file((xstr(""
-	"#include <fox.h>\n"
-	"#pragma once\n"
-	""
-	"",funcs_cdecl(func,0), End)),xstr(name,".h", End),0,1);
-	char* meta=NULL;
-	if(depends){
-		for(int next1=next(depends,-1,NULL,NULL); has_id(depends,next1); next1++){ void* file=map_id(depends,next1);
-			meta=xcat(meta,meta_h(file), End); };
-		meta=xcat(meta,xstr("", 
-		"extern int _iscmd;\n", 
-		"int cmdline(){\n", 
-		"	args=_globals.args\n", 
-		"	if !args[1].is_code() => return 0\n", 
-		"	_iscmd=1\n", 
-		"	args.cmdline_params(user_funcs()).user_invoke(args[1]).ret_print()\n", 
-		"	return 1\n", 
-		"}\n", 
-		"void* user_invoke(map* params, char* name){\n", 
-		"	void* ret=''\n", 
-		"\tif (ret=params.", name, "_invoke(name))!=End => return ret\n", 
-		"", 
-		"", End), End);
-		for(int next1=next(depends,-1,NULL,NULL); has_id(depends,next1); next1++){ void* file=map_id(depends,next1);
-			meta=xcat(meta,xstr("", 
-			"\tif (ret=params.", file, "_invoke(name))!=End => return ret\n", 
-			"", 
-			"", End), End); };
-		meta=xcat(meta,xstr("", 
-		"	return params.invoke(name)\n", 
-		"}\n", 
-		"map* user_funcs(){\n", 
-		"	//if _globals.cache.reflect => return _globals.cache.reflect\n", 
-		"	ret=funcs()\n", 
-		"\tret.map_merge(", name, "_reflect().funcs)\n", 
-		"", 
-		"", End), End);
-		for(int next1=next(depends,-1,NULL,NULL); has_id(depends,next1); next1++){ void* file=map_id(depends,next1);
-			meta=xcat(meta,xstr("", 
-			"\tret.map_merge(", file, "_reflect().funcs)\n", 
-			"", 
-			"", End), End); };
-		meta=xcat(meta,""
-		"	//_globals.cache.reflect=ret\n"
-		"	return ret\n"
-		"}\n"
-		""
-		"", End);
-		meta=x_c(meta); };
-	write_file((xstr(fox_meta(fox,name,NULL),meta, End)),xstr(name,"_meta.c", End),0,1);
-	return name;
+map* file_deps(char* filename, map* deps){
+	map* pragmas=map_val(map_val(_globals,"reflect"),"pragmas");
+	map* map_1=fox_includes(filename); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* f=map_id(map_1,next1);
+		deps=map_merge(deps,map_val(pragmas,f)); };
+	char* val=fox_pragma(filename);
+	if(val){ add(deps,val,val); };
+	return deps; //.map_vec().vec_reverse()
+};
+int vec_has(map* in, char* key){
+	for(int next1=next(in,-1,NULL,NULL); has_id(in,next1); next1++){ void* val=map_id(in,next1);
+		if(str_eq(val,key)){ return 1; }; };
+	return 0;
 };
 int cc(char* infile, char* xfiles, char* profile, char* outfile, char* opts, int keepfiles){
+	map* libs=new_map();
 	map* names=new_vec();
 	map* map_1=str_split(xfiles,",",0); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* file=map_id(map_1,next1);
-		vec_add(names,fox_cs(file_rename(file,NULL,".fox",NULL,NULL,NULL),NULL)); };
-	char* name=fox_cs(file_rename(infile,NULL,".fox",NULL,NULL,NULL),names);
+		vec_add(names,fox_cs(file_rename(file,NULL,".fox",NULL,NULL,NULL),NULL,0));
+		libs=file_deps(file,libs); };
+	char* name=file_rename(infile,NULL,".fox",NULL,NULL,NULL);
+	int hasmeta=vec_has(fox_includes(infile),xstr(name,"_meta", End));
+	fox_cs(name,names, hasmeta);
+	libs=file_deps(infile,libs);
+	char* xlibs=map_join(libs," ");
 	if(!outfile){ outfile=name; };
-	char* magic=NULL;
-	exec("pkg-config --cflags --libs MagickWand",&magic);
-	magic=str_trim(magic," \t\n\r");
-	char* cflags=xstr("-m64 -std=gnu99 -Wno-unused-command-line-argument -g ", magic, End);
-	char* xlibs="-lmarkdown -lcurl -lsqlite3 -lstemmer -lfoxastro -lxml2";
-	// -fdata-sections -ffunction-sections -Wl,-dead_strip -Wl,-emain
+	// -lfoxstatic
+	char* cflags="-m64 -std=gnu99 -Werror=implicit-function-declaration -L/usr/local/lib -lm -I/usr/local/include";
 	map* switches=xmap(
-		"debug", xstr("-g -O0 -lfox ", cflags, " ", xlibs, " -lfoxmain", End),
-		"speed", xstr("-O3 -lfox ", cflags, " ", xlibs, " -lfoxmain", End),
-		"size", xstr("-Os -lfox ", cflags, " -lfoxmain", End),
-		"static", xstr("-Os -lfoxstatic -lfoxcmdstatic ", cflags, " -fdata-sections -ffunction-sections -Wl,-dead_strip -lfoxmain", End),
-		"cgi", xstr("-Os -lfoxstatic -lfoxcgistatic ", cflags, " ", xlibs, " -lfoxmaincgi", End),
-		"scgi", xstr("-Os -lfoxstatic -lfoxcgistatic ", cflags, " ", xlibs, " -lfoxmaincgi -fdata-sections -ffunction-sections -Wl,-dead_strip ", End)
+		"debug", "-g -lfoxcmdstatic",
+		"release", "-O2 -lfoxcmdstatic",
+		"cgi", "-O2 -lfcgi",
+		"cgidebug", "-g -lfcgi"
 	, End);
 	profile = (map_val(switches,profile) ? map_val(switches,profile) : map_val(switches,"debug"));
 	char* extras=NULL;
-	if(map_len(names)){ extras=xstr(map_join(names,".c "),".c ",map_join(names,"_meta.c "),"_meta.c", End); };
+	if(map_len(names)){ extras=xstr(map_join(names,".c "),".c", End); };
+	if(hasmeta){ extras=xcat(extras,xstr(" ", name, "_meta.c", End), End); };
 	int ret=exec(
 		px(
-		xstr("gcc ", name, ".c ", name, "_meta.c ", extras, " -o ", outfile, " -L/usr/local/lib ", profile, " ", opts, " -std=gnu99 -Wno-logical-op-parentheses -lm 2>&1", End),1),NULL);
-//	if !keepfiles
-//		(infile..".c").remove()	
-//		(infile..".h").remove()	
+		xstr("gcc ", name, ".c ", extras, " -o ", outfile, " ", opts, " ", cflags, " ", xlibs, " ", profile, End),1),NULL);
 	return ret;
 };
-static char* write_configm4(char* name, char* outfile){
-	char* NAME=str_upper(str_dup(name));
-	return write_file(xstr("", 
-	"PHP_ARG_WITH(", name, ", for ", name, " support,\n", 
-	"Make sure that the comment is aligned:\n", 
-	"[  --with-", name, "             Include ", name, " support])\n", 
-	"if test \"$PHP_", NAME, "\" != \"no\"; then\n", 
-	"\n", 
-	NAME, "_DIR=\"/usr/local\"\n", 
-	"\n", 
-	"if test -z \"", xstr("$",NAME, End), "_DIR\"; then\n", 
-	"  AC_MSG_RESULT([not found])\n", 
-	"  AC_MSG_ERROR([Please reinstall the ", name, " distribution])\n", 
-	"fi\n", 
-	"\n", 
-	"# --with-", name, " -> add include path\n", 
-	"PHP_ADD_INCLUDE(", xstr("$",NAME, End), "_DIR/include)\n", 
-	"\n", 
-	"# --with-", name, " -> check for lib and symbol presence\n", 
-	"LIBNAME=fox # you may want to change this\n", 
-	"LIBSYMBOL=init_gc # you most likely want to change this \n", 
-	"\n", 
-	"PHP_CHECK_LIBRARY($LIBNAME,$LIBSYMBOL,\n", 
-	"[\n", 
-	"  PHP_ADD_LIBRARY_WITH_PATH($LIBNAME, ", xstr("$",NAME, End), "_DIR/lib, ", NAME, "_SHARED_LIBADD)\n", 
-	"  AC_DEFINE(HAVE_", NAME, "LIB,1,[ ])\n", 
-	"],[\n", 
-	"  AC_MSG_ERROR([wrong fox lib version or lib not found])\n", 
-	"],[\n", 
-	"  -L", xstr("$",NAME, End), "_DIR/$PHP_LIBDIR -lm\n", 
-	"])\n", 
-	"\n", 
-	"PHP_SUBST(", NAME, "_SHARED_LIBADD)\n", 
-	"\n", 
-	"  PHP_NEW_EXTENSION(", name, ", ", name, ".c ", name, "php.c, $ext_shared,, -DZEND_ENABLE_STATIC_TSRMLS_CACHE=1)\n", 
-	"fi\n", 
+char* write_user_meta(char* name, map* depends){
+	map_merge(map_val(map_val(_globals,"reflect"),"funcs"),x_funcs(meta_h(name),stoi(xstr(name,"_meta.c", End)),NULL));
+	write_file(meta_h(name),xstr(name,"_meta.h", End),0,1);
+	char* meta=NULL;
+	meta=xcat(meta,xstr("", 
+	"extern int _iscmd;\n", 
+	"int cmdline(){\n", 
+	"	args=_globals.args\n", 
+	"	if !args[1].is_code() => return 0\n", 
+	"	_iscmd=1\n", 
+	"\treflect=", name, "_reflect\n", 
+	"\tinvoke=", name, "_invoke\n", 
+	"\targs.cmdline_params(", name, "_reflect().funcs).", name, "_invoke(args[1]).ret_print()\n", 
+	"	return 1\n", 
+	"}\n", 
 	"", 
-	"", End),outfile,0,1);
+	"", End), End);
+	meta=x_c(meta);
+	write_file((xstr(fox_meta((xstr(name,".fox", End)),name,depends,NULL),meta, End)),xstr(name,"_meta.c", End),0,1);
+};
+static char* fox_cs(char* name,map* depends,int addmeta){
+	char* fox=xstr(name,".fox", End);
+	map* func=file_funcs(fox,0);
+	map_merge(map_val(map_val(_globals,"reflect"),"funcs"),func);
+	if(addmeta){ write_user_meta(name,depends); };
+	write_file(exclude_defines(fox_c(fox,NULL)),xstr(name,".c", End),0,1);
+	fox_h(fox,xstr(name,".h", End));
+	return name;
 };
 void write_source(char* infile,...){
 	map* files=xvec(infile, End);
@@ -174,19 +132,127 @@ void write_source(char* infile,...){
 		if(name==End){ break; };
 		vec_add(files,name); };
 	va_end(args);
-//	("Compiling "..files.map_join(", ")).px()
-//	files=["src/astrostr.fox", "src/cgi.fox", "src/cmd.fox", "src/core.fox", "src/fox.fox", "src/generator.fox", "src/main.fox", "src/maincgi.fox", "src/run.fox", "src/sql.fox", "src/text.fox", "astro/astro.h", "src/eval.fox", "src/dbmeta.fox"]
 	source_funcs(files);
-	write_foxh(file_rename("fox.h","include",NULL,NULL,NULL,NULL));
+	char* includes=NULL;
 	for(int next1=next(files,-1,NULL,NULL); has_id(files,next1); next1++){ void* infile=map_id(files,next1);
+		includes=xcat(includes,"#include <",file_nodir(file_noext(infile)),".h>\n", End);
 		if(str_end(infile,".h")){ continue; };
-		fox_c(infile,xstr(file_rename(infile,"src",".fox",NULL,NULL,NULL),".c", End)); };
-		//infile.fox_h(infile.file_rename(:include,".fox")..".h")
-	write_file((xstr("#include <fox.h>\n\n",funcs_meta(funcs_nonstatic(source_funcs(NULL)),source_macros(), source_structs(),NULL), End)),file_rename("meta.c","src",NULL,NULL,NULL,NULL),0,1);
+		write_file(exclude_defines(fox_c(infile,NULL)),xstr(file_rename(infile,"src",".fox",NULL,NULL,NULL),".c", End),0,1);
+		fox_h(infile,xstr(file_rename(infile,"include",".fox",NULL,NULL,NULL),".h", End)); };
+	map* data=new_map();
+	add(data,"funcs",funcs_nonstatic(source_funcs(NULL)));
+	add(data,"macros",c_macros(files_section(files,"#define")));
+	add(data,"structs",c_structs(files_section(files,"typedef struct union class enum")));
+	add(data,"pragmas",source_pragmas(files,new_map()));
+	map* map_1=map_val(data,"funcs"); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* val=map_id(map_1,next1); char* name=map_key(map_1, next1);
+		add(add_key(data,"depends",Map),name,func_depend(map_val(val,"body"),new_map()));
+		map_del_key(val,"body"); };
+	add(add_key(data,"version",Map),"build",increase_version());
+	add(add_key(data,"version",Map),"date",time_str(0));
+	write_file((xstr("#include <meta.h>\n",includes,funcs_meta(data,"fox"), End)),file_rename("meta.c","src",NULL,NULL,NULL,NULL),0,1);
+	write_file(""
+	"#pragma once\n"
+	"#include <core.h>\n"
+	"void* fox_invoke(map* v,char* name);\n"
+	"map* fox_reflect();\n"
+	""
+	"","include/fox_meta.h",0,1);
 	px(mem_usage(),1);
 };
-static char* write_foxh(char* outfile){
-	return write_file((xstr(foxh(),funcs_cdecl(source_funcs(NULL),0), End)),outfile,0,1);
+map* source_pragmas(map* infiles, map* ret){
+	map* deps=new_map();
+	ret=new_map();
+	map* modules=new_map();
+	for(int next1=next(infiles,-1,NULL,NULL); has_id(infiles,next1); next1++){ void* file=map_id(infiles,next1);
+		if(!str_eq(file_ext(file,NULL),"fox")){ continue; };
+		char* module=file_nodir(file_noext(file));
+		add(add_key(ret,module,Map),xstr("-lfox", module, "static", End),xstr("-lfox", module, "static", End));
+		char* val=fox_pragma(file);
+		if(val){ add(add_key(ret,module,Map),val,val); };
+		add(deps,module,fox_includes(file)); };
+	int found=1;
+	while(found){
+		found=0;
+		for(int next1=next(deps,-1,NULL,NULL); has_id(deps,next1); next1++){ void* ds=map_id(deps,next1); char*  module=map_key(deps, next1);
+			for(int next1=next(ds,-1,NULL,NULL); has_id(ds,next1); next1++){ void* mod=map_id(ds,next1);
+				map* map_1=map_val(ret,mod); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* cmd=map_id(map_1,next1);	
+					if(!map_val(map_val(ret,module),cmd)){
+						add(add_key(ret,module,Map),cmd,cmd);
+						found++; }; }; }; }; };
+	return ret;
+};
+map* fox_includes(char* infile){
+	map* ret=new_vec();
+	map* toks=str_tokenize(str_ltrim(file_read(infile,1,1),"\n"),"\n",0);
+	for(int i=next(toks,-1,NULL,NULL); has_id(toks,i); i+=2){ void* tok=map_id(toks,i);
+		if(!str_start(tok,"#include")){
+			continue; };
+		map* words=str_tokenize(tok," \t",0);
+		vec_add(ret,file_nodir(file_noext(sub_str(map_id(words,2),1,-1)))); };
+	return ret;
+};
+char* fox_pragma(char* infile){
+	map* toks=str_split(files_section(xvec(infile, End),"#pragma"),"\n",0);
+	for(int next1=next(toks,-1,NULL,NULL); has_id(toks,next1); next1++){ void* tok=map_id(toks,next1);
+		map* words=str_tokenize(tok," \t",0);
+		if(!str_eq(map_id(words,2),"fox")){
+			continue; };
+		if(!str_eq(map_id(words,4),"cc")){
+			continue; };
+		return map_join(vec_sub(words,6,0),""); };
+	return NULL;
+};
+char* source_defines(map* infiles){
+	char* ret=NULL;
+	for(int i=next(infiles,-1,NULL,NULL); has_id(infiles,i); i++){ void* v=map_id(infiles,i);
+		ret=xcat(ret,fox_defines(v), End); };
+	return ret;
+};
+char* exclude_defines(char* in){
+	if(!in){ return NULL; };
+	map* toks=str_tokenize(in,"\n",0);
+	int start=0;
+	char* ret=NULL;
+	if(str_chr(map_id(toks,0),'\n')){
+		start++;
+		ret=xcat(ret,map_id(toks,0), End); };
+	for(int i=next(toks,start-1,NULL,NULL); has_id(toks,i); i+=2){ void* tok=map_id(toks,i);
+		if(tok_isdefine(tok)){
+			ret=xcat(ret,"//",str_replace(tok,"\n","\n//"), End);
+		}else{
+			ret=xcat(ret,tok, End); };
+		ret=xcat(ret,map_id(toks,i+1), End); };
+	return ret;
+};
+int tok_isdefine(char* in){
+	char* type=next_word(in," \t\n");
+	if(!is_word(type,"typedef struct enum union class extern")){
+		return 0; };
+	if(str_eq(type,"struct")){
+		map* words=str_tokenize(in," \t{}",0);
+		if(!str_chr(map_id(words,3),'{')){ return 0; }; };
+	return 1;
+};
+char* fox_defines(char* infile){
+	map* toks=str_tokenize(str_ltrim(file_read(infile,1,1),"\n"),"\n",0);
+	char* basename=file_noext(file_nodir(infile));
+	char* ret=NULL;
+	for(int i=next(toks,-1,NULL,NULL); has_id(toks,i); i+=2){ void* tok=map_id(toks,i);
+		char* type=next_word(tok," \t\n");
+		if(!is_word(type,"typedef struct enum union class #include #pragma extern #define #if #ifdef #undef #else #endif #ifndef")){
+			continue; };
+		if(str_eq(type,"struct")){
+			map* words=str_tokenize(tok," \t{}",0);
+			if(!str_chr(map_id(words,3),'{')){
+				continue; }; };
+		if(str_eq(type,"#include")){
+			map* words=str_tokenize(tok," \t<>",0);
+			char* filename=file_noext(file_nodir(map_id(words,2)));
+			if(str_eq(filename,basename)){
+				ret=xcat(ret,xstr("#pragma fox module ", filename, "\n", End), End);
+				continue; }; };
+		ret=xcat(ret,tok,"\n", End); };
+	return ret;
 };
 static map* funcs_nonstatic(map* funcs){
 	map* ret=new_map();
@@ -195,270 +261,10 @@ static map* funcs_nonstatic(map* funcs){
 		add(ret,key,val); };
 	return ret;
 };
-static char* fox_phpc(char* infile,char* outfile){
-	map* fns=infile ? file_funcs(infile,0) : source_funcs(NULL);
-	map* temp=str_split(infile,"/",0);
-	temp=str_split(map_id(temp,map_len(temp)-1),".",0);
-	void* name=map_id(temp,0);
-	char* ret=xstr("", 
-	"#ifdef HAVE_CONFIG_H\n", 
-	"#include \"config.h\"\n", 
-	"#endif\n", 
-	"#include <php.h>\n", 
-	"#include <fox.h>\n", 
-	"#include \"", name, ".h\"\n", 
-	"\n", 
-	"void* zval_var(zval* z);\n", 
-	"zval var_zval(void* v);\n", 
-	"zval map_zval(map* mp);\n", 
-	"map* zval_map(zval* z);\n", 
-	"void* call_php(map* params,char* func);\n", 
-	"", 
-	"", End);
-	char* reg=NULL;
-	for(int i=next(fns,-1,NULL,NULL); has_id(fns,i); i++){ void* v=map_id(fns,i);
-		if(!is_word(map_val(v,"type"),"void* map* int char*")){ continue; };
-		if(is_word(map_val(v,"name"),"main")){ continue; };
-		char* decls="";
-		char* format="";
-		char* post="";
-		char* pointers="";
-		char* call="";
-		int hasdefault=0;
-		int skip=0;
-		void* foxname=map_val(v,"name");
-		if(!infile && !str_start(foxname,"fox_")){ foxname=xstr("fox_", map_val(v,"name"), End); };
-		map* map_1=map_val(v,"params"); for(int i2=next(map_1,-1,NULL,NULL); has_id(map_1,i2); i2++){ char* name=map_key(map_1, i2);
-			if(str_eq(name,"...")){ skip=1; break; };
-			map* v2=map_val(map_val(v,"params"),name);
-			if(!hasdefault && map_val(v2,"default")){
-				hasdefault=1;
-				format=xcat(format,"|", End); };
-			if(str_eq(map_val(v2,"type"),"char*")){
-				decls=xcat(decls,"\tchar* ","in_",name,"=NULL;\n", End);
-				decls=xcat(decls,"\tsize_t ","in_",name,"_len=-1;\n", End);
-				pointers=xcat(pointers,", &in_",name,", &in_",name,"_len", End);
-				format=xcat(format,"s", End);
-				if(map_val(v2,"default")){
-					post=xcat(post,xstr("\tif(in_", name, "_len==-1) in_", name, "=", x_c(map_val(v2,"default")), "\n", End), End);
-					post=xcat(post,xstr("\telse in_", name, "=str_dup(in_", name, ");\n", End), End); };
-			}
-			else if(str_eq(map_val(v2,"type"),"int")){
-				decls=xcat(decls,"\tlong ","in_",name,"=(1ll<<62);\n", End);
-				pointers=xcat(pointers,", &in_",name, End);
-				format=xcat(format,"l", End);
-				if(map_val(v2,"default")){ post=xcat(post,xstr("\tif(in_", name, "==(1ll<<62)) in_", name, "=", x_c(map_val(v2,"default")), "\n", End), End); };
-			}else if(str_eq(map_val(v2,"type"),"void*")){
-				decls=xcat(decls,"\tzval* ","in_",name,"_zval=NULL;\n", End);
-				pointers=xcat(pointers,", &in_",name,"_zval", End);
-				format=xcat(format,"z", End);
-				if(map_val(v2,"default")){
-					post=xcat(post,"\tvoid* ","in_",name,"=NULL;\n", End);
-					post=xcat(post,xstr("\tif(!in_", name, "_zval) in_", name, "=", x_c(map_val(v2,"default")), "\n", End), End);
-					post=xcat(post,"\telse in_",name,xstr("=zval_var(in_", name, "_zval);\n", End), End);
-				}else{ post=xcat(post,"\tvoid* ","in_",name,xstr("=zval_var(in_", name, "_zval);\n", End), End); };
-			}else if(str_eq(map_val(v2,"type"),"map*")){
-				decls=xcat(decls,"\tzval* ","in_",name,"_zval=NULL;\n", End);
-				pointers=xcat(pointers,", &in_",name,"_zval", End);
-				format=xcat(format,"z", End);
-				if(map_val(v2,"default")){
-					post=xcat(post,"\tvoid* ","in_",name,"=NULL;\n", End);
-					post=xcat(post,xstr("\tif(!in_", name, "_zval) in_", name, "=", x_c(map_val(v2,"default")), "\n", End), End);
-					post=xcat(post,"\telse in_",name,xstr("=zval_var(in_", name, "_zval);\n", End), End);
-				}else{ post=xcat(post,"\tmap* ","in_",name,xstr("=zval_var(in_", name, "_zval);\n", End), End); };
-			}else{ skip=1; break; };
-			call=xcat(call,xstr("in_", name, ",", End), End);
-		};
-		if(skip){ continue; };
-		reg=xcat(reg,xstr("\tPHP_FE(", foxname, ", NULL)\n", End), End);
-		call=sub_str(call,0,-1);
-		ret=xcat(ret,xstr("\nPHP_FUNCTION(", foxname, "){\n", End), End);
-		if(map_len(map_val(v,"params"))){
-			ret=xstr(ret,xstr("", 
-			decls, "\tif(zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC,\"", format, "\"", pointers, ")==FAILURE){ RETURN_NULL(); }\n", 
-			post, "\n", 
-			"", 
-			"", End), End); };
-		if(str_eq(map_val(v,"type"),"void")){
-			ret=xcat(ret,xstr("\t", map_val(v,"name"), "(", call, ");\n", End), End);
-			ret=xcat(ret,"\tRETURN_NULL();\n", End);
-		}else{
-			ret=xcat(ret,xstr("\t", map_val(v,"type"), " ret=", map_val(v,"name"), "(", call, ");\n", End), End);
-			if(str_eq(map_val(v,"type"),"int")){ ret=xcat(ret,"\tRETURN_LONG(ret);\n", End); }
-			else if(str_eq(map_val(v,"type"),"char*")){
-				ret=xcat(ret,"\tif(!ret) RETURN_NULL();\n", End);
-				ret=xcat(ret,"\tRETVAL_STRING(ret);\n", End);
-			}else if(str_eq(map_val(v,"type"),"map*")){
-				ret=xcat(ret,""
-				"	zval zret;\n"
-				"	if(!ret){\n"
-				"		array_init(&zret);\n"
-				"	}\n"
-				"	else zret=var_zval(ret);\n"
-				"	RETURN_ZVAL(&zret,0,0);\n"
-				""
-				"", End);
-			}else if(str_eq(map_val(v,"type"),"void*")){
-				ret=xcat(ret,"\tzval zret=var_zval(ret);\n", End);
-				ret=xcat(ret,"\tRETURN_ZVAL(&zret,0,0);\n", End); }; };
-		ret=xcat(ret,"}\n", End);
-	};
-	ret=xcat(ret,xstr("", 
-	"\n", 
-	"static zend_function_entry ", name, "_functions[] = {\n", 
-	reg, "\t{NULL, NULL, NULL}\n", 
-	"};\n", 
-	"", 
-	"", End), End);
-	ret=xcat(ret,xstr("", 
-	"PHP_RINIT_FUNCTION(", name, "){\n", 
-	"	gc_start();\n", 
-	"	return SUCCESS;\n", 
-	"}\n", 
-	"PHP_RSHUTDOWN_FUNCTION(", name, "){\n", 
-	"	gc_end();	\n", 
-	"	return SUCCESS;\n", 
-	"}\n", 
-	"\n", 
-	"zend_module_entry ", name, "_module_entry = {\n", 
-	"#if ZEND_MODULE_API_NO >= 20010901\n", 
-	"	STANDARD_MODULE_HEADER,\n", 
-	"#endif\n", 
-	"\t\"", name, "\",\n", 
-	"\t", name, "_functions,\n", 
-	"	NULL,\n", 
-	"	NULL,\n", 
-	"\tPHP_RINIT(", name, "),\n", 
-	"\tPHP_RSHUTDOWN(", name, "),\n", 
-	"	NULL,\n", 
-	"#if ZEND_MODULE_API_NO >= 20010901\n", 
-	"	\"0.70\", //Version Number\n", 
-	"#endif\n", 
-	"	STANDARD_MODULE_PROPERTIES\n", 
-	"};\n", 
-	"\n", 
-	"#ifdef COMPILE_DL_", str_upper(str_dup(name)), "\n", 
-	"ZEND_GET_MODULE(", name, ")\n", 
-	"#endif\n", 
-	"\n", 
-	"void xexit(int val){\n", 
-	"	zend_error(E_ERROR,\"%s\",\"Exiting Abnormally\");\n", 
-	"}\n", 
-	"void* fox_error(char* msg,int dump){\n", 
-	"	if(dump) php_printf(\"<pre>%s</pre>\",stack_str());\n", 
-	"	zend_error(E_ERROR,\"%s\",msg);\n", 
-	"	return msg;\n", 
-	"}\n", 
-	"void* px(void* str,int newline){\n", 
-	"	php_printf(\"%s\",str);\n", 
-	"	return str;\n", 
-	"}\n", 
-	"void* zval_var(zval* z){\n", 
-	"	if(!z) return NULL;\n", 
-	"	int type=Z_TYPE_P(z);\n", 
-	"	if(type==IS_NULL) return NULL;\n", 
-	"	else if(type==IS_ARRAY) return zval_map(z);\n", 
-	"	else if(type==IS_STRING) return str_dup(Z_STRVAL_P(z));\n", 
-	"	else if(type==IS_TRUE||type==IS_FALSE||type==IS_LONG) return int_var(Z_LVAL_P(z));\n", 
-	"	else if(type==IS_DOUBLE) return int_var((int)Z_DVAL_P(z));\n", 
-	"	else if(type==IS_RESOURCE) return \"<RES>\";\n", 
-	"	else if(type==IS_OBJECT) return \"<OBJ>\";\n", 
-	"	else if(type==IS_REFERENCE) return \"<REF>\";\n", 
-	"	else if(type==IS_UNDEF) return NULL;\n", 
-	"	else if(type==IS_CONSTANT) return \"<CONST>\";\n", 
-	"	else if(type==IS_CONSTANT_AST) return \"<AST>\";\n", 
-	"	else if(type==IS_INDIRECT) return \"<INDIRECT>\";\n", 
-	"	else if(type==IS_PTR) return \"<PTR>\";\n", 
-	"	printf(\"utype=%d\\n\",type);\n", 
-	"	return \"<UNKNOWN>\";\n", 
-	"}\n", 
-	"zval var_zval(void* v){\n", 
-	"	zval ret={0};\n", 
-	"	if(!v) { ZVAL_NULL(&ret); }\n", 
-	"	else if(is_map(v)) return map_zval(v);\n", 
-	"	else if(is_str(v) && v){ ZVAL_STRING(&ret,v); }\n", 
-	"	else if(is_i(v)){ ZVAL_LONG(&ret,is_int(v)); }\n", 
-	"	else if(is_f(v)){ ZVAL_DOUBLE(&ret,is_double(v)); }\n", 
-	"	return ret;\n", 
-	"}\n", 
-	"zval map_zval(map* mp){\n", 
-	"	zval ret={0};\n", 
-	"	array_init(&ret);\n", 
-	"	for(int i=next(mp,-1,NULL,NULL);has_id(mp,i);i++){\n", 
-	"		char* k=map_key(mp,i);\n", 
-	"		zval z=var_zval(map_id(mp,i));\n", 
-	"		if(is_i(k)) add_index_zval(&ret,is_int(k)-1,&z);\n", 
-	"		else add_assoc_zval(&ret,k,&z);\n", 
-	"	}\n", 
-	"	return ret;\n", 
-	"}\n", 
-	"map* zval_map(zval* z){\n", 
-	"	if(!z) return NULL;\n", 
-	"	map* mp=new_map();\n", 
-	"	zval *arr, *data;\n", 
-	"	HashTable *arr_hash=Z_ARRVAL_P(z);\n", 
-	"	HashPosition pointer;\n", 
-	"	for(zend_hash_internal_pointer_reset_ex(arr_hash, &pointer); (data=zend_hash_get_current_data_ex(arr_hash, &pointer)); zend_hash_move_forward_ex(arr_hash, &pointer)){\n", 
-	"		zend_string *zkey;\n", 
-	"		zend_ulong index;\n", 
-	"		char* key;\n", 
-	"		if(zend_hash_get_current_key_ex(arr_hash,&zkey,&index,&pointer)==HASH_KEY_IS_LONG) key=int_var(index+1);\n", 
-	"		else key=ZSTR_VAL(zkey);\n", 
-	"		map_add(mp,key,zval_var(data));\n", 
-	"	}\n", 
-	"	return mp;\n", 
-	"}\n", 
-	"void* php_global(char* name){\n", 
-	"	zend_string* key=zend_string_init(name,strlen(name),0);\n", 
-	"	zval* zret=zend_hash_find(&EG(symbol_table), key);\n", 
-	"	zend_string_release(key);\n", 
-	"	if(!zret) return NULL;\n", 
-	"	if(Z_TYPE_P(zret)==IS_INDIRECT) zret = Z_INDIRECT_P(zret);\n", 
-	"	if(Z_TYPE_P(zret)==IS_REFERENCE) ZVAL_DEREF(zret);\n", 
-	"	return zval_var(zret);\n", 
-	"}\n", 
-	"void* call_php(map* params,char* func){\n", 
-	"	zval z={0};\n", 
-	"	zval php_func={0};\n", 
-	"	ZVAL_STRING(&php_func,func);\n", 
-	"	int no=params && params->len ? params->len : 0;\n", 
-	"	zval* php_args=NULL;\n", 
-	"	void* ret={0};\n", 
-	"	if(no){\n", 
-	"		php_args=emalloc(sizeof(zval)*no);\n", 
-	"		for(int i=0;i<no;i++) php_args[i]=var_zval(map_id(params,i));\n", 
-	"	}\n", 
-	"	if(call_user_function(CG(function_table),NULL,&php_func,&z,no,php_args)!=SUCCESS){\n", 
-	"		zend_error(E_ERROR,\"Call to %s failed\\n\",func);\n", 
-	"	}\n", 
-	"	else ret=zval_var(&z);\n", 
-	"	if(no){\n", 
-	"		for(int i=0;i<no;i++) zval_dtor(&php_args[i]);\n", 
-	"		efree(php_args);\n", 
-	"	}\n", 
-	"	zval_dtor(&z);\n", 
-	"	return ret;\n", 
-	"}\n", 
-	"", 
-	"", End), End);
-	return write_file(ret,outfile,0,1);
-};
-static char* write_phpconfig(){
-	return write_file(""
-	"PHP_ARG_ENABLE(foxphp, whether to enable FoxPHP library support,\n"
-	"[ --enable-foxphp   Enable FoxPHP library support])\n"
-	"if test \"$PHP_FOXPHP\" = \"yes\"; then\n"
-	"  PHP_SUBST(CFLAGS)\n"
-	"  AC_DEFINE(HAVE_FOXPHP, 1, [Whether you have FoxPHP Library])\n"
-	"  PHP_NEW_EXTENSION(foxphp, foxphp.c fox.c sql.c extern.c callfunc.c, $ext_shared,,-Wno-logical-op-parentheses -DPHP_MOD)\n"
-	"fi\n"
-	""
-	"","config.m4",0,1);
-};
 static char* meta_h(char* prefix){
 	if(prefix){prefix=xstr(prefix,"_", End);};
 	return xstr("", 
-	"char* ", prefix, "version();\n", 
+	"#pragma once\n", 
 	"void* ", prefix, "invoke(map* v,char* name);\n", 
 	"map* ", prefix, "reflect();\n", 
 	"int cmdline();\n", 
@@ -468,40 +274,33 @@ static char* meta_h(char* prefix){
 	"", 
 	"", End);
 };
-static char* funcs_meta(map* funcs, map* macros, map* structs, char* prefix){
-	map* depends=new_map();
-	for(int next1=next(funcs,-1,NULL,NULL); has_id(funcs,next1); next1++){ void* val=map_id(funcs,next1); char* name=map_key(funcs, next1);
-		add(depends,name,func_depend(map_val(val,"body"),new_map()));
-		map_del_key(val,"body"); };
+static char* funcs_meta(map* data, char* prefix){
 	if(prefix){prefix=xstr(prefix,"_", End);};
-	return x_c(xstr("", 
+	return xstr("", 
 	"/* This is a generated file. To change it, edit function funcs_meta() in generator.fox */\n", 
-	"char* ", prefix, "version(){\n", 
-	"\treturn \"Fox: build: ", increase_version(), ", date: ", time_str(0), " [%s old]\".mstr(\"", time_str(0), "\".time_ago());\n", 
-	"}\n", 
 	"void* ", prefix, "invoke(map* v,char* name){\n", 
-	"	unsigned long long idn=str_hash((unsigned char*)name)\n", 
+	"	unsigned long long idn=str_hash((unsigned char*)name);\n", 
 	"	switch(idn){\n", 
-	"//", callfunc_c(funcs), "\n", 
+	"//", callfunc_c(map_val(data,"funcs")), "\n", 
 	"	}\n", 
-	"\treturn \"invoke(): Function $name not defined\".fox_error()\n", 
+	"	return fox_error(xstr(\"invoke(): Function %s not defined\", name, End), 0);\n", 
 	"}\n", 
 	"map* ", prefix, "reflect(){\n", 
-	"	return {\n", 
-	"\t\tfuncs: ", map_ccode(funcs), ",\n", 
-	"\t\tmacros: ", map_ccode(macros), ",\n", 
-	"\t\tstructs: ", map_ccode(structs), "\n", 
-	"\t\tdepends: ", map_ccode(depends), "\n", 
-	"	}\n", 
+	"	return xmap(\n", 
+	"\t\t\"funcs\", ", map_ccode(map_val(data,"funcs")), ",\n", 
+	"\t\t\"macros\", ", map_ccode(map_val(data,"macros")), ",\n", 
+	"\t\t\"structs\", ", map_ccode(map_val(data,"structs")), ",\n", 
+	"\t\t\"depends\", ", map_ccode(map_val(data,"depends")), ",\n", 
+	"\t\t\"pragmas\", ", map_ccode(map_val(data,"pragmas")), ",\n", 
+	"\t\t\"version\", ", map_ccode(map_val(data,"version")), ", End\n", 
+	"	);\n", 
 	"}\n", 
 	"", 
-	"", End));
+	"", End);
 };
 static char* gen_htaccess(char* outfile){
 	return write_file(""
 	"RewriteEngine On\n"
-	"#RewriteCond %{HTTPS} off\n"
-	"#RewriteRule (.*) https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]\n"
 	"RewriteCond %{REQUEST_FILENAME} !-f\n"
 	"RewriteCond %{REQUEST_FILENAME} !-d\n"
 	"RewriteRule ^(.+)$ index.cgi [L,QSA]\n"
@@ -517,61 +316,67 @@ static char* gen_cgi_makefile(char* name, char* outfile){
 	return write_file(xstr("", 
 	"all:\n", 
 	"\tfox cgi ", name, ".fox\n", 
-	"fox:\n", 
-	"	cd /web/fox && make install && cd -\n", 
-	"c:\n", 
-	"	fox cgi salat.fox --keepfiles=1\n", 
+	"debug:\n", 
+	"\tfox cgi ", name, ".fox --profile=cgidebug\n", 
 	"", 
 	"", End),outfile,0,1);
 };
 static char* gen_fox_cgi(char* name,char* outfile){
 	return write_file(xstr("", 
 	"#line 2 \"", name, ".fox\"\n", 
+	"\n", 
+	"#include <fcgi_stdio.h> /* fcgi library; put it first*/\n", 
+	"#include <core.h>\n", 
+	"#include <syslog.h>\n", 
 	"#include \"", name, ".h\"\n", 
 	"\n", 
-	"run(){\n", 
+	"int run(map* args){\n", 
 	"\t_globals.dbs.", name, "=\"", name, ".db\"\n", 
 	"	if cmdline() => return 0\n", 
-	"\n", 
-	"	path=_globals.paths\n", 
-	"\n", 
-	"	if \"/\".get().end\n", 
-	"		{{\n", 
-	"\t\t\ttitle ", str_title(name), "'s Application\n", 
-	"		}}.show_page()\n", 
-	"\n", 
-	"	not_found()\n", 
+	"	LOG_INFO.syslog(\"fox.fcgi started\")\n", 
+	"	while FCGI_Accept() >= 0\n", 
+	"		ret=http_req().dispatch()\n", 
+	"		//close_conns()\n", 
+	"		_queries=0\n", 
+	"		\"%s\".printf(ret or \"content-type: text/html\\r\\n\\r\\nBody is Blank!\")\n", 
+	"		//gc_reset()\n", 
+	"	LOG_INFO.syslog(\"fox.fcgi exit\")\n", 
 	"	return 0\n", 
+	"}\n", 
+	"\n", 
+	"char* dispatch(map* req){\n", 
+	"	path=_globals.paths\n", 
+	"	if \"/\".get().end\n", 
+	"\t\treturn \"Hello World! - from ", name, ".\".show_body{{\n", 
+	"\t\t\ttitle ", str_title(name), "'s Application\n", 
+	"		}}\n", 
+	"\n", 
+	"	return not_found()\n", 
 	"}\n", 
 	"", 
 	"", End),outfile,0,1);
-};
-int init_html(char* name){
-	write_file(page_html(page_data(xmap(
-		"title", str_title(name),
-		"body", name,
-		"tabs",xmap(
-			"../", "Home", End)
-	, End))),xstr(name,".html", End),0,1);
-	return 0;
 };
 int init_fox(char* name){
 	if(!is_file("Makefile")){
 		write_file(xstr("", 
 		"all:\n", 
 		"\tfox cc ", name, ".fox\n", 
+		"\t./", name, "\n", 
+		"debug:\n", 
+		"\tfox cc ", name, ".fox --profile=debug\n", 
+		"\t./", name, "\n", 
 		"fox:\n", 
-		"	cd /web/fox && make install && cd -\n", 
+		"	pushd . && cd /web/fox2 && make install && popd\n", 
 		"", 
 		"", End),"Makefile",0,1); };
 	char* filename=xstr(name, ".fox", End);
 	if(!is_file(filename)){
 		write_file(xstr("", 
 		"#line 2 \"", name, ".fox\"\n", 
+		"#include <core.h>\n", 
 		"#include \"", name, ".h\"\n", 
 		"\n", 
-		"run(){\n", 
-		"\n", 
+		"int run(map* args){\n", 
 		"	return 0\n", 
 		"}\n", 
 		"", 
@@ -585,8 +390,10 @@ int init_cgi(char* name){
 	return 0;
 };
 char* c_h(char* infile,char* outfile){ return write_file(funcs_cdecl(file_funcs(infile,0),0),outfile,0,1); };
-char* fox_h(char* infile,char* outfile){ return write_file((xstr("#include <fox.h>\n",funcs_cdecl(file_funcs(infile,0),0), End)),outfile,0,1); };
-static map* x_map(char* in){ return c_tokenizer(&in,'\0'); };
+char* fox_h(char* infile,char* outfile){
+	return write_file((xstr("#pragma once\n",fox_defines(infile),funcs_cdecl(file_funcs(infile,0),0), End)),outfile,0,1);
+};
+//static
 char* c_x(char* in){ return toks_c(map_tox(x_map(in))); };
 
 static char* map_ccode(void* mp){
@@ -605,23 +412,13 @@ static char* map_ccode(void* mp){
 		for(int i1=next(mp,-1,NULL,NULL); has_id(mp,i1); i1++){ void* v1=map_id(mp,i1);
 			ret=xcat(ret,xstr(map_ccode(v1), ",", End), End); };
 		return xstr(ret,"End)", End); };
-	return fox_error(xstr("Unknown type of variable ", to_str(mp,"",0), " [", ptr_name(mp), "]", End),0);	
+	return fox_error(xstr("Unknown type of variable ", to_str(mp,"",0), End),0);	
 };
 static char* file_foxh(char* infile,char* outfile){
 	return write_file(funcs_cdecl(file_funcs(infile,0),1),outfile,0,1);
 };
-static char* func_cdecl(map* fn,int show_default){
-	char* ret2="";
-	map* map_1=map_val(fn,"params"); for(int i2=next(map_1,-1,NULL,NULL); has_id(map_1,i2); i2++){ void* param=map_id(map_1,i2); char* name=map_key(map_1, i2);
-		char* s=str_join(map_val(param,"type")," ",name);
-		if(str_eq(name,"...")){ s=name; };
-		if(show_default){ s=str_join(s,"=",map_val(param,"default")); };
-		ret2=str_join(ret2,", ",s); };
-	char* file=NULL;
-	if(map_val(fn,"file")){ file=xstr("//", map_val(fn,"file"), End); };
-	return xstr(map_val(fn,"decltype"), " ", map_val(fn,"name"), "(", ret2, "); ", file, End);
-};
-static char* funcs_cdecl(map* fns,int show_default){
+//static
+char* funcs_cdecl(map* fns,int show_default){
 	char* ret="";
 	for(int  i=next(fns,-1,NULL,NULL); has_id(fns, i);  i++){ void* v=map_id(fns, i); char*  k=map_key(fns,  i);
 		if(is_word(k,"main")){ continue; };
@@ -629,286 +426,10 @@ static char* funcs_cdecl(map* fns,int show_default){
 		ret=xcat(ret,"\n", End); };
 	return ret;
 };
-static char* foxh(){
-	return ""
-	"/* This is a generated file. To change it, edit function foxh() in fox.c */\n"
-	"#pragma once\n"
-	"#ifndef _XOPEN_SOURCE\n"
-	"#define _XOPEN_SOURCE\n"
-	"#endif\n"
-	"#ifndef _GNU_SOURCE\n"
-	"#define _GNU_SOURCE\n"
-	"#endif\n"
-	"#include <setjmp.h>\n"
-	"#include <memory.h>\n"
-	"#include <stdio.h>\n"
-	"#include <stdlib.h>\n"
-	"#include <assert.h>\n"
-	"#include <stdarg.h>\n"
-	"#include <math.h>\n"
-	"#include <time.h>\n"
-	"#include <assert.h>\n"
-	"#include <sys/time.h>\n"
-	"#include <regex.h>\n"
-	"#ifndef __MINGW32__\n"
-	"#include <execinfo.h>\n"
-	"#include <sys/wait.h>\n"
-	"#include <sys/socket.h>\n"
-	"#include <netinet/in.h>\n"
-	"#include <arpa/inet.h>\n"
-	"#include <netdb.h>\n"
-	"#endif\n"
-	"#include <unistd.h>\n"
-	"#include <ctype.h>\n"
-	"#include <dirent.h>\n"
-	"#include <sys/types.h>\n"
-	"#include <sys/stat.h>\n"
-	"\n"
-	"#include <signal.h>\n"
-	"#include <sqlite3.h>\n"
-	"//	#include <openssl/md5.h>\n"
-	"\n"
-	"enum Types {\n"
-	"	Null,Int,Double,String,Blob,Map,Vector,Index,Keys,Cell,Cell2,Tail\n"
-	"};\n"
-	"typedef struct Mapcell {\n"
-	"	int nextid;\n"
-	"	int hkey;\n"
-	"	char* id;\n"
-	"	void* val;\n"
-	"} Mapcell;\n"
-	"typedef struct map {\n"
-	"	int len;\n"
-	"	char type;\n"
-	"	union {\n"
-	"		struct Mapcell* pairs;\n"
-	"		void** vars;\n"
-	"	};\n"
-	"} map;\n"
-	"\n"
-	"#define each_mem(pg,i) int i=0; for(mempage* pg=_gcdata.pages;i<_gcdata.total_pages;i++,pg=_gcdata.pages+i)\n"
-	"#define max(a,b) ((a)>(b)?(a):(b))\n"
-	"#define min(a,b) ((a)<(b)?(a):(b))\n"
-	"#ifdef __MINGW32__\n"
-	"#define is_i(x) ((int)(x)>>30 & 1)\n"
-	"#else\n"
-	"#define is_i(x) ((long long)(x)>>61 & 2)\n"
-	"#define is_f(x) ((*(long long*)&(x))>>61 & 1)\n"
-	"#define is_num(x) ((*(long long*)&(x))>>61 & 3)\n"
-	"#endif\n"
-	"\n"
-	"typedef struct mempage {\n"
-	"	int no;\n"
-	"	int idx;\n"
-	"	int block_size;\n"
-	"	int blocks;\n"
-	"	int free;\n"
-	"	char* types;\n"
-	"	char* page;\n"
-	"	map chains;\n"
-	"	int abandoned;\n"
-	"} mempage;\n"
-	"struct gcdata {\n"
-	"	int total_pages;\n"
-	"	void** stack_head;\n"
-	"	int page_no;\n"
-	"	long long max_used;\n"
-	"	long long curr_used;\n"
-	"	long long max_mem;\n"
-	"	long long curr_mem;\n"
-	"	mempage* pages;\n"
-	"	int gcruns;\n"
-	"	int gcwaste;\n"
-	"	int inalloc;\n"
-	"	int gctime;\n"
-	"	int gcmax;\n"
-	"	int max_roots;\n"
-	"	struct timeval run_time;\n"
-	"	struct timeval time;\n"
-	"	size_t clockstart;\n"
-	"	int total_time;\n"
-	"};\n"
-	"extern struct gcdata _gcdata;\n"
-	"extern map* _globals;\n"
-	"\n"
-	"extern int _printed;\n"
-	"extern int _is_web;\n"
-	"\n"
-	"extern char* skip;\n"
-	"\n"
-	"#define None 0x0F9AD3BA\n"
-	"#define End (char*)(0x0FF1B14E059AD3BA)\n"
-	"\n"
-	"void* invoke(map* v,char* name);\n"
-	"char* strstr(const char* str1,const char* str2);\n"
-	"int chdir(const char* path);\n"
-	"int max_mem();\n"
-	"int curr_mem();\n"
-	"map* reflect();\n"
-	"char* version();\n"
-	""
-	"";
-};
-static void* marked_str(char* str,char* name){
-	if(!str){ return NULL; };
-	str=str_trim(str," \t");
-	if(str_eq(str,"\"\"")){ return ""; };
-	if(!str_len(str)){ return NULL; };
-	if(str_eq(str,"NULL")){
-		return NULL;
-	};
-	if(str[0]=='{'){
-		if(str[str_len(str)-1]=='}'){ str[str_len(str)-1]='\0'; };
-		map* mp=xjson_map(str+1,Map);
-		return mp;
-	};
-	if(is_numeric(str)){ return int_var(stoi(str)); };
-	if(str[0]=='['){
-		if(str[str_len(str)-1]==']'){ str[str_len(str)-1]='\0'; };
-		map* mp=xjson_map(str+1,Vector);
-		return mp;
-	};
-	if(str[0]=='\\'){ return sub_str(str,1,-2147483648); };
-	if(str[0]==':'){
-		str++;
-		char* thealpha=read_alpha(&str);
-		return map_merge(xmap("type", thealpha,"name", name, End),xjson_map(str+1,Index)); };
-	return str;
-};
-map* map_add_pair(map* mp,void* name,void* value,int type){
-	if(!name && !value){ return mp; };	
-
-	if(str_eq(name,"null")){ name=NULL; }
-	else if(is_numeric(name)){ name=int_var((to_int(name)+1)); }
-	else {name=str_unquote(name);};
-
-	if(name && value && *(char*)value==':'){
-		if(!map_len(mp)){
-			return xadd(mp,"type",sub_str(value,1,-2147483648),"name",name, End);
-		}else{
-			char* str=value;
-			str++;
-			char* thealpha=read_alpha(&str);
-			value=map_merge(xmap("type", thealpha,"name", name, End),xjson_map(str+1,Index)); };
-	};
-	if(str_eq(value,"null")){ value=NULL; }
-	else if(is_numeric(value)){
-		if(str_chr(value,'.')){
-			value=double_var(str_double(value));
-		}else{
-			value=int_var(to_int(value)); };
-	}else {value=str_unquote(value);};
-
-	if(type==Vector){ return vec_add(mp,value); };
-	return add(mp,name,value);
-};
-static map* add_name_val(map* mp,char* str,char** name,char** val,int type){
-	char* name1=*name;
-	char* val1=*val;
-	if(!name1 && !val1){ return mp; };
-	*name=NULL;
-	*val=NULL;
-	void* v=NULL;
-	if(type==Vector){
-		char* s=str_trim(sub_str(name1,0,str-name1)," \t\n\r");
-		return vec_add(mp,marked_str(s,NULL));
-	};
-	if(val1){
-		name1=str_trim(name1," \t");
-		name1=str_replace(name1,"\\=","=");
-		if(!str_len(name1)){ name1=NULL; };
-		v=marked_str(sub_str(val1,0,str-val1),name1);
-	}else if(name1){ v=marked_str(sub_str(name1,0,str-name1),NULL); name1=NULL; };
-	if(type==Index && !str_len(name1)){ name1=to_str(v,"",0); }
-	else if(type==Keys && !name1){
-		name1=to_str(v,"",0);
-		v=NULL; };
-	map_add(mp,name1,v);
-	return mp;
-};
-static char* read_as_block(char** from,int level,char* terminator){
-	char* str=*from;
-	char* ret=NULL;
-	while(*str){
-		if(str_start(str,"//")){ str+=line_len(str); continue; };
-		int tabs=str_level(str);
-		int len=line_len(str);
-		if(tabs>=level||line_isempty(str)){
-			ret=xcat(ret,len-level>0 ? sub_str(str,level,len-level) : "\n", End);
-		}else {break;};
-		str+=len; };
-	if(str_eq(str_trim(sub_str(str,str_level(str),line_len(str)-str_level(str))," \t\n\r"),terminator)){
-		int len2=line_len(str);
-		str+=len2; };
-	*from=str;
-	if(str_len(ret) && ret[str_len(ret)-1]=='\n'){ ret=sub_str(ret,0,-1); };
-	return ret;
-};
-map* block_map(char** from,int inlevel,int maptype){
-	if(!from){ return NULL; };
-	map* ret=NULL;
-	if(maptype==Vector){ ret=new_vec(); }
-	else {ret=new_map();};
-	char* str=*from;
-	if(!str_len(str)){ return NULL; };
-	int level=0;
-	int iscomment=0;
-	char* blk=NULL;
-	char* name=NULL;
-	char* val=NULL;
-	for(;*str;str++){
-		if(*str=='\n'||*str=='\r'){
-			add_name_val(ret,str,&name,&val,maptype);
-			level=0;
-			iscomment=0;
-			blk=NULL;
-			continue; };
-		if(!name && !val){
-			if(iscomment){ continue; };
-			if(!blk){ blk=str; };
-			if(*str=='/' && str[1]=='/'){ str++; iscomment=1; continue; };
-			if(*str=='\t'){ level++; continue; };
-			if(level<inlevel){
-				*from=blk;
-				return ret; };
-			if(level>inlevel){
-				char* s=is_str(map_id(ret,ret->len-1));
-				if(str_eq(s,"|")){ set_map(read_as_block(&blk,inlevel+1,"-"),ret,ret->len-1); }
-				else if(s && str_start(s,"---")){ set_map(read_as_block(&blk,inlevel+1,s),ret,ret->len-1); }
-				else if(ptr_type(map_id(ret,ret->len-1))==Vector){ set_map(block_map(&blk,inlevel+1,Vector),ret,ret->len-1); }
-				else if(ptr_type(map_id(ret,ret->len-1))==Map){ set_map(block_map(&blk,inlevel+1,Map),ret,ret->len-1); }
-				else if(maptype==Vector){
-					continue;
-				}else{
-					if((str_len(s) && is_int(map_key(ret,ret->len-1)))){ change_key(ret,ret->len-1,s); };
-					set_map(block_map(&blk,inlevel+1,maptype),ret,ret->len-1); };
-				str=blk-1;
-				level=0;
-				iscomment=0;
-				blk=NULL;
-				name=NULL;
-				val=NULL;
-				continue;
-			};
-			if(maptype!=Vector && *str=='='){ val=str+1; continue; };
-			name=str;
-		};
-		if(!val){
-			if(*str=='\\'){ str++; continue; };
-			if(maptype!=Vector && *str=='='){
-				name=sub_str(name,0,str-name);
-				val=str+1;
-				continue; };
-			continue; };
-		continue; };
-	add_name_val(ret,str,&name,&val,maptype);
-	*from=str;
-	return ret;
-};
 static char* old_decl_type(map* mp,int idx){
 	int from=stm_start(mp,idx,"{};,().>:=><!&-+/?");
 	for(int i=from;i<idx;i+=2){
-		if(is_word(map_id(mp,i),"int long double float char void struct map static extern unsigned register mempage size_t time_t const")){
+		if(is_word(map_id(mp,i),"int long double float char void struct map static extern unsigned register mempage size_t time_t const var")){
 			return toks_c(vec_sub(mp,from,idx-from-1)); }; };
 	return NULL;
 };
@@ -933,195 +454,6 @@ static map* toks_keywords(map* mp,char* keywords){
 	if(curr->len){ add(ret,curr_key,toks_align(curr)); };
 	return ret;
 };
-char* read_num(char** in){
-	char* str=*in;
-	int deci=0;
-	str++;
-	while(*str && ((*str>='0' && *str<='9')||(*str=='.' && !deci++ && !is_alpha(str[1],NULL)))){
-		str++; };
-	char* from=*in;
-	*in=str-1;
-	return sub_str(from,0,str-from);
-};
-char* skip_word(char* in,char* seperators){
-	if(!in || !*in){ return in; };
-	char term='\0';
-	int counter=0;
-	char opener='\0';
-	if(strchr("[({",*in)){ opener=*in; };
-	if(strchr("\"'`",*in)){ term=*in; in++; }
-	else if(*in=='['){ term=']'; in++; }
-	else if(*in=='('){ term=')'; in++; }
-	else if(*in=='{'){ term='}'; in++; };
-	while(*in){
-		if(opener){
-			if(strchr("\"'`",*in)){ in=skip_word(in,seperators); continue; }
-			else if(*in==opener){ counter++; }; };
-		if(*in==term){
-			if(!counter){ in++; break; };
-			counter--;
-		}else if(!term && strchr(seperators,*in)){ break; }
-		else if(*in=='\\' && in[1]){ in++; };
-		in++; };
-	return in;
-};
-void* read_value(char** str, char* sep){
-	if(**str=='{'||**str=='['){ return xjson_map_recurse(str,Map); };
-	char* from=*str;
-	*str=skip_word(from,sep);
-	char* ret=sub_str(from,0,*str-from);
-	return ret ? ret : "null";
-};
-char* read_upto(char** in,char* terminators){
-	char* str=*in;
-	int isquote=0;
-	if(*str=='"'){ terminators="\""; str++; }
-	else if(*str=='\''){ terminators="'"; str++; };
-	while(*str && !strchr(terminators,*str)){
-		if(*str=='\\' && str[1]){ str++; };
-		str++; };
-	if((*terminators=='\'' || *terminators=='"') && *str==*terminators){ str++; };
-	char* from=*in;
-	*in=str;
-	return sub_str(from,0,str-from);
-};
-char* read_alpha(char** in){
-	char* str=*in;
-	str++;
-	while(*str && is_alphanum(*str,NULL)) {str++;};
-	char* from=*in;
-	*in=str-1;
-	return sub_str(from,0,str-from);
-};
-char* fox_read_symbol(char** in){
-	char* str=*in;
-	str++;
-	while(*str){
-		if(*str=='\\'){
-			str+=2;
-			continue; };
-		if(!is_alphanum(*str,NULL)){ break; };
-		str++; };
-	char* from=*in;
-	*in=str-1;
-	return sub_str(from,0,str-from);
-};
-char* fox_read_oper(char** in,char term){
-	char* str=*in;
-	char* from=*in;
-	while(*str && is_oper(*str) && *str!=term) {str++;};
-	char* ret=sub_str(from,0,str-from);
-	int less=0;
-	while(strlen(ret) && !is_word(ret,"~ ! @ # $ % ^ & * - = + | < > ? / \\ } ] ) . != >= <= += -= /= *= || && << >> => ++ -- ** *** **** |= &= >>= <<= ^^ ... -> == === !== .= .. ||= &&=")){
-		ret[strlen(ret)-1]='\0';
-		less++; };
-	*in=str-1-less;
-	return ret;
-};
-char* read_upto_word(char** in,char* upto){
-	char* str=*in;
-	while(*str && !str_start(str,upto)) {str++;};
-	char* from=*in;
-	if(*str){
-		*in=str+strlen(upto)-1;
-		return sub_str(from,0,str-from+strlen(upto));
-	}else{
-		*in=str-1;
-		return sub_str(from,0,str-from);
-	};};
-char* read_theline(char** in){
-	if(!in||!*in||!**in){ return NULL; };
-	char* str=*in;
-	while(*str && !strchr("\n\r",*str)) {str++;};
-	if(*str=='\r' && str[1]=='\n'){ str++; };
-	char* from=*in;
-	*in=str-1;
-	return sub_str(from,0,str-from);
-};
-char* read_newline(char** in){
-	char* str=*in;
-	while(*str && strchr("\n\r",*str)) {str++;};
-	char* from=*in;
-	*in=str-1;
-	return sub_str(from,0,str-from);
-};
-char* read_space(char** in,char* spaces){
-	char* str=*in;
-	while(*str && strchr(spaces,*str)) {str++;};
-	char* from=*in;
-	*in=str-1;
-	return sub_str(from,0,str-from);
-};
-static map* read_data(char** in){
-	char* str=*in;
-	char* from=*in;
-	while(*str && !str_start(str,"}}")){
-		str+=line_len(str);
-		str+=str_level(str); };
-	if(*str){ str+=2; };
-	*in=str-1;
-	return data_toks(sub_str(from,0,str-from));
-};
-static char* read_heredoc(char** in){
-	char* str=*in;
-	int len=line_len(str);
-	char* hd=str_trim(sub_str(str,0,len)," \t\n\r");
-	char* from=*in;
-	int lno=0;
-	str+=len;
-	int tabs=str_level(str);
-	str+=tabs;
-	while(*str && !str_start(str,hd)){
-		len=line_len(str);
-		tabs=str_level((str+len));
-		str+=len+tabs; };
-	if(*str){ str+=str_len(hd)-1; };
-	*in=str;
-	return sub_str(from,0,str-from+1);
-};
-static char* read_multistr(char** in){
-	char* str=*in;
-	char end=*str;
-	char* hd=NULL;
-	char* from=*in;
-	int lno=0;
-	char* word_start=NULL;
-	str++;
-	while(*str){
-		if(*str=='\\'){ if(!hd) {str++;}; }
-		else if(*str==end){ if(!hd) {break;}; }
-		else if(*str=='\n'||*str=='\r'){
-			if(!lno && word_start){
-				hd=sub_str(word_start,0,str-word_start); };
-			lno++;
-			word_start=NULL;
-		}else if(*str!=' ' && *str!='\t'){
-			if(!word_start){
-				word_start=str;
-				if(hd && lno && str_start(str,hd) && str[str_len(hd)]==end){
-					str+=str_len(hd);
-					break; }; }; };
-		str++; };
-	*in=str;
-	return sub_str(from,0,str-from+1);
-};
-char* read_quote(char** in){
-	char* str=*in;
-	char end=*str;
-	str++;
-	while(*str){
-		if(*str=='\\'){ str++; }
-		else if(*str==end){ break; };
-		str++;
-	};
-	char* from=*in;
-	*in=str;
-	return sub_str(from,0,str-from+1);
-};
-int map_has_word(map* mp,char* str){
-	for(int idx=next(mp,-1,NULL,NULL); has_id(mp,idx); idx++){ void* v=map_id(mp,idx); if(str_eq(v,str)){ return idx+1; }; };
-	return 0;
-};
 static int is_keyword(char* str){ return is_word(str,"abstract and as break callable case catch class clone const continue declare default do echo else elseif enddeclare endfor endforeach endif endswitch endwhile extends final for foreach def function global goto if implements include include_once instanceof insteadof interface namespace new or private protected public require require_once return static switch throw trait try use while xor yield false true null"); };
 static char* toks_c(map* mp){
 	char* ret=NULL;
@@ -1135,65 +467,6 @@ static char* toks_c(map* mp){
 		if(!str){ continue; };
 		ret=xcat(ret,map_id(mp,i), End); };
 	return ret;
-};
-static map* add_ctok(void* data,map* mp,int iscode){
-	if(!data){ return mp; };
-	assert(data);
-	assert(ptr_type(mp)==Vector);
-	int incode=!(mp->len%2);
-	if(incode && iscode){
-		vec_add(mp,NULL);
-		vec_add(mp,data);
-	}else if(incode && !iscode){ vec_add(mp,data); }
-	else if(!incode && !iscode){
-		if(mp->len){
-			char* old=is_str(map_id(mp,mp->len-1));
-			mp->vars[mp->len-1]=xstr(old,data, End);
-		}else {vec_add(mp,data);};
-	}else if(!incode && iscode){ vec_add(mp,data); };
-	return mp;
-};
-static map* c_tokenizer(char** line,char term){
-	if(!line||!*line||!**line){ return NULL; };
-	char* head=*line;
-	int headlen=str_len(head);
-	char* expected_end=head+str_len(head);
-	char* str=*line;
-	map* mp=new_vec();
-	char* space=NULL;
-	int code=0;
-	char* last=NULL;
-	while(*str && *str!=term){
-		assert(last!=str);
-		assert(str_len(head)==headlen);
-		last=str;
-		if(str_start(str,"//")){ add_ctok(read_theline(&str),mp,0); }
-		else if(str_start(str,"/*")){ add_ctok(read_upto_word(&str,"*/"),mp,0); }
-		else if(str_start(str,"#")){ add_ctok(read_theline(&str),mp,0); }
-		else if(strchr(" \t",*str)){ add_ctok(read_space(&str," \t"),mp,0); }
-		else if(strchr("\n\r",*str)){ add_ctok(read_newline(&str),mp,0); }
-		else if(strchr("\"`",*str)){ add_ctok(read_quote(&str),mp,1); }
-		else if(*str=='\''){ add_ctok(read_multistr(&str),mp,1); }
-		else if(str_start(str,"{{")){
-			if(!(mp->len%2)){ vec_add(mp,NULL); };
-			vec_merge(mp,read_data(&str));
-		}else if(str_start(str,"---")){ add_ctok(read_heredoc(&str),mp,1); }
-		else if(*str==':'){ add_ctok(fox_read_symbol(&str),mp,1); }
-		else if(is_oper(*str)){ add_ctok(fox_read_oper(&str,term),mp,1); }
-		else if(*str>='0' && *str<='9'){ add_ctok(read_num(&str),mp,1); }
-		else if(is_alpha(*str,NULL)){ add_ctok(read_alpha(&str),mp,1); }
-		else if(strchr("([{",*str)){
-			char c=*str;
-			str++;
-			add_ctok(char_str(c),mp,1);
-			add_ctok(c_tokenizer(&str,closing_paren(c)),mp,1);
-			if(*str){ add_ctok(char_str(closing_paren(c)),mp,1); };
-		}else if(','==*str){ add_ctok(sub_str(str,0,1),mp,1); }
-		else if(';'==*str){ add_ctok(sub_str(str,0,1),mp,1); };
-		if(*str){ str++; }; };
-	assert(term || str==expected_end);
-	*line=str;
-	return mp;
 };
 static int func_dot(map* mp,int idx){
 	idx++;
@@ -1403,7 +676,7 @@ static map* force_curly(map* mp){
 static map* expand_main(map* mp){
 	for(int idx=1;idx<=mp->len;idx+=2){
 		if(str_eq(map_id(mp,idx),"run") && str_eq(map_id(mp,idx+2),"(") && str_eq(map_id(mp,idx+8),"{") && !map_len(map_id(mp,idx+4)) && !str_eq(map_id(mp,idx-2),"int")){
-			vec_compact(vec_splice(mp,idx,7,vec_del(x_map("int run(map* args)"),0,1))); }; };
+			vec_compact(vec_splice(mp,idx,7,vec_del(x_map("void* run(map* args)"),0,1))); }; };
 	return mp;
 };
 static map* add_curly(map* mp,int recursive){
@@ -1972,13 +1245,13 @@ static int syn_assign_val(map* syn){
 };
 static int is_assign(map* syn){ return next_tok(syn,0,"=",0); };
 static int is_var_decl(map* syn){
-	return is_word(map_id(syn,1),"int long double float char void struct map static extern unsigned register mempage size_t time_t const FILE inline");
+	return is_word(map_id(syn,1),"int long double float char void struct map static extern unsigned register mempage size_t time_t const FILE inline var");
 };
 static int is_func_decl(map* syn){
 	int idx=next_tok(syn,0,"(",0);
 	if(!idx--){ return 0; };
 	if(next_tok(syn,0,"=",0)){ return 0; };
-	if(!is_word(map_id(syn,1),"int long double float char void struct map static extern unsigned register mempage size_t time_t const FILE inline")){
+	if(!is_word(map_id(syn,1),"int long double float char void struct map static extern unsigned register mempage size_t time_t const FILE inline var")){
 		return 0; };
 	if(str_eq(map_id(syn,idx+7),";")){ return 1; };
 	if(str_eq(map_id(syn,idx+7),"{") && str_eq(map_id(syn,idx+13),";")){ return 1; };
@@ -2003,48 +1276,62 @@ static char* call_c(map* params,char* name){
 		vec_add(ret,str_shorten(to_c(v),40)); };
 	return xstr(name, "(", map_join(ret,", "), ")", End);
 };
-char* read_line(FILE* fp){
-	char buff[1024];
-	char* ret=NULL;
-	while(fgets(buff,sizeof(buff),fp)){
-		ret=xcat(ret,buff, End); };		
-	return ret;
-};
-static char* type_name(int type){
-	char* names[]={"Free","Int","Double","String","Blob","Map","Vector","Index","Keys","Cell","Cell2"};
-	return names[type];
-};
-static char* ptr_name(void* var){ return type_name(ptr_type(var)); };
-static map* source_funcs(map* infiles){
-	if(!infiles){ return map_val(map_val(_globals,"cache"),"funcs"); };
+map* source_funcs(map* infiles){
+	if(!infiles){ return map_val(_globals,"funcs"); };
 	map* mp=new_map();	
 	for(int i=next(infiles,-1,NULL,NULL); has_id(infiles,i); i++){ void* v=map_id(infiles,i);
 		map* mp3=NULL;
 		if(str_end(v,".fox")){ mp3=file_funcs(v,1); }
 		else {mp3=file_funcs(v,0);};
+		px(xstr("+ ",int_str( map_len(mp3)), " <- ", v, End),1);
 		map_merge(mp,mp3); };
-	add(add_key(_globals,"cache",Map),"funcs",mp);
-	return map_val(map_val(_globals,"cache"),"funcs");
+	add(_globals,"funcs",mp);
+	return map_val(_globals,"funcs");
 };
-static map* file_funcs(char* filename,int withbody){ return x_funcs(file_read(filename,1,1),withbody,filename); };
+map* file_funcs(char* filename,int withbody){ return x_funcs(file_read(filename,1,1),withbody,filename); };
 static void src(map* mp,int from,int len,char* msg){
 	if(!len){ len=mp->len-from; };
 	px(json(vec_sub(mp,from,len),0),1);
 	if(msg){ px(xstr(msg, " ___________________________", End),1); };
 };
 static map* structs(){
-	return map_val(_globals,"structs") ? map_val(_globals,"structs") : map_val(map_val(map_val(_globals,"cache"),"reflect"),"structs");
+	return (map_val(_globals,"structs") ? map_val(_globals,"structs") : map_val(map_val(_globals,"reflect"),"structs"));
 };
 static map* macros(){
-	return map_val(_globals,"macros") ? map_val(_globals,"macros") : map_val(map_val(map_val(_globals,"cache"),"reflect"),"macros");
+	return (map_val(_globals,"macros") ? map_val(_globals,"macros") : map_val(map_val(_globals,"reflect"),"macros"));
 };
-static map* source_structs(){
-	if(!map_val(_globals,"structs")){ add(_globals,"structs",c_structs(write_foxh(NULL))); };
-	return map_val(_globals,"structs");
+map* file_blocks(char* infile){
+	map* toks=str_tokenize(file_read(infile,1,1),"\n",0);
+	map* ret=new_vec();
+	for(int i=next(toks,-1,NULL,NULL); has_id(toks,i); i+=2){ char* tok=map_id(toks,i);
+		if(!tok){ continue; };
+		if(tok[0]=='/' && (tok[1]=='/' || tok[1]=='*')){
+			vec_add(ret,xmap("type", "comment", "code", tok, "space", map_id(toks,i+1) , End));
+			continue; };
+		char* head=next_word(tok," \t\n");
+		if(is_word(head,"typedef struct enum union class #include #pragma extern #define #if #ifdef #undef #else #endif #ifndef #line")){
+			vec_add(ret,xmap("type", head, "code", tok, "space", map_id(toks,i+1) , End));
+			continue; };
+		if(str_chr(tok,'{') || str_has(tok,"=>")){
+			vec_add(ret,xmap("type", "func", "code", tok, "space", map_id(toks,i+1) , End));
+			continue; };
+		if(str_has(tok,"=>")){
+			vec_add(ret,xmap("type", "linefunc", "code", tok, "space", map_id(toks,i+1) , End));
+			continue; };
+		vec_add(ret,xmap("type", "global", "code", tok, "space", map_id(toks,i+1) , End)); };
+	return ret;
 };
-static map* source_macros(){
-	if(!map_val(_globals,"macros")){ add(_globals,"macros",c_macros(write_foxh(NULL))); };
-	return map_val(_globals,"macros");
+char* file_section(char* file, char* section){
+	char* ret=NULL;
+	map* map_1=file_blocks(file); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* rec=map_id(map_1,next1);
+		if(is_word(map_val(rec,"type"),section)){
+			ret=xcat(ret,map_val(rec,"code"),map_val(rec,"space"), End); }; };
+	return ret;
+};
+char* files_section(map* files, char* section){
+	char* ret=NULL;
+	for(int next1=next(files,-1,NULL,NULL); has_id(files,next1); next1++){ void* file=map_id(files,next1); ret=xcat(ret,file_section(file,section), End); };
+	return ret;
 };
 static map* toks_syn(map* toks,int recurse){
 	map* ret=new_vec();
@@ -2062,92 +1349,9 @@ static map* toks_syn(map* toks,int recurse){
 	if(map_len(toks)%2){ xadd(ret,NULL,xvec(map_id(toks,map_len(toks)-1),NULL, End), End); };
 	return ret;
 };
-static char* increase_version(){
+char* increase_version(){
 	if(!is_file(".version.txt")){ write_file("0",".version.txt",0,1); };
 	return write_file(int_str((atoi(file_read(".version.txt",1,1))+1)),".version.txt",0,1);
-};
-//TODO: merge with _ptr defined bellow.
-int call_variadic_int(map* mp,void* fp,char* name){
-	int(*ptr)(void* param1,...)=fp;
-	if(!mp){ return ptr(End); };
-	int len=map_len(mp);
-	if(map_id(mp,mp->len-1)==(void*)End){ len--; };
-	if(len==0){ return ptr(End); };
-	if(len==1){ return ptr(map_id(mp,0),End); };
-	if(len==2){ return ptr(map_id(mp,0),map_id(mp,1),End); };
-	if(len==3){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),End); };
-	if(len==4){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),End); };
-	if(len==5){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),End); };
-	if(len==6){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),End); };
-	if(len==7){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),End); };
-	if(len==8){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),End); };
-	if(len==9){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),End); };
-	if(len==10){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),End); };
-	if(len==11){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),End); };
-	if(len==12){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),End); };
-	if(len==13){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),End); };
-	if(len==14){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),End); };
-	if(len==15){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),End); };
-	if(len==16){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),End); };
-	if(len==17){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),End); };
-	if(len==18){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),End); };
-	if(len==19){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),End); };
-	if(len==20){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),End); };
-	if(len==21){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),End); };
-	if(len==22){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),End); };
-	if(len==23){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),End); };
-	if(len==24){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),map_id(mp,23),End); };
-	if(len==25){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),map_id(mp,23),map_id(mp,24),End); };
-	if(len==26){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),map_id(mp,23),map_id(mp,24),map_id(mp,25),End); };
-	if(len==27){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),map_id(mp,23),map_id(mp,24),map_id(mp,25),map_id(mp,26),End); };
-	if(len==28){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),map_id(mp,23),map_id(mp,24),map_id(mp,25),map_id(mp,26),map_id(mp,27),End); };
-	if(len==29){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),map_id(mp,23),map_id(mp,24),map_id(mp,25),map_id(mp,26),map_id(mp,27),map_id(mp,28),End); };
-	if(len==30){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),map_id(mp,23),map_id(mp,24),map_id(mp,25),map_id(mp,26),map_id(mp,27),map_id(mp,28),map_id(mp,29),End); };
-	if(len==31){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),map_id(mp,23),map_id(mp,24),map_id(mp,25),map_id(mp,26),map_id(mp,27),map_id(mp,28),map_id(mp,29),map_id(mp,30),End); };
-	if(len==32){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),map_id(mp,23),map_id(mp,24),map_id(mp,25),map_id(mp,26),map_id(mp,27),map_id(mp,28),map_id(mp,29),map_id(mp,30),map_id(mp,31),End); };
-	fox_error(xstr("Only 32 parameters supported in call to function ", name, " sent=", json(mp,0), End),0);
-	return 0;
-};
-void* call_variadic_ptr(map* mp,void* fp,char* name){
-	void*(*ptr)(void* param1,...)=fp;
-	if(!mp){ return ptr(End); };
-	int len=map_len(mp);
-	if(map_id(mp,mp->len-1)==(void*)End){ len--; };
-	if(len==0){ return ptr(End); };
-	if(len==1){ return ptr(map_id(mp,0),End); };
-	if(len==2){ return ptr(map_id(mp,0),map_id(mp,1),End); };
-	if(len==3){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),End); };
-	if(len==4){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),End); };
-	if(len==5){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),End); };
-	if(len==6){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),End); };
-	if(len==7){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),End); };
-	if(len==8){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),End); };
-	if(len==9){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),End); };
-	if(len==10){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),End); };
-	if(len==11){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),End); };
-	if(len==12){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),End); };
-	if(len==13){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),End); };
-	if(len==14){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),End); };
-	if(len==15){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),End); };
-	if(len==16){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),End); };
-	if(len==17){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),End); };
-	if(len==18){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),End); };
-	if(len==19){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),End); };
-	if(len==20){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),End); };
-	if(len==21){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),End); };
-	if(len==22){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),End); };
-	if(len==23){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),End); };
-	if(len==24){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),map_id(mp,23),End); };
-	if(len==25){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),map_id(mp,23),map_id(mp,24),End); };
-	if(len==26){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),map_id(mp,23),map_id(mp,24),map_id(mp,25),End); };
-	if(len==27){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),map_id(mp,23),map_id(mp,24),map_id(mp,25),map_id(mp,26),End); };
-	if(len==28){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),map_id(mp,23),map_id(mp,24),map_id(mp,25),map_id(mp,26),map_id(mp,27),End); };
-	if(len==29){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),map_id(mp,23),map_id(mp,24),map_id(mp,25),map_id(mp,26),map_id(mp,27),map_id(mp,28),End); };
-	if(len==30){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),map_id(mp,23),map_id(mp,24),map_id(mp,25),map_id(mp,26),map_id(mp,27),map_id(mp,28),map_id(mp,29),End); };
-	if(len==31){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),map_id(mp,23),map_id(mp,24),map_id(mp,25),map_id(mp,26),map_id(mp,27),map_id(mp,28),map_id(mp,29),map_id(mp,30),End); };
-	if(len==32){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),map_id(mp,23),map_id(mp,24),map_id(mp,25),map_id(mp,26),map_id(mp,27),map_id(mp,28),map_id(mp,29),map_id(mp,30),map_id(mp,31),End); };
-	fox_error(xstr("Only 32 parameters supported in call to function ", name, " sent=", json(mp,0), End),0);
-	return 0;
 };
 static map* toks_replace(map* in,map* replace){
 	for(int i=next(in,-1,NULL,NULL); has_id(in,i); i++){ void* v=map_id(in,i); char* k=map_key(in, i);
@@ -2166,19 +1370,6 @@ static map* toks_join(map* in, char* by){
 		if(!(map_len(ret)%2)){ xadd(ret,NULL, End); };
 		xadd(ret,by, End);
 		vec_merge(ret,map_id(in,i)); };
-	return ret;
-};
-static map* toks_align(map* in){
-	int last=map_len(in);
-	if(!(last%2)){ return in; };
-	if(map_id(in,last-1)==NULL){
-		vec_compact(vec_del(in,-1,1));
-	}else {vec_add(in,NULL);};
-	return in;
-};
-map* toks_split(map* in,char* by,int limit){
-	map* ret=map_split(in,by,limit);
-	for(int i=1;i<ret->len;i++){ toks_align(map_id(ret,i-1)); };
 	return ret;
 };
 static map* expand_macros(map* mp,map* macros){
@@ -2203,12 +1394,12 @@ static map* expand_macros(map* mp,map* macros){
 			i+=map_len(expanded)-7; }; };
 	return mp;
 };
-static map* c_macros(char* in){ return toks_macros(x_map(in)); };
+map* c_macros(char* in){ return toks_macros(x_map(in)); };
 static map* toks_macros(map* mp){
 	map* ret=new_map();
-	for(int i=1; i<map_len(mp); i+=2){
-		if(!str_has(map_id(mp,i-1),"#define")){ continue; };
-		map* map_1=str_split(map_id(mp,i-1),"\n",0); for(int i2=next(map_1,-1,NULL,NULL); has_id(map_1,i2); i2++){ void* line=map_id(map_1,i2);
+	for(int i=0; i<map_len(mp); i+=2){
+		if(!str_has(map_id(mp,i),"#define")){ continue; };
+		map* map_1=str_split(map_id(mp,i),"\n",0); for(int i2=next(map_1,-1,NULL,NULL); has_id(map_1,i2); i2++){ void* line=map_id(map_1,i2);
 			if(!str_start(line,"#define")){ continue; };
 			map* toks=x_map(drop_left(line,"#define "));
 			if(!str_eq(map_id(toks,3),"(")){ continue; };
@@ -2230,7 +1421,7 @@ static int is_inline_vector(map* toks,int idx){
 	if(is_code(pre) && !is_word(pre,"return")){ return 0; };
 	if(str_eq(pre,"=")){
 		char* type=old_decl_type(toks,idx-4);
-		if(type && !is_word(type,"map* void*")){ return 0; }; };
+		if(type && !is_word(type,"map* void* var")){ return 0; }; };
 	return str_eq(map_id(toks,idx),"[") ? Vector : Map;
 };
 static map* string_operators(map* toks){
@@ -2344,126 +1535,6 @@ static map* inline_vectors(map* toks){
 		if(requires_semicolon(toks,idx+1)){ vec_splice(toks,idx+2-1,0,xvec(NULL,";", End)); }; };
 	return toks;
 };
-static map* data_toks(char* in){ in=sub_str(in,2,-2); return xvec("xmap",NULL,"(",NULL,data_tokenizer(&in,0),NULL,")", End); };
-static map* data_tokenizer(char** in,int level){
-	if(!in||!*in||!**in){ return NULL; };
-	char* str=*in;
-	map* mp=new_vec();
-	char* last=NULL;
-	char* space1=NULL;
-	char* space2=NULL;
-	map* key=NULL;
-	map* val=NULL;
-	while(*str){
-		assert(last!=str);
-		last=str;
-
-		char* temp=str;
-		if(str_start(str,"//")){ space1=xcat(space1,read_theline(&str), End); str++; }
-		else if(str_chr(" \t\n\r",*str)){ space1=xcat(space1,read_space(&str,"\t\n\r "), End); str++; };
-		int clevel=0;
-		for(int i=str_len(space1)-1; i>=0; i--){
-			if(str_chr(" \t",space1[i])){ clevel++; }; };
-		if(clevel<level){
-			space1=NULL;
-			str=temp;
-			break;
-		};
-		if(str_chr("\"'`",*str)){ key=xvec(read_quote(&str), End); str++; }
-		else if(*str=='('){
-			str++;
-			key=xvec("(",NULL,c_tokenizer(&str,')'),NULL,")", End);
-			if(*str){ str++; };
-		}else{
-			key=data_quote(read_upto(&str,"\n\r \t"));
-		};
-		if(str_chr(" \t",*str)){ space2=read_over(&str,"\t "); str++; };
-
-		if(str_start(str,"---")){ val=xvec(read_heredoc(&str), End); str++; }
-		else if(*str=='-' && str_chr(" \t\n\r\0",str[1])){ val=prop_toks(read_theline(&str),key); str++; }
-		else if(!str_chr("\n\r",*str)){ val=data_quote(read_theline(&str)); str++; };
-		
-		if(key && !val){
-			temp=str;
-			map* ret=data_tokenizer(&str,clevel+1);	
-			if(map_len(ret)){
-				val=xvec("xmap",NULL,"(",NULL,ret,NULL,")", End);
-			}else{
-				val=NULL;
-	  			str=temp; }; };
-		if(key || val){
-			if(map_len(mp)){
-				vec_add(mp,NULL);
-				vec_add(mp,","); };
-			vec_add(mp,space1);
-			vec_merge(mp,(key ? key : xvec("NULL", End)));
-			vec_add(mp,NULL);
-			vec_add(mp,",");
-			vec_add(mp,space2);
-			vec_merge(mp,(val ? val : xvec("NULL", End)));
-			space1=space2=NULL;
-			key=val=NULL;
-		}else{
-			space1=xcat(space1,space2, End);
-			space2=NULL; }; };
-	if(map_len(mp) || space1){ vec_add(mp,space1); };
-	*in=str;
-	return mp;
-};
-static char* read_over(char** in,char* chars){
-	char* str=*in;
-	while(*str && str_chr(chars,*str)){
-		str++; };
-	char* from=*in;
-	*in=str-1;
-	return sub_str(from,0,str-from);
-};
-static map* data_quote(char* in){
-	if(!in || !str_len(in)){ return NULL; };
-	if(str_chr("\"'`",*in)){ return xvec(in, End); };
-	if(*in=='='){ return vec_compact(vec_del(x_map(sub_str(in,1,-2147483648)),0,1)); };
-	if(*in=='{'){ return prop_toks(sub_str(in,1,-1),NULL); };
-	if(*in=='['){ return prop_vec_toks(sub_str(in,1,-1)); };
-	return xvec(str_quote(in), End);
-};
-static map* prop_vec_toks(char* in){
-	map* ret=new_vec();
-	map* toks=split_by(in,',',0);
-	for(int next1=next(ret,-1,NULL,NULL); has_id(ret,next1); next1++){ void* val=map_id(ret,next1); char* idx=map_key(ret, next1);
-		if(idx){ vec_merge(ret,xvec(NULL,","," ", End)); }
-		else {vec_add(ret,NULL);};
-		vec_merge(ret,data_quote(val)); };
-	return xvec("xvec",NULL,"(",NULL,ret,NULL,")", End);
-};
-static map* prop_toks(char* in,map* name){
-	map* ret=new_vec();
-	map* toks=split_by(in,',',0);
-	for(int  idx=next(toks,-1,NULL,NULL); has_id(toks, idx);  idx++){ void* val=map_id(toks, idx);
-		val=split_by(val,' ',2);
-		if(!map_len(val)){ continue; };
-		if(idx==0 && str_eq(map_id(val,0),"-")){
-			if(name){
-				vec_add(ret,NULL);
-				vec_merge(ret,data_quote("name"));
-				vec_merge(ret,xvec(NULL,","," ", End));
-				vec_merge(ret,name); };
-			set(val,0,"type"); };
-		if(map_len(ret)){
-			vec_merge(ret,xvec(NULL,","," ", End));
-		}else{
-			vec_add(ret,NULL); };
-		vec_merge(ret,data_quote(map_id(val,0)));
-		vec_merge(ret,xvec(NULL,","," ", End));
-		vec_merge(ret,map_id(val,1) ? data_quote(map_id(val,1)) : xvec("NULL", End)); };
-	return xvec("xmap",NULL,"(",NULL,ret,NULL,")", End);
-};
-map* read_paren(map* mp,char** line,map*(*func)(char**)){
-	char* str=*line;
-	vec_add(mp,char_str(*str));
-	vec_add(mp,func(line));
-	vec_add(mp,char_str(closing_paren(*str)));
-	return mp;
-};
 static map* file_map(char* filename){ return data_map(file_read(filename,1,1)); };
 map* data_map(char* in){ return data_map2(&in,0); };
 static map* data_map2(char** in,int level){
@@ -2551,10 +1622,6 @@ char* callfunc_c(map* funcs){
 		//pp1
 		ret=xcat(ret,mstr("\t\tcase %p: { %s break; }\n",str_hash(map_val(v,"name")),str_params, End), End); };
 	return ret;
-};
-char* write_c(char* infile,char* outfile){
-	source_funcs(NULL);
-	return write_file(x_c(file_read(infile,1,1)),outfile,1,1);
 };
 static char* func_ccall(map* fn){
 	char* ret=NULL;
@@ -2749,8 +1816,8 @@ static map* auto_types(map* toks,char* context,int is_script,map* env,map* fns,m
 				add(fenv,param,map_val(op,"type")); };
 			auto_types(add_return(map_val(fn,"body")),"body",is_script,fenv,fns,fn,0);
 			if(is_script){
-				if(map_val(fn,"body")){ add(add_key(add_key(_globals,"cache",Map),"userfuncs",Map),map_val(fn,"name"),map_val(fn,"body")); };
-				add(add_key(add_key(add_key(_globals,"cache",Map),"reflect",Map),"funcs",Map),map_val(fn,"name"),map_del_key(fn,"body")); }; };
+				if(map_val(fn,"body")){ add(add_key(_globals,"userfuncs",Map),map_val(fn,"name"),map_val(fn,"body")); };
+				add(add_key(add_key(_globals,"reflect",Map),"funcs",Map),map_val(fn,"name"),map_del_key(fn,"body")); }; };
 		return auto_types(toks,"body",is_script,env,fns,NULL,0);
 	}else if(str_eq(context,"body")){
 		for(int j=0; j<toks->len; j+=2){
@@ -2804,7 +1871,7 @@ static map* auto_types(map* toks,char* context,int is_script,map* env,map* fns,m
 					vec_splice(toks,1,0,vec_compact(vec_del(x_map(xstr(type, " ", End)),0,1)));
 					add(env,name,type);
 				}else{
-					px(xstr(map_val(func,"name"), "(): unknown var ", name, End),1); }; };
+					px(xstr(map_val(func,"name"), "(): unknown void* ", name, End),1); }; };
 			auto_types(toks,"expr",is_script,env,fns,func,syn_assign_val(toks));
 		}else{
 			auto_types(toks,"expr",is_script,env,fns,func,0); };
@@ -2830,7 +1897,7 @@ static map* auto_types(map* toks,char* context,int is_script,map* env,map* fns,m
 					if(fn){
 						params=param_c(params,env,fns,fn); };
 					syn_set_param(toks,i,params); };
-			}else if(str_eq(map_id(toks,i+1),"[") && is_word(head_type(toks,i-2,i,env,fns),"map* void*") && neq(is_typecast(toks,head),"void*") && 1){
+			}else if(str_eq(map_id(toks,i+1),"[") && is_word(head_type(toks,i-2,i,env,fns),"map* void* var") && neq(is_typecast(toks,head),"void*") && 1){
 				void* name=map_id(toks,i+3);
 				if(!map_len(name)){ name=xvec(NULL,"NULL", End); };
 				head=expr_head(toks,i-2,".");
@@ -2863,7 +1930,7 @@ static map* auto_types(map* toks,char* context,int is_script,map* env,map* fns,m
 					syn_set_param(toks,i+2,params);
 					vec_compact(toks);
 					i=head-2;
-				}else if(is_word(expr_type(toks,head,i,env,fns),"map* void*") && neq(is_typecast(toks,head),"void*")){
+				}else if(is_word(expr_type(toks,head,i,env,fns),"map* void* var") && neq(is_typecast(toks,head),"void*")){
 					void* name=map_id(toks,i+3);
 					map* mid=vec_splice(xadd(vec_sub(toks,head+1,i-head-1),NULL,",",NULL,str_quote(str_unquote(name)), End),0,0,xvec(NULL, End));
 					vec_splice(toks,head+1,i+3-head,xvec("map_val",NULL,"(",NULL,mid,NULL,")", End));
@@ -2881,7 +1948,7 @@ static map* func_depend(map* mp,map* ret){
 };
 map* depends(char* filename){
 	map* ret=new_map();
-	map* ref=reflect();	
+	map* ref=map_val(_globals,"reflect");
 	map* map_1=map_val(ref,"depends"); for(int next1=next(map_1,-1,NULL,NULL); has_id(map_1,next1); next1++){ void* funcs=map_id(map_1,next1); char*  name=map_key(map_1, next1);
 //		funcs.px()
 		if(str_eq(map_val(map_val(map_val(ref,"funcs"),name),"file"),filename)){
@@ -2930,60 +1997,8 @@ int utests(char* test,char* file){
 	px(xstr("\n",int_str( passed), "/",int_str( runs), " tests passed.", End),1);
 	return errs;
 };
-map* cmdline_params(map* args,map* funcs){
-	void* func=map_id(args,1);
-	args=vec_sub(args,2,0);
-	map* params=map_val(map_val(funcs,func),"params");
-	if(!params){ fox_error(xstr("Function: ", func, "() not found", End),0); };
-	map* ret=new_map();
-	int curr=1;
-	int variadic=str_eq(map_key(params,map_len(params)-1),"...") ? map_len(params) : 0;
-	char* named_param=NULL;
-	for(int i=next(args,-1,NULL,NULL); has_id(args,i); i++){ void* v=map_id(args,i); char* k=map_key(args, i);
-		if(str_start(v,"-") && str_len(v)>1){
-			char* val=NULL;
-			if(named_param){
-				add(ret,named_param,int_var(1)); };
-			if(str_start(v,"--")){
-				named_param=sub_str(v,2,-2147483648);
-				if(str_has(v,"=")){
-					map* mp1=str_split(named_param,"=",2);
-					named_param=map_id(mp1,0);
-					val=map_id(mp1,1);
-				}else {named_param=sub_str(v,2,-2147483648);};
-			}else{
-				named_param=sub_str(v,1,-2147483648);
-				if(!map_val(params,named_param)){
-					for(int i2=next(params,-1,NULL,NULL); has_id(params,i2); i2++){ void* v2=map_id(params,i2); char* k2=map_key(params, i2);
-						if(map_has_key(ret,k2)){ continue; };
-						if(str_start(k2,named_param)){ named_param=k2; break; }; }; }; };
-//				if v.str_len()>2
-//					val=v.sub_str(2)
-			if(!map_val(params,named_param)){ fox_error(xstr("Invalid parameter ", named_param, " in call to...\n", func_cdecl(map_val(funcs,func),1), End),0); };
-			if(val){
-				add(ret,named_param,val);
-				named_param=NULL; };
-		}else if(named_param){
-			add(ret,named_param,v);
-			named_param=NULL;
-		}else if(variadic && curr>=variadic){
-			vec_add(ret,v);
-			curr++;
-		}else{
-			if(curr>map_len(params)){ fox_error(xstr("Excess number of arguments. Function has only ",int_str( map_len(params)), "\narguments ", func_cdecl(map_val(funcs,func),1), End),0); };
-			add(ret,map_key(params,curr-1),v);
-			curr++; }; };
-	if(named_param){
-		add(ret,named_param,int_var(1)); };
-	ret=eval_params(ret,func,NULL,funcs);
-	for(int i3=next(ret,-1,NULL,NULL); has_id(ret,i3); i3++){ void* v3=map_id(ret,i3); char* k3=map_key(ret, i3);
-		if(str_eq(map_val(map_val(params,k3),"type"),"map*")){
-			add(ret,k3,str_map(v3,Map)); }; };
-	return ret;
-};
 map* funcs(){
-	if(!map_val(map_val(_globals,"cache"),"reflect")){add(add_key(_globals,"cache",Map),"reflect",reflect()); };
-	return map_val(map_val(_globals,"cache"),"funcs") ? map_val(map_val(_globals,"cache"),"funcs") : map_val(map_val(map_val(_globals,"cache"),"reflect"),"funcs");
+	return (map_val(_globals,"funcs") ? map_val(_globals,"funcs") : map_val(map_val(_globals,"reflect"),"funcs"));
 };
 void* fox_run(char* in){
 	int halt=0;
@@ -3066,13 +2081,24 @@ static void* binary_op(void* left, char oper, void* right){
 	fox_error(xstr("Unknown operator ", oper, End),0);
 	return NULL;
 };
-static int is_true(void * val){
+static int is_true(void* val){
 	if(!val){ return 0; };
 	if(is_i(val)){ return is_int(val); };
 	if(is_f(val)){ return is_double(val); };
 	if(is_map(val)){ return map_len(val); };
 	if(is_str(val)){ return str_len(val); };
 	return 1;
+};
+char* func_cdecl(map* fn,int show_default){
+	char* ret2="";
+	map* map_1=map_val(fn,"params"); for(int i2=next(map_1,-1,NULL,NULL); has_id(map_1,i2); i2++){ void* param=map_id(map_1,i2); char* name=map_key(map_1, i2);
+		char* s=str_join(map_val(param,"type")," ",name);
+		if(str_eq(name,"...")){ s=name; };
+		if(show_default){ s=str_join(s,"=",map_val(param,"default")); };
+		ret2=str_join(ret2,", ",s); };
+	char* file=NULL;
+	if(map_val(fn,"file")){ file=xstr("//", map_val(fn,"file"), End); };
+	return xstr(map_val(fn,"decltype"), " ", map_val(fn,"name"), "(", ret2, "); ", file, End);
 };
 void* eval(char* in,map* env){
 	return eval_toks(x_toks(in,0),env);
@@ -3235,34 +2261,6 @@ static int eval_expr_cont(map* mp,int idx,map* env,void** last,int level){
 	*last=ret;
 	return idx;
 };
-static map* eval_params(map* sent,char* name,map* env,map* fns){
-	assert(name);
-	map* ret=new_map();
-	void* fn=map_val(fns,name);
-	if(!fn){ fox_error(xstr("Function ", name, "() not found", End),0); };
-	int named=0;
-	map* map_1=map_val(fn,"params"); for(int i=next(map_1,-1,NULL,NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i); char* k=map_key(map_1, i);
-		if(str_eq(k,"...")){
-			for(int i2=i; i2<sent->len; i2++){
-				vec_add(ret,map_id(sent,i2)); };
-			break;
-		}else if(map_has_key(sent,k)){
-			named=1;
-			add(ret,k,map_val(sent,k));
-		}else if(!named && map_len(sent)>i && is_i(map_key(sent,i))){
-			add(ret,k,map_id(sent,i));
-		}else if(map_has_key(env,k)){
-			named=1;
-			add(ret,k,map_val(env,k));
-		}else if(str_eq(k,"env")){
-			add(ret,k,env);
-		}else if(map_val(v,"default")){
-			add(ret,k,eval(map_val(v,"default"),NULL));
-		}else{
-			fox_error(xstr("Parameter missing in ", map_val(fn,"name"), "(", k, "=?) in ", func_cdecl(fn,1), "\nargs=", json(sent,0), End),0);
-			assert(0); }; };
-	return ret;
-};
 void* data_exec(void* data,map* env){
 	if(!data){ return NULL; };
 	if(is_str(data)){ return data; };	
@@ -3273,7 +2271,7 @@ void* data_exec(void* data,map* env){
 void* call_func(map* params,char* name,map* env){
 	params=eval_params(params,name,env,funcs());
 	if(str_start(name,"php_")){ return call_php(params,sub_str(name,5,-2147483648)); };
-	map* user=map_val(map_val(map_val(_globals,"cache"),"userfuncs"),name);
+	map* user=map_val(map_val(_globals,"userfuncs"),name);
 	void* ret=NULL;
 	if(user){
 		int halt=0;
@@ -3301,161 +2299,86 @@ map* func_depend_recursive(char* func, char* file, map* funcs, map* files){
 		func_depend_recursive(fname,ffile, funcs, files); };
 	return funcs;
 };
-
-char* mem_usage(){
-	int runtime=run_time();
-	int totaltime=total_time();
-	int gctime=gc_time();
-	int codetime=runtime-totaltime-gctime;
-	return mstr("Memory:%s-%s [%d%% garbage], Pages: %d/%d, GC runs=%d-%d, Time=%d[gc]+%d[code]=%d ms [%d%% gc] GC Max: %d msec, Root Objs: %d",
-		int_kb(_gcdata.max_mem,"B"),
-		int_kb(max_mem(),"B"),
-		(_gcdata.max_mem-_gcdata.max_used)*100/_gcdata.max_mem,
-		_gcdata.total_pages,
-		_gcdata.page_no,
-		_gcdata.gcruns,
-		_gcdata.gcwaste,
-		gctime,
-		codetime,
-		runtime,
-		gctime*100/(codetime+gctime),
-		_gcdata.gcmax/1000,
-		_gcdata.max_roots
-	, End);
-};
-char* int_kb(size_t i,char* unit){
-	size_t ks=1;
-	if(i<10*ks*1024){ return int_human(i,NULL,""); };
-	if(i<10*ks*1024*1024){ return int_human((i/(1024)),xstr("K",unit, End),""); };
-	if(i<10*ks*1024*1024*1024){ return int_human((i/(1024*1024)),xstr("M",unit, End),""); };
-	return int_human((i/(1024*1024*1024)),xstr("G",unit, End),"");
-};
-char* int_human(int i,char* unit,char* zero){
-	if(!i){ return zero; };
-	char* ret=int_str(i);
-	int addat=3;
-	while(addat<str_len(ret)){
-		ret=xstr(sub_str(ret,0,-addat),",",sub_str(ret,-addat,-2147483648), End);
-		addat+=4; };
-	if(ret && unit){ ret=xcat(ret,unit, End); };
-	return ret;
-};
-void rewrite_ptr(mempage* pg,void** ptr){
-	if(*ptr<(void*)pg->page||*ptr>(void*)pg->types){ return; };
-	int off=ptr_block(*ptr,pg);
-	if(!(pg->types[off] & (1<<6))){
-		*ptr=**(void***)ptr;
-		return; };
-	int len=1;
-	while(len<=off && (pg->types[off-len] & (1<<6))) {len++;};
-	assert(len<=off);
-	char* head=pg->page+(off-len)*pg->block_size;
-	*ptr=*(char**)head+((char*)*ptr-head);
-};
-void rewrite_ptrs(mempage* old){
-	each_mem(pg,mem_i){
-		if(pg==old){ continue; };
-		for(int i=0;i<pg->blocks;i++){
-			if(!pg->types[i] || pg->types[i] & (1<<6)){ continue; };
-			char type=pg->types[i] & (31);
-			if(type<Map){ continue; };
-			int len1=1;
-			while(pg->types[i+len1] & (1<<6)) {len1++;};
-			int size1=len1*pg->block_size;
-			void* data=pg->page+i*pg->block_size;
-			void* ptr=NULL;
-			if(type==Map||type==Vector){ rewrite_ptr(old,(void**)&(((map*)data)->vars)); }
-			else if(type==Cell){
-				void** vars=(void**)data;
-				size1/=sizeof(void*);
-				for(i=0;i<size1;i++) {rewrite_ptr(old,(void**)&(vars[i]));};
-			}else if(type==Cell2){
-				Mapcell* pairs=(Mapcell*)data;
-				size1/=sizeof(Mapcell);
-				for(i=0;i<size1;i++){
-					rewrite_ptr(old,(void**)&(pairs[i].val));
-					rewrite_ptr(old,(void**)&(pairs[i].id)); }; };
-			i+=len1-1;
-		};};	
-	void** sp=NULL;
-	map* map_1=root_ptrs(); for(int i=next(map_1,-1,NULL,NULL); has_id(map_1,i); i++){ void* v=map_id(map_1,i); rewrite_ptr(old,v); };
-	memset(old->types,0,old->blocks);
-
-	old->free=old->blocks;
-	memset(old->types,0,old->blocks);
-};
-int page_map(mempage* pg){
-	if(pg->blocks==1){
-		printf("[---- %d KB / %d KB ----]\n",pg->free * pg->block_size / 1024,pg->block_size/1024);
-		return 0;
-	};
-	printf("[");
-	int skip=pg->blocks/80;
-	int cont=0;
-	for(int i=0;i<pg->blocks;i++){
-		char type=pg->types[i];
-		if(skip && i%skip){ continue; };
-		if(type & (1<<6)){
-			printf("=");
-			continue; };
-		type &=(31);
-		if(!type){ printf("."); }
-		else if(type==String){ printf("s"); }
-		else if(type==Blob){ printf("s"); }
-		else if(type==Map){ printf("m"); }
-		else if(type==Vector){ printf("v"); }
-		else if(type==Cell){ printf("v"); }
-		else if(type==Cell2){ printf("m"); }
-		else if(type==Tail){ printf("t"); }
-		else {printf("?");}; };
-	printf("]:%d %d*%d=%d KB/%d%%\n",pg->no, pg->blocks,pg->block_size,pg->block_size * pg->blocks / 1024,(pg->blocks-pg->free)*100/pg->blocks);
+//TODO: merge with _ptr defined bellow.
+int call_variadic_int(map* mp,void* fp,char* name){
+	int(*ptr)(void* param1,...)=fp;
+	if(!mp){ return ptr(End); };
+	int len=map_len(mp);
+	if(map_id(mp,mp->len-1)==(void*)End){ len--; };
+	if(len==0){ return ptr(End); };
+	if(len==1){ return ptr(map_id(mp,0),End); };
+	if(len==2){ return ptr(map_id(mp,0),map_id(mp,1),End); };
+	if(len==3){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),End); };
+	if(len==4){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),End); };
+	if(len==5){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),End); };
+	if(len==6){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),End); };
+	if(len==7){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),End); };
+	if(len==8){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),End); };
+	if(len==9){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),End); };
+	if(len==10){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),End); };
+	if(len==11){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),End); };
+	if(len==12){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),End); };
+	if(len==13){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),End); };
+	if(len==14){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),End); };
+	if(len==15){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),End); };
+	if(len==16){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),End); };
+	if(len==17){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),End); };
+	if(len==18){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),End); };
+	if(len==19){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),End); };
+	if(len==20){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),End); };
+	if(len==21){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),End); };
+	if(len==22){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),End); };
+	if(len==23){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),End); };
+	if(len==24){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),map_id(mp,23),End); };
+	if(len==25){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),map_id(mp,23),map_id(mp,24),End); };
+	if(len==26){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),map_id(mp,23),map_id(mp,24),map_id(mp,25),End); };
+	if(len==27){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),map_id(mp,23),map_id(mp,24),map_id(mp,25),map_id(mp,26),End); };
+	if(len==28){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),map_id(mp,23),map_id(mp,24),map_id(mp,25),map_id(mp,26),map_id(mp,27),End); };
+	if(len==29){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),map_id(mp,23),map_id(mp,24),map_id(mp,25),map_id(mp,26),map_id(mp,27),map_id(mp,28),End); };
+	if(len==30){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),map_id(mp,23),map_id(mp,24),map_id(mp,25),map_id(mp,26),map_id(mp,27),map_id(mp,28),map_id(mp,29),End); };
+	if(len==31){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),map_id(mp,23),map_id(mp,24),map_id(mp,25),map_id(mp,26),map_id(mp,27),map_id(mp,28),map_id(mp,29),map_id(mp,30),End); };
+	if(len==32){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),map_id(mp,23),map_id(mp,24),map_id(mp,25),map_id(mp,26),map_id(mp,27),map_id(mp,28),map_id(mp,29),map_id(mp,30),map_id(mp,31),End); };
+	fox_error(xstr("Only 32 parameters supported in call to function ", name, " sent=", json(mp,0), End),0);
 	return 0;
 };
-int dump_chain(mempage* pg,int line){
-	printf("________________ line=%d, page=%d, free=%d/%d\n",line,pg->no,pg->free,pg->blocks);
-	for(int i=0; i<pg->chains.len; i++){
-		printf("%d => %p\n",*(int*)(pg->chains.vars[i]),pg->chains.vars[i]); };
-	printf("----------------\n");
-	assert(0);
-//	"Chain fox_error".fox_error()
+void* call_variadic_ptr(map* mp,void* fp,char* name){
+	void*(*ptr)(void* param1,...)=fp;
+	if(!mp){ return ptr(End); };
+	int len=map_len(mp);
+	if(map_id(mp,mp->len-1)==(void*)End){ len--; };
+	if(len==0){ return ptr(End); };
+	if(len==1){ return ptr(map_id(mp,0),End); };
+	if(len==2){ return ptr(map_id(mp,0),map_id(mp,1),End); };
+	if(len==3){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),End); };
+	if(len==4){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),End); };
+	if(len==5){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),End); };
+	if(len==6){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),End); };
+	if(len==7){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),End); };
+	if(len==8){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),End); };
+	if(len==9){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),End); };
+	if(len==10){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),End); };
+	if(len==11){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),End); };
+	if(len==12){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),End); };
+	if(len==13){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),End); };
+	if(len==14){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),End); };
+	if(len==15){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),End); };
+	if(len==16){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),End); };
+	if(len==17){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),End); };
+	if(len==18){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),End); };
+	if(len==19){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),End); };
+	if(len==20){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),End); };
+	if(len==21){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),End); };
+	if(len==22){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),End); };
+	if(len==23){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),End); };
+	if(len==24){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),map_id(mp,23),End); };
+	if(len==25){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),map_id(mp,23),map_id(mp,24),End); };
+	if(len==26){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),map_id(mp,23),map_id(mp,24),map_id(mp,25),End); };
+	if(len==27){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),map_id(mp,23),map_id(mp,24),map_id(mp,25),map_id(mp,26),End); };
+	if(len==28){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),map_id(mp,23),map_id(mp,24),map_id(mp,25),map_id(mp,26),map_id(mp,27),End); };
+	if(len==29){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),map_id(mp,23),map_id(mp,24),map_id(mp,25),map_id(mp,26),map_id(mp,27),map_id(mp,28),End); };
+	if(len==30){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),map_id(mp,23),map_id(mp,24),map_id(mp,25),map_id(mp,26),map_id(mp,27),map_id(mp,28),map_id(mp,29),End); };
+	if(len==31){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),map_id(mp,23),map_id(mp,24),map_id(mp,25),map_id(mp,26),map_id(mp,27),map_id(mp,28),map_id(mp,29),map_id(mp,30),End); };
+	if(len==32){ return ptr(map_id(mp,0),map_id(mp,1),map_id(mp,2),map_id(mp,3),map_id(mp,4),map_id(mp,5),map_id(mp,6),map_id(mp,7),map_id(mp,8),map_id(mp,9),map_id(mp,10),map_id(mp,11),map_id(mp,12),map_id(mp,13),map_id(mp,14),map_id(mp,15),map_id(mp,16),map_id(mp,17),map_id(mp,18),map_id(mp,19),map_id(mp,20),map_id(mp,21),map_id(mp,22),map_id(mp,23),map_id(mp,24),map_id(mp,25),map_id(mp,26),map_id(mp,27),map_id(mp,28),map_id(mp,29),map_id(mp,30),map_id(mp,31),End); };
+	fox_error(xstr("Only 32 parameters supported in call to function ", name, " sent=", json(mp,0), End),0);
 	return 0;
-};
-int check_chains(mempage* pg,int line){
-	for(int i=1; i<pg->chains.len; i++){
-		if(*(int*)(pg->chains.vars[i])<MIN_CHAIN){
-			dump_chain(pg,line); };
-		if(!(*(int*)(pg->chains.vars[i])<=*(int*)(pg->chains.vars[i-1]))){
-			dump_chain(pg,line); };
-		if(*(int*)(pg->chains.vars[i])==*(int*)(pg->chains.vars[i-1])){
-			if(!(pg->chains.vars[i]>pg->chains.vars[i-1])){
-				dump_chain(pg,line); }; }; };
-//	"sort ok on %d points\n".printf(pg->chains.len)
-	return 0;
-};
-int page_maps(char* title){
-	printf("%s\n",title);
-	each_mem(pg,mem_i) {page_map(pg);};
-	return 0;
-};
-char* ptr_id(void* ptr){
-	static char temp[128];
-	mempage* pg=ptr_page(ptr);
-	if(!pg){ return ptr; };
-	int block=ptr_block(ptr,pg);
-	int type=ptr_type(ptr);
-	if(type){
-		int len=block_len(block,pg);
-		int head=block_head(block,pg);
-		int pre=block-head;
-		sprintf(temp,"%d#%d+%d-%d*%d[%s]",pg->no,block,len,pre,pg->block_size,ptr_name(ptr));
-		return temp; };
-	sprintf(temp,"%d#%d+%d [%s]",pg->no,block,pg->block_size,ptr_name(ptr));
-	return temp;
-};
-void benchmark_gc(){
-	map* ret=new_vec();
-	for(int i=0;i<1000000;i++){
-		set(ret,i%200000,new_str(1023)); };
-	dx(int_var(map_len(ret)),NULL,0);
-	dx(mem_usage(),NULL,0);
 };
